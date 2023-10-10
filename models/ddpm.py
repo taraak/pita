@@ -441,7 +441,7 @@ class TMLP(torch.nn.Module):
             torch.nn.Linear(w, out_dim),
         )
 
-    def forward(self, x, t):
+    def forward(self, x, t, x_self_cond = None):
         time_embed = self.time_mlp(t)
         return self.net(torch.cat([x, time_embed], dim=-1))
     
@@ -746,7 +746,10 @@ class GaussianDiffusion(nn.Module):
         )
 
     def p_losses(self, x_start, t, noise = None):
-        b, c, h, w = x_start.shape
+        if x_start.ndim == 2:
+            b, h = x_start.shape
+        else:
+            b, c, h, w = x_start.shape
         noise = default(noise, lambda: torch.randn_like(x_start))
 
         # noise sample
@@ -784,8 +787,12 @@ class GaussianDiffusion(nn.Module):
         return loss.mean()
 
     def forward(self, img, *args, **kwargs):
-        b, c, h, w, device, img_size, = *img.shape, img.device, self.image_size
-        assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
+        if img.ndim == 2:
+            b, h, device, img_size, = *img.shape, img.device, self.image_size
+        else:
+            b, c, h, w, device, img_size, = *img.shape, img.device, self.image_size
+            assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
+
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
 
         img = self.normalize(img)
