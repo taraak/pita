@@ -457,7 +457,7 @@ class GaussianDiffusion(nn.Module):
         beta_schedule = 'sigmoid',
         schedule_fn_kwargs = dict(),
         ddim_sampling_eta = 0.,
-        auto_normalize = True,
+        auto_normalize = False,
         min_snr_loss_weight = False,
         min_snr_gamma = 5
     ):
@@ -550,8 +550,11 @@ class GaussianDiffusion(nn.Module):
 
         # auto-normalization of data [0, 1] -> [-1, 1] - can turn off by setting it to be False
 
-        self.normalize = normalize_to_neg_one_to_one if auto_normalize else identity
-        self.unnormalize = unnormalize_to_zero_to_one if auto_normalize else identity
+        # self.normalize = normalize_to_neg_one_to_one if auto_normalize else identity
+        # self.unnormalize = unnormalize_to_zero_to_one if auto_normalize else identity
+
+        self.normalize = identity
+        self.unnormalize = identity
 
     def predict_start_from_noise(self, x_t, t, noise):
         return (
