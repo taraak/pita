@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.nn.utils import spectral_norm
 
 class SinusoidalEmbedding(nn.Module):
     def __init__(self, size: int, scale: float = 1.0):
@@ -126,4 +127,23 @@ class MyMLP(nn.Module):
         t_emb = self.time_mlp(t)
         x = torch.cat((x1_emb, x2_emb, t_emb), dim=-1)
         x = self.joint_mlp(x)
+        return x
+
+class SpectralNormMLP(nn.Module):
+    def __init__(self, input_size: int = 2, hidden1_size: int = 64, hidden2_size: int = 128, output_size: int = 1):
+        super(SpectralNormMLP, self).__init__()
+
+        # First hidden layer with spectral normalization
+        self.fc1 = spectral_norm(nn.Linear(input_size, hidden1_size))
+        
+        # Second hidden layer with spectral normalization
+        self.fc2 = spectral_norm(nn.Linear(hidden1_size, hidden2_size))
+
+        # Output layer with spectral normalization
+        self.fc3 = spectral_norm(nn.Linear(hidden2_size, output_size))
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
         return x
