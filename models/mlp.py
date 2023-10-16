@@ -142,6 +142,7 @@ class SpectralNormMLP(nn.Module):
         # Output layer with spectral normalization
         self.fc3 = spectral_norm(nn.Linear(hidden2_size, output_size))
 
+
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
