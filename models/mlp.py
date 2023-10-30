@@ -124,7 +124,7 @@ class MyMLP(nn.Module):
     def forward(self, x, t, x_self_cond=False):
         x1_emb = self.input_mlp1(x[:, 0])
         x2_emb = self.input_mlp2(x[:, 1])
-        t_emb = self.time_mlp(t)
+        t_emb = self.time_mlp(t.squeeze())
         x = torch.cat((x1_emb, x2_emb, t_emb), dim=-1)
         x = self.joint_mlp(x)
         return x
