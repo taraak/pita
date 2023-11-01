@@ -428,7 +428,6 @@ class TMLP(torch.nn.Module):
             nn.GELU(),
             nn.Linear(time_dim, time_dim)
         )
-
         if out_dim is None:
             out_dim = dim
         self.net = torch.nn.Sequential(
@@ -618,7 +617,7 @@ class GaussianDiffusion(nn.Module):
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start = x_start, x_t = x, t = t)
         return model_mean, posterior_variance, posterior_log_variance, x_start
      
-    def condition_mean(self, cond_fn, mean,variance, x, t, guidance_kwargs=None):
+    def condition_mean(self, cond_fn, mean, variance, x, t, guidance_kwargs=None):
         """
         Compute the mean for the previous step, given a function cond_fn that
         computes the gradient of a conditional log probability with respect to
@@ -626,11 +625,11 @@ class GaussianDiffusion(nn.Module):
         condition on y.
         This uses the conditioning strategy from Sohl-Dickstein et al. (2015).
         """
-        gradient = cond_fn(x, t, **guidance_kwargs)
+        gradient = cond_fn(x, t) #, **guidance_kwargs
         new_mean = (
             mean.float() + variance * gradient.float()
         )
-        print("gradient: ",(variance * gradient.float()).mean())
+        # print("gradient: ",(variance * gradient.float()).mean())
         return new_mean
 
         
@@ -641,7 +640,7 @@ class GaussianDiffusion(nn.Module):
         model_mean, variance, model_log_variance, x_start = self.p_mean_variance(
             x = x, t = batched_times, x_self_cond = x_self_cond, clip_denoised = True
         )
-        if exists(cond_fn) and exists(guidance_kwargs):
+        if exists(cond_fn): # and exists(guidance_kwargs):
             model_mean = self.condition_mean(cond_fn, model_mean, variance, x, batched_times, guidance_kwargs)
         
         noise = torch.randn_like(x) if t > 0 else 0. # no noise if t == 0
