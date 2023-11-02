@@ -128,6 +128,43 @@ class MyMLP(nn.Module):
         x = torch.cat((x1_emb, x2_emb, t_emb), dim=-1)
         x = self.joint_mlp(x)
         return x
+    
+class MyMLP6dim(nn.Module):
+    def __init__(self, hidden_size: int = 128, hidden_layers: int = 3, emb_size: int = 128,
+                 time_emb: str = "sinusoidal", input_emb: str = "sinusoidal"):
+        super().__init__()
+
+        self.time_mlp = PositionalEmbedding(emb_size, time_emb)
+        self.input_mlp1 = PositionalEmbedding(emb_size, input_emb, scale=25.0)
+        self.input_mlp2 = PositionalEmbedding(emb_size, input_emb, scale=25.0)
+        self.input_mlp3 = PositionalEmbedding(emb_size, input_emb, scale=25.0)
+        self.input_mlp4 = PositionalEmbedding(emb_size, input_emb, scale=25.0)
+        self.input_mlp5 = PositionalEmbedding(emb_size, input_emb, scale=25.0)
+        self.input_mlp6 = PositionalEmbedding(emb_size, input_emb, scale=25.0)
+
+        self.channels = 1
+        self.self_condition = False
+        concat_size = len(self.time_mlp.layer) + \
+            len(self.input_mlp1.layer) + len(self.input_mlp2.layer) + \
+            len(self.input_mlp3.layer) + len(self.input_mlp4.layer) + \
+            len(self.input_mlp5.layer) + len(self.input_mlp6.layer)
+        layers = [nn.Linear(concat_size, hidden_size), nn.GELU()]
+        for _ in range(hidden_layers):
+            layers.append(Block(hidden_size))
+        layers.append(nn.Linear(hidden_size, 6))
+        self.joint_mlp = nn.Sequential(*layers)
+
+    def forward(self, x, t, x_self_cond=False):
+        x1_emb = self.input_mlp1(x[:, 0])
+        x2_emb = self.input_mlp2(x[:, 1])
+        x3_emb = self.input_mlp3(x[:, 2])
+        x4_emb = self.input_mlp4(x[:, 3])
+        x5_emb = self.input_mlp5(x[:, 4])
+        x6_emb = self.input_mlp6(x[:, 5])
+        t_emb = self.time_mlp(t.squeeze())
+        x = torch.cat((x1_emb, x2_emb, x3_emb, x4_emb, x5_emb, x6_emb, t_emb), dim=-1)
+        x = self.joint_mlp(x)
+        return x
 
 class SpectralNormMLP(nn.Module):
     def __init__(self, input_size: int = 2, hidden1_size: int = 64, hidden2_size: int = 128, output_size: int = 1):
