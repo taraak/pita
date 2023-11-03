@@ -33,12 +33,14 @@ class GMM(nn.Module, TargetDistribution):
         self.device = "cuda" if use_gpu else "cpu"
         self.to(self.device)
 
+        self.original_scale_trils = self.scale_trils.clone()
+
     def to(self, device):
-        if device == "cuda":
+        if device == "cpu":
+            self.cpu()
+        else:
             if torch.cuda.is_available():
                 self.cuda()
-        else:
-            self.cpu()
 
     @property
     def distribution(self):
@@ -49,6 +51,15 @@ class GMM(nn.Module, TargetDistribution):
         return torch.distributions.MixtureSameFamily(mixture_distribution=mix,
                                                      component_distribution=com,
                                                      validate_args=False)
+    
+    def convolve(self, var_t):
+        """Convolve the current distribution with a Gaussian with covariance sigma_t."""
+        var_t = var_t.to(self.device)
+        var_trils = torch.ones((self.n_mixes, self.dim)).to(self.device) * var_t ** 0.5
+        self.scale_trils = self.scale_trils + torch.diag_embed(var_trils)
+    
+    def reset(self):
+        self.scale_trils = self.original_scale_trils.clone()
 
     @property
     def test_set(self) -> torch.Tensor:
@@ -60,9 +71,9 @@ class GMM(nn.Module, TargetDistribution):
         # distribution object which typically raises an expection related to this.
         # We manually decrease the distributions log prob to prevent them having an effect on
         # the loss/buffer.
-        mask = torch.zeros_like(log_prob)
-        mask[log_prob < -1e4] = - torch.tensor(float("inf"))
-        log_prob = log_prob + mask
+        # mask = torch.zeros_like(log_prob)
+        # mask[log_prob < -1e4] = - torch.tensor(float("inf"))
+        # log_prob = log_prob + mask
         return log_prob
 
     def sample(self, shape=(1,)):
