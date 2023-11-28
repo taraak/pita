@@ -41,6 +41,9 @@ class DoubleWellEnergy(Energy, nn.Module):
             self.register_buffer("means", torch.tensor([-1.7, 1.7]))
             self.register_buffer("scales", torch.tensor([0.5, 0.5]))
 
+    def gaussian(self, x, h_t):
+        return (1/np.sqrt(2*np.pi*h_t**2)) * np.exp(-x**2 / (2*h_t**2))
+
     def _energy_dim_1(self, x_1):
         return self._a * x_1 + self._b * x_1.pow(2) + self._c * x_1.pow(4)
 
@@ -53,6 +56,24 @@ class DoubleWellEnergy(Energy, nn.Module):
         e1 = self._energy_dim_1(x_1)
         e2 = self._energy_dim_2(x_2)
         return e1 + e2
+    
+    # def convolve(self, x, h_t, dtau):
+    #     convolved_E = np.zeros_like((x.shape[0], 1))
+    #     for i, xi in enumerate(x):
+    #     integral = np.zeros_like((x.shape[0], 1))
+    #     for tau in np.arange(-3, 3, dtau): 
+    #         integral += self._energy(tau) * self.gaussian(xi - tau, h_t) * dtau
+    #     convolved_E[i] = integral
+    #     return convolved_E
+
+        
+    # def convolve(self, x, h_t, dtau):
+    #     convolved_E = np.zeros_like((x.shape[0], 1))
+    #     integral = np.zeros_like((x.shape[0], 1))
+    #     for tau in np.arange(-3, 3, dtau): 
+    #         integral += self._energy(tau) * self.gaussian(xi - tau, h_t) * dtau
+    #     convolved_E[i] = integral
+    #     return convolved_E
 
     def log_prob(self, x):
         return torch.squeeze(-self.energy(x))
