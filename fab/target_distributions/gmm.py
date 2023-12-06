@@ -57,11 +57,11 @@ class GMM(nn.Module, TargetDistribution):
         """Convolve the current distribution with a Gaussian with covariance sigma_t."""
         # this is actually standard deviation
         var_t = var_t.to(self.device)
-        var_trils = torch.ones((self.n_mixes, self.dim)).to(self.device) * var_t ** 0.5
+        var_trils = torch.ones((self.n_mixes, self.dim)).to(self.device) * var_t
 
         if var_exploding:
             # exploding path
-            self.scale_trils = self.scale_trils + torch.diag_embed(var_trils)
+            self.scale_trils = torch.sqrt(self.scale_trils**2 + torch.diag_embed(var_trils))
         else:
             # variance preserving path
             self.locs = self.locs * torch.sqrt(1-t)
