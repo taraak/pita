@@ -58,7 +58,6 @@ class GMM(nn.Module, TargetDistribution):
         # this is actually standard deviation
         var_t = var_t.to(self.device)
         var_trils = torch.ones((self.n_mixes, self.dim)).to(self.device) * var_t 
-
         if var_exploding:
             # exploding path
             self.scale_trils = torch.sqrt(self.scale_trils**2 + torch.diag_embed(var_trils))
