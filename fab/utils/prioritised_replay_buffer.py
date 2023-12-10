@@ -31,6 +31,7 @@ class PrioritisedReplayBuffer:
                  device: str = "cpu",
                  sample_with_replacement: bool = False,
                  fill_buffer_during_init: bool = True,
+                 prioritize = False,
                  ):
         """
         Create prioritised replay buffer for batched sampling and adding of data.
@@ -64,6 +65,7 @@ class PrioritisedReplayBuffer:
         self.is_full = False  # whether the buffer is full
         self.can_sample = False  # whether the buffer is full enough to begin sampling
         self.sample_with_replacement = sample_with_replacement
+        self.prioritize = prioritize
 
         if fill_buffer_during_init:
             while self.can_sample is False:
@@ -98,12 +100,16 @@ class PrioritisedReplayBuffer:
             raise Exception("Buffer must be at minimum length before calling sample")
         max_index = self.max_length if self.is_full else self.current_index
         if self.sample_with_replacement:
-            # indices = torch.distributions.Categorical(logits=self.buffer.log_w[:max_index]
-            #                                           ).sample((batch_size,))
-            indices = torch.randint(max_index, (batch_size,)).to(self.device)
+            if self.prioritize:
+                indices = torch.distributions.Categorical(logits=self.buffer.log_w[:max_index]
+                                                        ).sample((batch_size,))
+            else:
+                indices = torch.randint(max_index, (batch_size,)).to(self.device)
         else:
-            # indices = sample_without_replacement(self.buffer.log_w[:max_index], batch_size).to(self.device)
-            indices = torch.randperm(max_index)[:batch_size].to(self.device)
+            if self.prioritize:
+                indices = sample_without_replacement(self.buffer.log_w[:max_index], batch_size).to(self.device)
+            else:
+                indices = torch.randperm(max_index)[:batch_size].to(self.device)
         x, log_w, log_q_old, indices = self.buffer.x[indices], self.buffer.log_w[indices], \
                                        self.buffer.log_q_old[indices], indices
         return x, log_w, log_q_old, indices
@@ -168,6 +174,7 @@ class SimpleBuffer:
                  device: str = "cpu",
                  sample_with_replacement: bool = False,
                  fill_buffer_during_init: bool = True,
+                 prioritize = False,
                  ):
         """
         Create prioritised replay buffer for batched sampling and adding of data.
@@ -200,6 +207,7 @@ class SimpleBuffer:
         self.is_full = False  # whether the buffer is full
         self.can_sample = False  # whether the buffer is full enough to begin sampling
         self.sample_with_replacement = sample_with_replacement
+        self.prioritize = prioritize
 
         if fill_buffer_during_init:
             while self.can_sample is False:
@@ -232,10 +240,16 @@ class SimpleBuffer:
             raise Exception("Buffer must be at minimum length before calling sample")
         max_index = self.max_length if self.is_full else self.current_index
         if self.sample_with_replacement:
-            indices = torch.distributions.Categorical(logits=self.buffer.energy[:max_index]
-                                                      ).sample((batch_size,))
+            if self.prioritize:
+                indices = torch.distributions.Categorical(logits=self.buffer.energy[:max_index]
+                                                        ).sample((batch_size,))
+            else:
+                indices = torch.randint(max_index, (batch_size,)).to(self.device)
         else:
-            indices = sample_without_replacement(self.buffer.energy[:max_index], batch_size).to(self.device)
+            if self.prioritize:
+                indices = sample_without_replacement(self.buffer.energy[:max_index], batch_size).to(self.device)
+            else:
+                indices = torch.randperm(max_index)[:batch_size].to(self.device)
         x, energy, indices = self.buffer.x[indices], self.buffer.energy[indices], indices
         return x, energy, indices
 
