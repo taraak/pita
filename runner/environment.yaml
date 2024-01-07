@@ -41,3 +41,14 @@ dependencies:
       - hydra-optuna-sweeper
       - hydra-colorlog
       - rootutils
+      - normflows
+      - nflows
+      - einops
+      - ipdb
+      - torchsde
+      - torchdiffeq
+      - torchcfm
+      - black
+      - flake8
+      - isort
+      - jupyter-black
