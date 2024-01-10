@@ -1,8 +1,9 @@
 import torch
 
+
 class VEReverseSDE(torch.nn.Module):
-    noise_type = 'diagonal'
-    sde_type = 'ito'
+    noise_type = "diagonal"
+    sde_type = "ito"
 
     def __init__(self, score, noise_schedule):
         super().__init__()
@@ -13,7 +14,7 @@ class VEReverseSDE(torch.nn.Module):
         with torch.enable_grad():
             if t.dim() == 0:
                 # repeat the same time for all points if we have a scalar time
-                t = t * torch.ones(x.shape[0]).to(device)
+                t = t * torch.ones(x.shape[0]).to(x.device)
 
             x.requires_grad = True
             score = self.score(x, t, self.noise_schedule)

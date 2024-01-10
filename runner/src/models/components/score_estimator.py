@@ -1,6 +1,9 @@
 import torch
-from src.data import BaseEnergyFunction
-from src.models.components import BaseNoiseSchedule
+import numpy as np
+from src.energies.base_energy_function import BaseEnergyFunction
+from src.models.components.noise_schedules import BaseNoiseSchedule
+from src.models.components.clipper import Clipper
+
 
 def log_expectation_reward(
     t: torch.Tensor,
@@ -8,7 +11,7 @@ def log_expectation_reward(
     energy_function: BaseEnergyFunction,
     noise_schedule: BaseNoiseSchedule,
     num_mc_samples: int,
-    clipper: Clipper = None
+    clipper: Clipper = None,
 ):
     repeated_t = t.unsqueeze(0).repeat_interleave(num_mc_samples, dim=0)
     repeated_x = x.unsqueeze(0).repeat_interleave(num_mc_samples, dim=0)
@@ -24,24 +27,17 @@ def log_expectation_reward(
 
     return torch.logsumexp(log_rewards, dim=-1) - np.log(num_mc_samples)
 
+
 def estimate_grad_Rt(
     t: torch.Tensor,
     x: torch.Tensor,
     energy_function: BaseEnergyFunction,
     noise_schedule: BaseNoiseSchedule,
-    num_mc_samples: int
+    num_mc_samples: int,
 ):
     grad_fxn = torch.func.grad(log_expectation_reward)
     vmapped_fxn = torch.vmap(
-        grad_fxn,
-        in_dims=(0, 0, None, None, None),
-        randomness='different'
+        grad_fxn, in_dims=(0, 0, None, None, None), randomness="different"
     )
 
-    return vmapped_fxn(
-        t,
-        x,
-        energy_function,
-        noise_schedule,
-        num_mc_samples
-    )
+    return vmapped_fxn(t, x, energy_function, noise_schedule, num_mc_samples)

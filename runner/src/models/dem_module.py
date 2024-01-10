@@ -1,11 +1,19 @@
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 from lightning import LightningModule
+from src.energies.base_energy_function import BaseEnergyFunction
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 
-from .dem.utils.buffers import PrioritizedBuffer
+from .components.noise_schedules import BaseNoiseSchedule
+from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
+from .components.score_estimator import estimate_grad_Rt
+from .components.sdes import VEReverseSDE
+
+
+class Clipper:
+    pass
 
 
 class DEMLitModule(LightningModule):
@@ -49,8 +57,8 @@ class DEMLitModule(LightningModule):
         scheduler: torch.optim.lr_scheduler,
         energy_function: BaseEnergyFunction,
         noise_schedule: BaseNoiseSchedule,
-        buffer: PrioritizedBuffer,
-        epoch_sample_period: int,
+        buffer: PrioritisedReplayBuffer,
+        num_samples_per_training_step: int,
         compile: bool,
         clipper: Optional[Clipper] = None,
     ) -> None:
@@ -74,12 +82,12 @@ class DEMLitModule(LightningModule):
         self.noise_schedule = noise_schedule
         self.buffer = buffer
 
-        self.epoch_sample_period = epoch_sample_period
-        self.reverse_sde = VEReverseSDE(self.net)
+        self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
 
         self.clipper = clipper
 
         self.train_loss = MeanMetric()
+        self.num_samples_per_training_step = num_samples_per_training_step
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -95,26 +103,29 @@ class DEMLitModule(LightningModule):
     def should_train_cfm(self, batch_idx: int) -> bool:
         return False
 
-    def get_loss(
-        self,
-        samples: torch.Tensor,
-        times: torch.Tensor
-    ) -> torch.Tensor:
-        estimated_score = estimate_score(times, iter_samples, self.noise_schedule)
+    def get_loss(self, times: torch.Tensor, samples: torch.Tensor) -> torch.Tensor:
+        print(samples.shape, times.shape)
+        estimated_score = estimate_grad_Rt(
+            times,
+            samples,
+            self.energy_function,
+            self.noise_schedule,
+            num_mc_samples=self.num_samples_per_training_step,
+        )
         if self.clipper is not None and self.clipper.should_clip_scores:
             estimated_score = self.clipper(estimated_score)
 
-        predicted_score = self.forward(times, iter_samples)
+        predicted_score = self.forward(times, samples)
+        print(predicted_score.shape, estimated_score.shape)
 
-        return torch.linalg.vector_norm(
-            predicted_score - estimated_score,
-            dim=-1
-        ).pow(2).mean()
+        return (
+            torch.linalg.vector_norm(predicted_score - estimated_score, dim=-1)
+            .pow(2)
+            .mean()
+        )
 
     def training_step(
-        self,
-        batch: Tuple[torch.Tensor, torch.Tensor],
-        batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         """Perform a single training step on a batch of data from the training set.
 
@@ -126,15 +137,16 @@ class DEMLitModule(LightningModule):
         iter_samples = self.buffer.sample(self.num_samples_per_training_step)
 
         times = torch.rand(
-            (self.num_samples_per_training_step,),
-            device=iter_samples.device
+            (self.num_samples_per_training_step,), device=iter_samples.device
         )
 
-        loss = self.get_loss(iter_samples, times)
+        loss = self.get_loss(times, iter_samples)
 
         # update and log metrics
         self.train_loss(loss)
-        self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
+        )
 
         if self.should_train_cfm(batch_idx):
             loss = loss + self.get_cfm_loss(iter_samples, times)
@@ -143,15 +155,10 @@ class DEMLitModule(LightningModule):
         return loss
 
     def generate_samples(self) -> torch.Tensor:
-        integration_times = torch.linspace(
-            1.0,
-            0.0,
-            self.num_integration_steps + 1
-        )
+        integration_times = torch.linspace(1.0, 0.0, self.num_integration_steps + 1)
 
         noise = torch.randn(
-            (self.num_to_sample_per_epoch, self.energy_function.dim),
-            device=self.device
+            (self.num_to_sample_per_epoch, self.energy_function.dim), device=self.device
         ) * (self.noise_schedule.h(1) ** 0.5)
 
         trajectory = simulate_sde(self.reverse_sde, noise, integration_times)
@@ -171,12 +178,9 @@ class DEMLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        times = torch.rand(
-            (self.num_samples_per_training_step,),
-            device=iter_samples.device
-        )
-
-        loss = self.get_loss(batch, times)
+        times = torch.rand((self.num_samples_per_training_step,), device=batch.device)
+        batch = self.energy_function.sample_test_set(self.num_samples_per_training_step)
+        loss = self.get_loss(times, batch)
 
         # update and log metrics
         self.val_loss(loss)
