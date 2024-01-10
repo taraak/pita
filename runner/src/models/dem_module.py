@@ -58,6 +58,7 @@ class DEMLitModule(LightningModule):
         buffer: PrioritisedReplayBuffer,
         num_init_samples: int,
         num_samples_per_training_step: int,
+        num_to_samples_to_generate_per_epoch: int,
         num_integration_steps: int,
         compile: bool,
         clipper: Optional[Clipper] = None,
@@ -92,6 +93,7 @@ class DEMLitModule(LightningModule):
 
         self.num_init_samples = num_init_samples
         self.num_samples_per_training_step = num_samples_per_training_step
+        self.num_to_samples_to_generate_per_epoch = num_to_samples_to_generate_per_epoch
         self.num_integration_steps = num_integration_steps
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
@@ -138,7 +140,7 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        iter_samples = self.buffer.sample(self.num_samples_per_training_step)
+        iter_samples, _, _ = self.buffer.sample(self.num_samples_per_training_step)
 
         times = torch.rand(
             (self.num_samples_per_training_step,), device=iter_samples.device
@@ -167,7 +169,7 @@ class DEMLitModule(LightningModule):
         reverse_sde: VEReverseSDE = None,
         num_samples: int = None
     ) -> torch.Tensor:
-        num_samples = num_samples or self.num_to_sample_per_epoch
+        num_samples = num_samples or self.num_to_samples_to_generate_per_epoch
         noise = torch.randn(
             (num_samples, self.energy_function.dimensionality),
             device=self.device
@@ -259,6 +261,8 @@ class DEMLitModule(LightningModule):
             }
         return {"optimizer": optimizer}
 
+    def test_step(self, batch, batch_idx):
+        pass
 
 if __name__ == "__main__":
     _ = DEMLitModule(

@@ -62,6 +62,7 @@ clipper:
 
 num_init_samples: 1024
 num_samples_per_training_step: 100
+num_to_samples_to_generate_per_epoch: 512
 num_integration_steps: 1000
 
 # compile model for faster training with pytorch 2.0
