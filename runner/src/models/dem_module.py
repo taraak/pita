@@ -112,8 +112,9 @@ class DEMLitModule(LightningModule):
             self.noise_schedule,
             num_mc_samples=self.num_samples_per_training_step,
         )
+
         if self.clipper is not None and self.clipper.should_clip_scores:
-            estimated_score = self.clipper(estimated_score)
+            estimated_score = self.clipper.clip_scores(estimated_score)
 
         predicted_score = self.forward(times, samples)
         print(predicted_score.shape, estimated_score.shape)

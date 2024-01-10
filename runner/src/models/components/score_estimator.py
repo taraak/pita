@@ -22,8 +22,8 @@ def log_expectation_reward(
 
     log_rewards = energy_function(samples)
 
-    if clipper is not None and clipper.should_clip_rewards:
-        log_rewards = clipper(log_rewards)
+    if clipper is not None and clipper.should_clip_log_rewards:
+        log_rewards = clipper.clip_log_rewards(log_rewards)
 
     return torch.logsumexp(log_rewards, dim=-1) - np.log(num_mc_samples)
 
