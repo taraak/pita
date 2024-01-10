@@ -5,6 +5,7 @@ from lightning import LightningModule
 from src.energies.base_energy_function import BaseEnergyFunction
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
+from pytorch_lightning.loggers import WandbLogger
 
 from .components.clipper import Clipper
 from .components.noise_schedules import BaseNoiseSchedule
@@ -12,6 +13,15 @@ from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.score_estimator import estimate_grad_Rt
 from .components.sde_integration import integrate_sde
 from .components.sdes import VEReverseSDE
+
+
+def get_wandb_logger(loggers):
+    """Gets the wandb logger if it is the list of loggers otherwise returns None."""
+    wandb_logger = None
+    for logger in loggers:
+        if isinstance(logger, WandbLogger):
+            wandb_logger = logger
+    return wandb_logger
 
 
 class DEMLitModule(LightningModule):
@@ -204,6 +214,45 @@ class DEMLitModule(LightningModule):
         # update and log metrics
         self.val_loss(loss)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
+
+    def eval_epoch_end(self, outputs: List[Any], prefix: str):
+        wandb_logger = get_wandb_logger(self.loggers)
+        self.energy_function.log_on_epoch_end(
+            self.last_samples,
+            self.last_energies,
+            wandb_logger
+        )
+
+        if prefix == "test" and self.is_image:
+            os.makedirs("images", exist_ok=True)
+            if len(os.listdir("images")) > 0:
+                path = "/home/mila/a/alexander.tong/scratch/trajectory-inference/data/fid_stats_cifar10_train.npz"
+                from pytorch_fid import fid_score
+
+                fid = fid_score.calculate_fid_given_paths(["images", path], 256, "cuda", 2048, 0)
+                self.log(f"{prefix}/fid", fid)
+
+        ts, x, x0, x_rest = self.preprocess_epoch_end(outputs, prefix)
+        trajs, full_trajs = self.forward_eval_integrate(ts, x0, x_rest, outputs, prefix)
+
+        if self.hparams.plot:
+            if isinstance(self.dim, int):
+                plot_trajectory(
+                    x,
+                    full_trajs,
+                    title=f"{self.current_epoch}_ode",
+                    key="ode_path",
+                    wandb_logger=wandb_logger,
+                )
+            else:
+                plot_samples(
+                    trajs[-1],
+                    title=f"{self.current_epoch}_samples",
+                    wandb_logger=wandb_logger,
+                )
+
+        if prefix == "test" and not self.is_image:
+            store_trajectories(x, self.net)
 
     def on_validation_epoch_end(self) -> None:
         # TODO: Add all of our metrics here and evaluate them!

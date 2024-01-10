@@ -1,5 +1,7 @@
 import torch
 from abc import ABC, abstractmethod
+from pytorch_lightning.loggers import WandbLogger
+
 
 class BaseEnergyFunction(ABC):
     def __init__(self, dimensionality: int):
@@ -27,3 +29,11 @@ class BaseEnergyFunction(ABC):
     @abstractmethod
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
+
+    def log_on_epoch_end(
+        self,
+        latest_samples: torch.Tensor,
+        latest_energies: torch.Tensor,
+        wandb_logger: WandbLogger
+    ) -> None:
+        pass
