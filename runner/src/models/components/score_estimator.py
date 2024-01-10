@@ -7,7 +7,8 @@ def log_expectation_reward(
     x: torch.Tensor,
     energy_function: BaseEnergyFunction,
     noise_schedule: BaseNoiseSchedule,
-    num_mc_samples: int
+    num_mc_samples: int,
+    clipper: Clipper = None
 ):
     repeated_t = t.unsqueeze(0).repeat_interleave(num_mc_samples, dim=0)
     repeated_x = x.unsqueeze(0).repeat_interleave(num_mc_samples, dim=0)
@@ -15,7 +16,11 @@ def log_expectation_reward(
     h_t = noise_schedule.h(repeated_t).unsqueeze(1)
 
     samples = repeated_x + (torch.randn_like(repeated_x) * h_t.sqrt())
+
     log_rewards = energy_function(samples)
+
+    if clipper is not None and clipper.should_clip_rewards:
+        log_rewards = clipper(log_rewards)
 
     return torch.logsumexp(log_rewards, dim=-1) - np.log(num_mc_samples)
 

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 import torch
 from lightning import LightningModule
@@ -52,6 +52,7 @@ class DEMLitModule(LightningModule):
         buffer: PrioritizedBuffer,
         epoch_sample_period: int,
         compile: bool,
+        clipper: Optional[Clipper] = None,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -76,6 +77,8 @@ class DEMLitModule(LightningModule):
         self.epoch_sample_period = epoch_sample_period
         self.reverse_sde = VEReverseSDE(self.net)
 
+        self.clipper = clipper
+
         self.train_loss = MeanMetric()
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
@@ -98,6 +101,9 @@ class DEMLitModule(LightningModule):
         times: torch.Tensor
     ) -> torch.Tensor:
         estimated_score = estimate_score(times, iter_samples, self.noise_schedule)
+        if self.clipper is not None and self.clipper.should_clip_scores:
+            estimated_score = self.clipper(estimated_score)
+
         predicted_score = self.forward(times, iter_samples)
 
         return torch.linalg.vector_norm(
