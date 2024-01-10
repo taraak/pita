@@ -54,3 +54,4 @@ dependencies:
       - isort
       - jupyter-black
       - git+https://github.com/VincentStimper/resampled-base-flows.git # larsflow
+      - hydra-submitit-launcher

@@ -251,7 +251,6 @@ class DEMLitModule(LightningModule):
         if prefix == "test" and not self.is_image:
             store_trajectories(x, self.net)
 
->>>>>>> 9278a85881b163b8357761b1c89be603a26fe409
     def on_validation_epoch_end(self) -> None:
         self.eval_epoch_end('val')
 
