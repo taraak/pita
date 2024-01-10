@@ -106,6 +106,9 @@ class DEMLitModule(LightningModule):
         self.num_to_samples_to_generate_per_epoch = num_to_samples_to_generate_per_epoch
         self.num_integration_steps = num_integration_steps
 
+        self.last_samples = None
+        self.last_energies = None
+
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
 
@@ -195,10 +198,10 @@ class DEMLitModule(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
-        samples = self.generate_samples()
-        sample_energies = self.energy_function(samples)
+        self.last_samples = self.generate_samples()
+        self.last_energies = self.energy_function(self.last_samples)
 
-        self.buffer.add(samples, sample_energies)
+        self.buffer.add(self.last_samples, self.last_energies)
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
@@ -215,48 +218,17 @@ class DEMLitModule(LightningModule):
         self.val_loss(loss)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
 
-    def eval_epoch_end(self, outputs: List[Any], prefix: str):
+    def eval_epoch_end(self, prefix: str):
         wandb_logger = get_wandb_logger(self.loggers)
         self.energy_function.log_on_epoch_end(
             self.last_samples,
             self.last_energies,
+            self.buffer,
             wandb_logger
         )
 
-        if prefix == "test" and self.is_image:
-            os.makedirs("images", exist_ok=True)
-            if len(os.listdir("images")) > 0:
-                path = "/home/mila/a/alexander.tong/scratch/trajectory-inference/data/fid_stats_cifar10_train.npz"
-                from pytorch_fid import fid_score
-
-                fid = fid_score.calculate_fid_given_paths(["images", path], 256, "cuda", 2048, 0)
-                self.log(f"{prefix}/fid", fid)
-
-        ts, x, x0, x_rest = self.preprocess_epoch_end(outputs, prefix)
-        trajs, full_trajs = self.forward_eval_integrate(ts, x0, x_rest, outputs, prefix)
-
-        if self.hparams.plot:
-            if isinstance(self.dim, int):
-                plot_trajectory(
-                    x,
-                    full_trajs,
-                    title=f"{self.current_epoch}_ode",
-                    key="ode_path",
-                    wandb_logger=wandb_logger,
-                )
-            else:
-                plot_samples(
-                    trajs[-1],
-                    title=f"{self.current_epoch}_samples",
-                    wandb_logger=wandb_logger,
-                )
-
-        if prefix == "test" and not self.is_image:
-            store_trajectories(x, self.net)
-
     def on_validation_epoch_end(self) -> None:
-        # TODO: Add all of our metrics here and evaluate them!
-        pass
+        self.eval_epoch_end('val')
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
