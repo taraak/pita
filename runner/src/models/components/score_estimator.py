@@ -35,7 +35,10 @@ def estimate_grad_Rt(
     noise_schedule: BaseNoiseSchedule,
     num_mc_samples: int,
 ):
-    grad_fxn = torch.func.grad(log_expectation_reward)
+    if t.ndim == 0:
+        t = t.unsqueeze(0).repeat(len(x))
+
+    grad_fxn = torch.func.grad(log_expectation_reward, argnums=1)
     vmapped_fxn = torch.vmap(
         grad_fxn, in_dims=(0, 0, None, None, None), randomness="different"
     )

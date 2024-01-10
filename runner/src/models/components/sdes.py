@@ -17,7 +17,7 @@ class VEReverseSDE(torch.nn.Module):
                 t = t * torch.ones(x.shape[0]).to(x.device)
 
             x.requires_grad = True
-            score = self.score(x, t, self.noise_schedule)
+            score = self.score(t, x, self.noise_schedule)
 
         return self.g(t, x).pow(2) * score
 

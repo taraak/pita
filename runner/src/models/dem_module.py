@@ -6,14 +6,12 @@ from src.energies.base_energy_function import BaseEnergyFunction
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 
+from .components.clipper import Clipper
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.score_estimator import estimate_grad_Rt
+from .components.sde_integration import integrate_sde
 from .components.sdes import VEReverseSDE
-
-
-class Clipper:
-    pass
 
 
 class DEMLitModule(LightningModule):
@@ -58,7 +56,9 @@ class DEMLitModule(LightningModule):
         energy_function: BaseEnergyFunction,
         noise_schedule: BaseNoiseSchedule,
         buffer: PrioritisedReplayBuffer,
+        num_init_samples: int,
         num_samples_per_training_step: int,
+        num_integration_steps: int,
         compile: bool,
         clipper: Optional[Clipper] = None,
     ) -> None:
@@ -85,9 +85,14 @@ class DEMLitModule(LightningModule):
         self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
 
         self.clipper = clipper
+        self.clipped_grad_fxn = self.clipper.wrap_grad_fxn(estimate_grad_Rt)
 
         self.train_loss = MeanMetric()
+        self.val_loss = MeanMetric()
+
+        self.num_init_samples = num_init_samples
         self.num_samples_per_training_step = num_samples_per_training_step
+        self.num_integration_steps = num_integration_steps
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -104,7 +109,6 @@ class DEMLitModule(LightningModule):
         return False
 
     def get_loss(self, times: torch.Tensor, samples: torch.Tensor) -> torch.Tensor:
-        print(samples.shape, times.shape)
         estimated_score = estimate_grad_Rt(
             times,
             samples,
@@ -117,7 +121,6 @@ class DEMLitModule(LightningModule):
             estimated_score = self.clipper.clip_scores(estimated_score)
 
         predicted_score = self.forward(times, samples)
-        print(predicted_score.shape, estimated_score.shape)
 
         return (
             torch.linalg.vector_norm(predicted_score - estimated_score, dim=-1)
@@ -146,7 +149,11 @@ class DEMLitModule(LightningModule):
         # update and log metrics
         self.train_loss(loss)
         self.log(
-            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
+            "train/loss",
+            self.train_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True
         )
 
         if self.should_train_cfm(batch_idx):
@@ -155,14 +162,23 @@ class DEMLitModule(LightningModule):
         # return loss or backpropagation will fail
         return loss
 
-    def generate_samples(self) -> torch.Tensor:
-        integration_times = torch.linspace(1.0, 0.0, self.num_integration_steps + 1)
-
+    def generate_samples(
+        self,
+        reverse_sde: VEReverseSDE = None,
+        num_samples: int = None
+    ) -> torch.Tensor:
+        num_samples = num_samples or self.num_to_sample_per_epoch
         noise = torch.randn(
-            (self.num_to_sample_per_epoch, self.energy_function.dim), device=self.device
+            (num_samples, self.energy_function.dimensionality),
+            device=self.device
         ) * (self.noise_schedule.h(1) ** 0.5)
 
-        trajectory = simulate_sde(self.reverse_sde, noise, integration_times)
+        trajectory = integrate_sde(
+            reverse_sde or self.reverse_sde,
+            noise,
+            self.num_integration_steps + 1
+        )
+
         return trajectory[-1]
 
     def on_train_epoch_end(self) -> None:
@@ -200,6 +216,22 @@ class DEMLitModule(LightningModule):
 
         :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
         """
+        def _grad_fxn(t, x, noise_schedule):
+            return self.clipped_grad_fxn(
+                t,
+                x,
+                self.energy_function,
+                noise_schedule,
+                self.num_samples_per_training_step
+            )
+
+        reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule)
+
+        init_states = self.generate_samples(reverse_sde, self.num_init_samples)
+        init_energies = self.energy_function(init_states)
+
+        self.buffer.add(init_states, init_energies)
+
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
             self.cfm_net = torch.compile(self.cfm_net)

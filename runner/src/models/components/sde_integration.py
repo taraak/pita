@@ -14,7 +14,10 @@ def euler_maruyama_step(sde: VEReverseSDE, t: torch.Tensor, x: torch.Tensor, dt:
 
 
 def integrate_sde(
-    sde: VEReverseSDE, x0: torch.Tensor, num_integration_steps: int, reverse_time: bool
+    sde: VEReverseSDE,
+    x0: torch.Tensor,
+    num_integration_steps: int,
+    reverse_time: bool = True
 ):
     start_time = 1.0 if reverse_time else 0.0
     end_time = 1.0 - start_time
@@ -27,7 +30,7 @@ def integrate_sde(
     samples = []
     with torch.no_grad():
         for t in times:
-            x, f = euler_maruyama_step(sde, x, t, 1 / num_integration_steps)
+            x, f = euler_maruyama_step(sde, t, x, 1 / num_integration_steps)
             samples.append(x)
 
     return torch.stack(samples)

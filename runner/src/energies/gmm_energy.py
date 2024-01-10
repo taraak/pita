@@ -30,3 +30,7 @@ class GMM(BaseEnergyFunction):
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         return self.gmm.log_prob(samples)
+
+    @property
+    def dimensionality(self):
+        return 2

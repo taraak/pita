@@ -1,3 +1,6 @@
+import torch
+from typing import Optional
+
 _EPSILON = 1e-6
 
 class Clipper:
@@ -33,3 +36,13 @@ class Clipper:
 
     def clip_log_rewards(self, log_rewards: torch.Tensor) -> torch.Tensor:
         return log_rewards.clamp(min=self.min_log_reward)
+
+    def wrap_grad_fxn(self, grad_fxn):
+        def _run(*args, **kwargs):
+            scores = grad_fxn(*args, **kwargs)
+            if self.should_clip_scores:
+                scores = self.clip_scores(scores)
+
+            return scores
+
+        return _run

@@ -53,8 +53,16 @@ buffer:
   fill_buffer_during_init: False
   prioritize: True
 
+clipper:
+  _target_: src.models.components.clipper.Clipper
+  should_clip_scores: True
+  should_clip_log_rewards: False
+  max_score_norm: 50
+  min_log_reward: null
+
+num_init_samples: 1024
 num_samples_per_training_step: 100
+num_integration_steps: 1000
+
 # compile model for faster training with pytorch 2.0
 compile: False
-
-clipper: null
