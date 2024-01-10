@@ -1,11 +1,11 @@
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from lightning import LightningModule
+from pytorch_lightning.loggers import WandbLogger
 from src.energies.base_energy_function import BaseEnergyFunction
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
-from pytorch_lightning.loggers import WandbLogger
 
 from .components.clipper import Clipper
 from .components.noise_schedules import BaseNoiseSchedule
@@ -161,11 +161,7 @@ class DEMLitModule(LightningModule):
         # update and log metrics
         self.train_loss(loss)
         self.log(
-            "train/loss",
-            self.train_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True
+            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
         )
 
         if self.should_train_cfm(batch_idx):
@@ -175,20 +171,15 @@ class DEMLitModule(LightningModule):
         return loss
 
     def generate_samples(
-        self,
-        reverse_sde: VEReverseSDE = None,
-        num_samples: int = None
+        self, reverse_sde: VEReverseSDE = None, num_samples: int = None
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_to_samples_to_generate_per_epoch
         noise = torch.randn(
-            (num_samples, self.energy_function.dimensionality),
-            device=self.device
+            (num_samples, self.energy_function.dimensionality), device=self.device
         ) * (self.noise_schedule.h(1) ** 0.5)
 
         trajectory = integrate_sde(
-            reverse_sde or self.reverse_sde,
-            noise,
-            self.num_integration_steps + 1
+            reverse_sde or self.reverse_sde, noise, self.num_integration_steps + 1
         )
 
         return trajectory[-1]
@@ -218,9 +209,7 @@ class DEMLitModule(LightningModule):
     def eval_epoch_end(self, outputs: List[Any], prefix: str):
         wandb_logger = get_wandb_logger(self.loggers)
         self.energy_function.log_on_epoch_end(
-            self.last_samples,
-            self.last_energies,
-            wandb_logger
+            self.last_samples, self.last_energies, wandb_logger
         )
 
         if prefix == "test" and self.is_image:
@@ -229,7 +218,9 @@ class DEMLitModule(LightningModule):
                 path = "/home/mila/a/alexander.tong/scratch/trajectory-inference/data/fid_stats_cifar10_train.npz"
                 from pytorch_fid import fid_score
 
-                fid = fid_score.calculate_fid_given_paths(["images", path], 256, "cuda", 2048, 0)
+                fid = fid_score.calculate_fid_given_paths(
+                    ["images", path], 256, "cuda", 2048, 0
+                )
                 self.log(f"{prefix}/fid", fid)
 
         ts, x, x0, x_rest = self.preprocess_epoch_end(outputs, prefix)
@@ -267,13 +258,14 @@ class DEMLitModule(LightningModule):
 
         :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
         """
+
         def _grad_fxn(t, x, noise_schedule):
             return self.clipped_grad_fxn(
                 t,
                 x,
                 self.energy_function,
                 noise_schedule,
-                self.num_samples_per_training_step
+                self.num_samples_per_training_step,
             )
 
         reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule)
@@ -312,6 +304,7 @@ class DEMLitModule(LightningModule):
 
     def test_step(self, batch, batch_idx):
         pass
+
 
 if __name__ == "__main__":
     _ = DEMLitModule(
