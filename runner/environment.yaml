@@ -6,6 +6,7 @@
 #   libraries to be available in the system, since it installs precompiled binaries
 
 channels:
+  - nvidia
   - pytorch
   - conda-forge
   - defaults
@@ -21,7 +22,7 @@ channels:
 dependencies:
   - python=3.10
   - pytorch=2.*
-  - torchvision=0.*
+  - torchvision
   - lightning=2.*
   - torchmetrics=0.*
   - hydra-core=1.*
@@ -52,3 +53,4 @@ dependencies:
       - flake8
       - isort
       - jupyter-black
+      - git+https://github.com/VincentStimper/resampled-base-flows.git # larsflow
