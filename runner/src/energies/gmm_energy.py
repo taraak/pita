@@ -50,6 +50,13 @@ class GMM(BaseEnergyFunction):
     def dimensionality(self):
         return 2
 
+    def unnormalize(self, x, mins=-50, maxs=50):
+        '''
+            x : [ -1, 1 ]
+        '''
+        x = (x + 1) / 2
+        return x * (maxs - mins) + mins
+
     def log_on_epoch_end(
         self,
         latest_samples: torch.Tensor,
@@ -82,7 +89,7 @@ class GMM(BaseEnergyFunction):
         self,
         samples,
         gen_samples=None,
-        plotting_bounds=(-1.4, 1.4)
+        plotting_bounds=(-1.4 * 40, 1.4 * 40)
     ):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 

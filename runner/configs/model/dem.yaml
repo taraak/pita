@@ -36,6 +36,7 @@ energy_function:
   loc_scaling: 40
   log_var_scaling: 1.0
   device: ${trainer.accelerator}
+  plot_samples_epoch_period: 25
 
 noise_schedule:
   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
@@ -64,6 +65,9 @@ num_init_samples: 1024
 num_samples_per_training_step: 100
 num_to_samples_to_generate_per_epoch: 512
 num_integration_steps: 1000
+
+input_scaling_factor: 50
+output_scaling_factor: null
 
 # compile model for faster training with pytorch 2.0
 compile: False

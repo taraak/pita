@@ -1,13 +1,13 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
 from src.energies.base_energy_function import BaseEnergyFunction
-from torchmetrics import MaxMetric, MeanMetric
-from torchmetrics.classification.accuracy import Accuracy
+from torchmetrics import MeanMetric
 
 from .components.clipper import Clipper
+from .components.scaling_wrapper import ScalingWrapper
 from .components.distribution_distances import compute_distribution_distances
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
@@ -17,7 +17,10 @@ from .components.sdes import VEReverseSDE
 
 
 def get_wandb_logger(loggers):
-    """Gets the wandb logger if it is the list of loggers otherwise returns None."""
+    """
+    Gets the wandb logger if it is the
+    list of loggers otherwise returns None.
+    """
     wandb_logger = None
     for logger in loggers:
         if isinstance(logger, WandbLogger):
@@ -74,6 +77,8 @@ class DEMLitModule(LightningModule):
         num_to_samples_to_generate_per_epoch: int,
         num_integration_steps: int,
         compile: bool,
+        input_scaling_factor: Optional[float] = None,
+        output_scaling_factor: Optional[float] = None,
         clipper: Optional[Clipper] = None,
     ) -> None:
         """Initialize a `MNISTLitModule`.
@@ -89,8 +94,18 @@ class DEMLitModule(LightningModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
 
-        self.net = net
-        self.cfm_net = cfm_net
+        if input_scaling_factor is not None or output_scaling_factor is not None:
+            self.net = ScalingWrapper(
+                net,
+                input_scaling_factor,
+                output_scaling_factor
+            )
+
+            self.cfm_net = ScalingWrapper(
+                cfm_net,
+                input_scaling_factor,
+                output_scaling_factor
+            )
 
         self.energy_function = energy_function
         self.noise_schedule = noise_schedule
