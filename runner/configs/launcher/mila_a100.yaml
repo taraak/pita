@@ -14,4 +14,4 @@ hydra:
     #exclude: cn-g[005-012,014,017-026] # exclude mig for ddp
     array_parallelism: 10 # max num of tasks to run in parallel (via job array)
     setup:
-      - "miniconda activate ${oc.env:MICROMAMBA_ENV}"
+      - "micromamba activate ${oc.env:MICROMAMBA_ENV}"

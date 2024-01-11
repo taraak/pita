@@ -15,4 +15,4 @@ hydra:
     #max_num_timeout: 50
     array_parallelism: 64 # max num of tasks to run in parallel (via job array)
     setup:
-      - "miniconda activate ${oc.env:MICROMAMBA_ENV}"
+      - "micromamba activate ${oc.env:MICROMAMBA_ENV}"
