@@ -80,7 +80,7 @@ class DEMLitModule(LightningModule):
         buffer: PrioritisedReplayBuffer,
         num_init_samples: int,
         num_estimator_mc_samples: int,
-        num_to_samples_to_generate_per_epoch: int,
+        num_samples_to_generate_per_epoch: int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
         compile: bool,
@@ -142,7 +142,7 @@ class DEMLitModule(LightningModule):
 
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
-        self.num_to_samples_to_generate_per_epoch = num_to_samples_to_generate_per_epoch
+        self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
         self.num_integration_steps = num_integration_steps
         self._prior = None
 
@@ -204,11 +204,11 @@ class DEMLitModule(LightningModule):
         :return: A tensor of losses between model predictions and targets.
         """
         iter_samples, _, _ = self.buffer.sample(
-            self.num_to_samples_to_generate_per_epoch
+            self.num_samples_to_generate_per_epoch
         )
 
         times = torch.rand(
-            (self.num_to_samples_to_generate_per_epoch,),
+            (self.num_samples_to_generate_per_epoch,),
             device=iter_samples.device
         )
 
@@ -237,7 +237,7 @@ class DEMLitModule(LightningModule):
         num_samples: Optional[int] = None,
         return_full_trajectory: bool = False,
     ) -> torch.Tensor:
-        num_samples = num_samples or self.num_to_samples_to_generate_per_epoch
+        num_samples = num_samples or self.num_samples_to_generate_per_epoch
         samples = torch.randn(
             (num_samples, self.energy_function.dimensionality),
             device=self.device
@@ -278,7 +278,11 @@ class DEMLitModule(LightningModule):
 
 
     def compute_nll(self, samples: torch.Tensor):
-        aug_samples = torch.cat([samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1)
+        aug_samples = torch.cat(
+            [samples, torch.zeros(samples.shape[0], 1, device=samples.device)],
+            dim=-1
+        )
+
         aug_output = self.cnf.integrate(aug_samples, self.num_integration_steps)[-1]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
         log_p_1 = self.prior.log_prob(x_1)
@@ -301,12 +305,12 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         times = torch.rand(
-            (self.num_to_samples_to_generate_per_epoch,),
+            (self.num_samples_to_generate_per_epoch,),
             device=batch.device
         )
 
         batch = self.energy_function.sample_test_set(
-            self.num_to_samples_to_generate_per_epoch
+            self.num_samples_to_generate_per_epoch
         )
 
         noised_batch = batch + (

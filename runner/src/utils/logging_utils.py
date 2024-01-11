@@ -1,3 +1,5 @@
+import PIL
+
 from typing import Any, Dict
 
 from lightning_utilities.core.rank_zero import rank_zero_only
@@ -55,3 +57,14 @@ def log_hyperparameters(object_dict: Dict[str, Any]) -> None:
     # send hparams to all loggers
     for logger in trainer.loggers:
         logger.log_hyperparams(hparams)
+
+
+def fig_to_image(fig):
+    fig.canvas.draw()
+
+    return PIL.Image.frombytes(
+        'RGB',
+        fig.canvas.get_width_height(),
+        fig.canvas.tostring_rgb()
+    )
+
