@@ -40,8 +40,8 @@ energy_function:
 
 noise_schedule:
   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-  sigma_min: 0.5
-  sigma_max: 1000
+  sigma_min: 0.1
+  sigma_max: 50
 
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
@@ -66,13 +66,17 @@ lambda_weighter:
   _partial_: true
   epsilon: 1e-3
 
+score_scaler: null
+
 num_init_samples: 1024
 num_estimator_mc_samples: 100
 num_to_samples_to_generate_per_epoch: 512
 num_integration_steps: 1000
 
+lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
+
 input_scaling_factor: 50
 output_scaling_factor: null
 
 # compile model for faster training with pytorch 2.0
-compile: False
+compile: false

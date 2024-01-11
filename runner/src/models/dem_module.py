@@ -10,6 +10,7 @@ from src.energies.base_energy_function import BaseEnergyFunction
 
 from .components.clipper import Clipper
 from .components.scaling_wrapper import ScalingWrapper
+from .components.score_scaler import BaseScoreScaler
 from .components.distribution_distances import compute_distribution_distances
 from .components.lambda_weighter import BaseLambdaWeighter
 from .components.noise_schedules import BaseNoiseSchedule
@@ -81,10 +82,12 @@ class DEMLitModule(LightningModule):
         num_estimator_mc_samples: int,
         num_to_samples_to_generate_per_epoch: int,
         num_integration_steps: int,
+        lr_scheduler_update_frequency: int,
         compile: bool,
         input_scaling_factor: Optional[float] = None,
         output_scaling_factor: Optional[float] = None,
         clipper: Optional[Clipper] = None,
+        score_scaler: Optional[BaseScoreScaler] = None
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -111,6 +114,14 @@ class DEMLitModule(LightningModule):
                 input_scaling_factor,
                 output_scaling_factor
             )
+
+        self.score_scaler = None
+        if score_scaler is not None:
+            self.score_scaler = self.hparams.score_scaler(noise_schedule)
+
+            self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
+            self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
+
         self.cnf = CNF(self.net)
 
         self.energy_function = energy_function
@@ -166,6 +177,12 @@ class DEMLitModule(LightningModule):
         if self.clipper is not None and self.clipper.should_clip_scores:
             estimated_score = self.clipper.clip_scores(estimated_score)
 
+        if self.score_scaler is not None:
+            estimated_score = self.score_scaler.scale_target_score(
+                estimated_score,
+                times
+            )
+
         predicted_score = self.forward(times, samples)
 
         error_norms = torch.linalg.vector_norm(
@@ -194,7 +211,12 @@ class DEMLitModule(LightningModule):
             device=iter_samples.device
         )
 
-        loss = self.get_loss(times, iter_samples)
+        noised_samples = iter_samples + (
+            torch.randn_like(iter_samples) *
+            self.noise_schedule.h(times).sqrt().unsqueeze(-1)
+        )
+
+        loss = self.get_loss(times, noised_samples)
 
         # update and log metrics
         self.train_loss(loss)
@@ -293,17 +315,19 @@ class DEMLitModule(LightningModule):
 
         # generate data --> noise
         nll, forwards_samples, logdetjac = self.compute_nll(batch)
-        loss_metric = self.val_loss if prefix == "val" else self.test_loss
         nll_metric = self.val_nll if prefix == "val" else self.test_nll
         nll_metric.update(nll)
 
-        # update and log metrics
-        loss_metric(loss)
-        self.log(
-            f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
-        )
         self.log(
             f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
+        )
+
+        # update and log metrics
+        loss_metric = self.val_loss if prefix == "val" else self.test_loss
+        loss_metric(loss)
+
+        self.log(
+            f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
         )
         self.eval_step_outputs.append(
             {"data_0": batch, "gen_0": backwards_samples, "gen_1": forwards_samples}
@@ -390,7 +414,7 @@ class DEMLitModule(LightningModule):
                     "scheduler": scheduler,
                     "monitor": "val/loss",
                     "interval": "epoch",
-                    "frequency": 1,
+                    "frequency": self.hparams.lr_scheduler_update_frequency,
                 },
             }
         return {"optimizer": optimizer}

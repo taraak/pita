@@ -9,6 +9,14 @@ from fab.utils.plotting import plot_contours, plot_marginal_pair
 from src.models.components.replay_buffer import ReplayBuffer
 from src.energies.base_energy_function import BaseEnergyFunction
 
+def fig_to_image(fig):
+    fig.canvas.draw()
+
+    return PIL.Image.frombytes(
+        'RGB',
+        fig.canvas.get_width_height(),
+        fig.canvas.tostring_rgb()
+    )
 
 class GMM(BaseEnergyFunction):
     def __init__(
@@ -86,6 +94,15 @@ class GMM(BaseEnergyFunction):
                 [samples_fig]
             )
 
+            if latest_samples is not None:
+                fig, ax = plt.subplots()
+                ax.scatter(*latest_samples.detach().cpu().T)
+
+                wandb_logger.log_image(
+                    f'{prefix}generated_samples_scatter',
+                    [fig_to_image(fig)]
+                )
+
         self.curr_epoch += 1
 
     def get_dataset_fig(
@@ -127,9 +144,4 @@ class GMM(BaseEnergyFunction):
 
         self.gmm.to(self.device)
 
-        fig.canvas.draw()
-        return PIL.Image.frombytes(
-            'RGB',
-            fig.canvas.get_width_height(),
-            fig.canvas.tostring_rgb()
-        )
+        return fig_to_image(fig)
