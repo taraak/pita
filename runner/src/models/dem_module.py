@@ -1,0 +1,410 @@
+from typing import Any, Dict, Optional, Tuple
+
+import torch
+from lightning import LightningModule
+from lightning.pytorch.loggers import WandbLogger
+from src.energies.base_energy_function import BaseEnergyFunction
+from torchmetrics import MeanMetric
+
+from src.energies.base_energy_function import BaseEnergyFunction
+
+from .components.clipper import Clipper
+from .components.scaling_wrapper import ScalingWrapper
+from .components.distribution_distances import compute_distribution_distances
+from .components.lambda_weighter import BaseLambdaWeighter
+from .components.noise_schedules import BaseNoiseSchedule
+from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
+from .components.score_estimator import estimate_grad_Rt
+from .components.sde_integration import integrate_sde
+from .components.sdes import VEReverseSDE
+from .components.cnf import CNF
+
+
+def get_wandb_logger(loggers):
+    """
+    Gets the wandb logger if it is the
+    list of loggers otherwise returns None.
+    """
+    wandb_logger = None
+    for logger in loggers:
+        if isinstance(logger, WandbLogger):
+            wandb_logger = logger
+            break
+
+    return wandb_logger
+
+
+class DEMLitModule(LightningModule):
+    """Example of a `LightningModule` for MNIST classification.
+
+    A `LightningModule` implements 8 key methods:
+
+    ```python
+    def __init__(self):
+    # Define initialization code here.
+
+    def setup(self, stage):
+    # Things to setup before each stage, 'fit', 'validate', 'test', 'predict'.
+    # This hook is called on every process when using DDP.
+
+    def training_step(self, batch, batch_idx):
+    # The complete training step.
+
+    def validation_step(self, batch, batch_idx):
+    # The complete validation step.
+
+    def test_step(self, batch, batch_idx):
+    # The complete test step.
+
+    def predict_step(self, batch, batch_idx):
+    # The complete predict step.
+
+    def configure_optimizers(self):
+    # Define and configure optimizers and LR schedulers.
+    ```
+
+    Docs:
+        https://lightning.ai/docs/pytorch/latest/common/lightning_module.html
+    """
+
+    def __init__(
+        self,
+        net: torch.nn.Module,
+        cfm_net: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler,
+        energy_function: BaseEnergyFunction,
+        noise_schedule: BaseNoiseSchedule,
+        lambda_weighter: BaseLambdaWeighter,
+        buffer: PrioritisedReplayBuffer,
+        num_init_samples: int,
+        num_estimator_mc_samples: int,
+        num_to_samples_to_generate_per_epoch: int,
+        num_integration_steps: int,
+        compile: bool,
+        input_scaling_factor: Optional[float] = None,
+        output_scaling_factor: Optional[float] = None,
+        clipper: Optional[Clipper] = None,
+    ) -> None:
+        """Initialize a `MNISTLitModule`.
+
+        :param net: The model to train.
+        :param optimizer: The optimizer to use for training.
+        :param scheduler: The learning rate scheduler to use for training.
+        :param buffer: Buffer of sampled objects
+        """
+        super().__init__()
+
+        # this line allows to access init params with 'self.hparams' attribute
+        # also ensures init params will be stored in ckpt
+        self.save_hyperparameters(logger=False)
+
+        if input_scaling_factor is not None or output_scaling_factor is not None:
+            self.net = ScalingWrapper(
+                net,
+                input_scaling_factor,
+                output_scaling_factor
+            )
+
+            self.cfm_net = ScalingWrapper(
+                cfm_net,
+                input_scaling_factor,
+                output_scaling_factor
+            )
+        self.cnf = CNF(self.net)
+
+        self.energy_function = energy_function
+        self.noise_schedule = noise_schedule
+        self.buffer = buffer
+
+        self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
+
+        self.clipper = clipper
+        self.clipped_grad_fxn = self.clipper.wrap_grad_fxn(estimate_grad_Rt)
+
+        self.train_loss = MeanMetric()
+        self.val_loss = MeanMetric()
+        self.test_loss = MeanMetric()
+        self.val_nll = MeanMetric()
+        self.test_nll = MeanMetric()
+
+        self.num_init_samples = num_init_samples
+        self.num_estimator_mc_samples = num_estimator_mc_samples
+        self.num_to_samples_to_generate_per_epoch = num_to_samples_to_generate_per_epoch
+        self.num_integration_steps = num_integration_steps
+        self._prior = None
+
+        self.lambda_weighter = self.hparams.lambda_weighter(self.noise_schedule)
+
+        self.last_samples = None
+        self.last_energies = None
+        self.eval_step_outputs = []
+
+    def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        """Perform a forward pass through the model `self.net`.
+
+        :param x: A tensor of images.
+        :return: A tensor of logits.
+        """
+        return self.net(t, x)
+
+    def get_cfm_loss(self) -> torch.Tensor:
+        raise NotImplementedError
+
+    def should_train_cfm(self, batch_idx: int) -> bool:
+        return False
+
+    def get_loss(self, times: torch.Tensor, samples: torch.Tensor) -> torch.Tensor:
+        estimated_score = estimate_grad_Rt(
+            times,
+            samples,
+            self.energy_function,
+            self.noise_schedule,
+            num_mc_samples=self.num_estimator_mc_samples,
+        )
+
+        if self.clipper is not None and self.clipper.should_clip_scores:
+            estimated_score = self.clipper.clip_scores(estimated_score)
+
+        predicted_score = self.forward(times, samples)
+
+        error_norms = torch.linalg.vector_norm(
+            predicted_score - estimated_score,
+            dim=-1
+        ).pow(2)
+
+        return (self.lambda_weighter(times) * error_norms).mean()
+
+    def training_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+    ) -> torch.Tensor:
+        """Perform a single training step on a batch of data from the training set.
+
+        :param batch: A batch of data (a tuple) containing the input tensor of images and target
+            labels.
+        :param batch_idx: The index of the current batch.
+        :return: A tensor of losses between model predictions and targets.
+        """
+        iter_samples, _, _ = self.buffer.sample(
+            self.num_to_samples_to_generate_per_epoch
+        )
+
+        times = torch.rand(
+            (self.num_to_samples_to_generate_per_epoch,),
+            device=iter_samples.device
+        )
+
+        loss = self.get_loss(times, iter_samples)
+
+        # update and log metrics
+        self.train_loss(loss)
+        self.log(
+            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
+        )
+
+        if self.should_train_cfm(batch_idx):
+            loss = loss + self.get_cfm_loss(iter_samples, times)
+
+        # return loss or backpropagation will fail
+        return loss
+
+    def generate_samples(
+        self,
+        reverse_sde: VEReverseSDE = None,
+        num_samples: Optional[int] = None,
+        return_full_trajectory: bool = False,
+    ) -> torch.Tensor:
+        num_samples = num_samples or self.num_to_samples_to_generate_per_epoch
+        samples = torch.randn(
+            (num_samples, self.energy_function.dimensionality), device=self.device
+        ) * (self.noise_schedule.h(1) ** 0.5)
+        return self.integrate(
+            reverse_sde=reverse_sde,
+            samples=samples,
+            reverse_time=True,
+            return_full_trajectory=return_full_trajectory,
+        )
+
+    def integrate(
+        self,
+        reverse_sde: VEReverseSDE = None,
+        samples: torch.Tensor = None,
+        reverse_time=True,
+        return_full_trajectory=False,
+    ) -> torch.Tensor:
+        trajectory = integrate_sde(
+            reverse_sde or self.reverse_sde,
+            samples,
+            self.num_integration_steps + 1,
+            reverse_time=reverse_time,
+        )
+        if return_full_trajectory:
+            return trajectory
+        return trajectory[-1]
+
+    @property
+    def prior(self):
+        if self._prior is None:
+            self._prior = torch.distributions.MultivariateNormal(
+                torch.zeros(self.energy_function.dimensionality, device=self.device),
+                torch.eye(self.energy_function.dimensionality, device=self.device) * self.noise_schedule.h(1),
+            )
+        return self._prior
+
+
+    def compute_nll(self, samples: torch.Tensor):
+        aug_samples = torch.cat([samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1)
+        aug_output = self.cnf.integrate(aug_samples, self.num_integration_steps)[-1]
+        x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
+        log_p_1 = self.prior.log_prob(x_1)
+        log_p_0 = log_p_1 + logdetjac
+        nll = -log_p_0
+        return nll, x_1, logdetjac
+
+    def on_train_epoch_end(self) -> None:
+        "Lightning hook that is called when a training epoch ends."
+        self.last_samples = self.generate_samples()
+        self.last_energies = self.energy_function(self.last_samples)
+
+        self.buffer.add(self.last_samples, self.last_energies)
+
+    def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
+        """Perform a single eval step on a batch of data from the validation set.
+
+        :param batch: A batch of data (a tuple) containing the input tensor of images and target
+            labels.
+        :param batch_idx: The index of the current batch.
+        """
+        times = torch.rand(
+            (self.num_to_samples_to_generate_per_epoch,),
+            device=batch.device
+        )
+
+        batch = self.energy_function.sample_test_set(
+            self.num_to_samples_to_generate_per_epoch
+        )
+
+        loss = self.get_loss(times, batch)
+
+        # generate samples noise --> data if needed
+        backwards_samples = self.last_samples
+        if backwards_samples is None:
+            backwards_samples = self.generate_samples(num_samples=len(batch))
+
+        # generate data --> noise
+        nll, forwards_samples, logdetjac = self.compute_nll(batch)
+        loss_metric = self.val_loss if prefix == "val" else self.test_loss
+        nll_metric = self.val_nll if prefix == "val" else self.test_nll
+        nll_metric.update(nll)
+
+        # update and log metrics
+        loss_metric(loss)
+        self.log(
+            f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
+        )
+        self.log(
+            f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
+        )
+        self.eval_step_outputs.append(
+            {"data_0": batch, "gen_0": backwards_samples, "gen_1": forwards_samples}
+        )
+
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+        self.eval_step("val", batch, batch_idx)
+
+    def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+        self.eval_step("test", batch, batch_idx)
+
+    def eval_epoch_end(self, prefix: str):
+        wandb_logger = get_wandb_logger(self.loggers)
+        # convert to dict of tensors assumes [batch, ...]
+        outputs = {
+            k: torch.cat([dic[k] for dic in self.eval_step_outputs], dim=0)
+            for k in self.eval_step_outputs[0]
+        }
+        self.energy_function.log_on_epoch_end(
+            self.last_samples, self.last_energies, self.buffer, wandb_logger
+        )
+
+
+        # pad with time dimension 1
+        names, dists = compute_distribution_distances(
+            outputs["gen_0"][:, None], outputs["data_0"][:, None]
+        )
+        names = [f"{prefix}/{name}" for name in names]
+        d = dict(zip(names, dists))
+        self.log_dict(d, sync_dist=True)
+        self.eval_step_outputs.clear()
+
+    def on_validation_epoch_end(self) -> None:
+        self.eval_epoch_end("val")
+
+    def on_test_epoch_end(self) -> None:
+        self.eval_epoch_end("test")
+
+    def setup(self, stage: str) -> None:
+        """Lightning hook that is called at the beginning of fit (train + validate), validate,
+        test, or predict.
+
+        This is a good hook when you need to build models dynamically or adjust something about
+        them. This hook is called on every process when using DDP.
+
+        :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
+        """
+
+        def _grad_fxn(t, x):
+            return self.clipped_grad_fxn(
+                t,
+                x,
+                self.energy_function,
+                self.noise_schedule,
+                self.num_estimator_mc_samples,
+            )
+
+        reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule)
+
+        init_states = self.generate_samples(reverse_sde, self.num_init_samples)
+        init_energies = self.energy_function(init_states)
+
+        self.buffer.add(init_states, init_energies)
+
+        if self.hparams.compile and stage == "fit":
+            self.net = torch.compile(self.net)
+            self.cfm_net = torch.compile(self.cfm_net)
+
+    def configure_optimizers(self) -> Dict[str, Any]:
+        """Choose what optimizers and learning-rate schedulers to use in your optimization.
+        Normally you'd need one. But in the case of GANs or similar you might have multiple.
+
+        Examples:
+            https://lightning.ai/docs/pytorch/latest/common/lightning_module.html#configure-optimizers
+
+        :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
+        """
+        optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
+        if self.hparams.scheduler is not None:
+            scheduler = self.hparams.scheduler(optimizer=optimizer)
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "monitor": "val/loss",
+                    "interval": "epoch",
+                    "frequency": 1,
+                },
+            }
+        return {"optimizer": optimizer}
+
+
+if __name__ == "__main__":
+    _ = DEMLitModule(
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
