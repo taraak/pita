@@ -65,6 +65,9 @@ class GMM(BaseEnergyFunction):
         wandb_logger: WandbLogger,
         prefix: str = ''
     ) -> None:
+        if wandb_logger is None:
+            return
+
         if len(prefix) > 0 and prefix[-1] != '/':
             prefix += '/'
 

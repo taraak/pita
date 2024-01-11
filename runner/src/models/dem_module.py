@@ -6,6 +6,8 @@ from lightning.pytorch.loggers import WandbLogger
 from src.energies.base_energy_function import BaseEnergyFunction
 from torchmetrics import MeanMetric
 
+from src.energies.base_energy_function import BaseEnergyFunction
+
 from .components.clipper import Clipper
 from .components.scaling_wrapper import ScalingWrapper
 from .components.distribution_distances import compute_distribution_distances
@@ -15,6 +17,7 @@ from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.score_estimator import estimate_grad_Rt
 from .components.sde_integration import integrate_sde
 from .components.sdes import VEReverseSDE
+from .components.cnf import CNF
 
 
 def get_wandb_logger(loggers):
@@ -108,6 +111,7 @@ class DEMLitModule(LightningModule):
                 input_scaling_factor,
                 output_scaling_factor
             )
+        self.cnf = CNF(self.net)
 
         self.energy_function = energy_function
         self.noise_schedule = noise_schedule
@@ -120,11 +124,15 @@ class DEMLitModule(LightningModule):
 
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
+        self.test_loss = MeanMetric()
+        self.val_nll = MeanMetric()
+        self.test_nll = MeanMetric()
 
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_to_samples_to_generate_per_epoch = num_to_samples_to_generate_per_epoch
         self.num_integration_steps = num_integration_steps
+        self._prior = None
 
         self.lambda_weighter = self.hparams.lambda_weighter(self.noise_schedule)
 
@@ -201,18 +209,57 @@ class DEMLitModule(LightningModule):
         return loss
 
     def generate_samples(
-        self, reverse_sde: VEReverseSDE = None, num_samples: int = None
+        self,
+        reverse_sde: VEReverseSDE = None,
+        num_samples: Optional[int] = None,
+        return_full_trajectory: bool = False,
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_to_samples_to_generate_per_epoch
-        noise = torch.randn(
+        samples = torch.randn(
             (num_samples, self.energy_function.dimensionality), device=self.device
         ) * (self.noise_schedule.h(1) ** 0.5)
-
-        trajectory = integrate_sde(
-            reverse_sde or self.reverse_sde, noise, self.num_integration_steps + 1
+        return self.integrate(
+            reverse_sde=reverse_sde,
+            samples=samples,
+            reverse_time=True,
+            return_full_trajectory=return_full_trajectory,
         )
 
+    def integrate(
+        self,
+        reverse_sde: VEReverseSDE = None,
+        samples: torch.Tensor = None,
+        reverse_time=True,
+        return_full_trajectory=False,
+    ) -> torch.Tensor:
+        trajectory = integrate_sde(
+            reverse_sde or self.reverse_sde,
+            samples,
+            self.num_integration_steps + 1,
+            reverse_time=reverse_time,
+        )
+        if return_full_trajectory:
+            return trajectory
         return trajectory[-1]
+
+    @property
+    def prior(self):
+        if self._prior is None:
+            self._prior = torch.distributions.MultivariateNormal(
+                torch.zeros(self.energy_function.dimensionality, device=self.device),
+                torch.eye(self.energy_function.dimensionality, device=self.device) * self.noise_schedule.h(1),
+            )
+        return self._prior
+
+
+    def compute_nll(self, samples: torch.Tensor):
+        aug_samples = torch.cat([samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1)
+        aug_output = self.cnf.integrate(aug_samples, self.num_integration_steps)[-1]
+        x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
+        log_p_1 = self.prior.log_prob(x_1)
+        log_p_0 = log_p_1 + logdetjac
+        nll = -log_p_0
+        return nll, x_1, logdetjac
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
@@ -239,27 +286,33 @@ class DEMLitModule(LightningModule):
 
         loss = self.get_loss(times, batch)
 
-        samples = self.last_samples
-        if samples is None:
-            samples = self.generate_samples(num_samples=len(batch))
+        # generate samples noise --> data if needed
+        backwards_samples = self.last_samples
+        if backwards_samples is None:
+            backwards_samples = self.generate_samples(num_samples=len(batch))
+
+        # generate data --> noise
+        nll, forwards_samples, logdetjac = self.compute_nll(batch)
+        loss_metric = self.val_loss if prefix == "val" else self.test_loss
+        nll_metric = self.val_nll if prefix == "val" else self.test_nll
+        nll_metric.update(nll)
 
         # update and log metrics
-        self.val_loss(loss)
+        loss_metric(loss)
         self.log(
-            f"{prefix}/loss",
-            self.val_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True
+            f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
         )
-
-        self.eval_step_outputs.append({"data_0": batch, "gen_0": samples})
+        self.log(
+            f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
+        )
+        self.eval_step_outputs.append(
+            {"data_0": batch, "gen_0": backwards_samples, "gen_1": forwards_samples}
+        )
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         self.eval_step("val", batch, batch_idx)
 
     def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
-        print(batch)
         self.eval_step("test", batch, batch_idx)
 
     def eval_epoch_end(self, prefix: str):
@@ -272,6 +325,7 @@ class DEMLitModule(LightningModule):
         self.energy_function.log_on_epoch_end(
             self.last_samples, self.last_energies, self.buffer, wandb_logger
         )
+
 
         # pad with time dimension 1
         names, dists = compute_distribution_distances(
