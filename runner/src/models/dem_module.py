@@ -8,6 +8,7 @@ from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 
 from .components.clipper import Clipper
+from .components.distribution_distances import compute_distribution_distances
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.score_estimator import estimate_grad_Rt
@@ -108,6 +109,7 @@ class DEMLitModule(LightningModule):
 
         self.last_samples = None
         self.last_energies = None
+        self.eval_step_outputs = []
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -194,8 +196,8 @@ class DEMLitModule(LightningModule):
 
         self.buffer.add(self.last_samples, self.last_energies)
 
-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
-        """Perform a single validation step on a batch of data from the validation set.
+    def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
+        """Perform a single eval step on a batch of data from the validation set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
             labels.
@@ -205,54 +207,47 @@ class DEMLitModule(LightningModule):
         batch = self.energy_function.sample_test_set(self.num_samples_per_training_step)
         loss = self.get_loss(times, batch)
 
+        # generate samples
+        samples = self.generate_samples(num_samples=len(batch))
+
         # update and log metrics
         self.val_loss(loss)
-        self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            f"{prefix}/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True
+        )
+        self.eval_step_outputs.append({"data_0": batch, "gen_0": samples})
+
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+        self.eval_step("val", batch, batch_idx)
+
+    def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+        print(batch)
+        self.eval_step("test", batch, batch_idx)
 
     def eval_epoch_end(self, prefix: str):
         wandb_logger = get_wandb_logger(self.loggers)
+        # convert to dict of tensors assumes [batch, ...]
+        outputs = {
+            k: torch.cat([dic[k] for dic in self.eval_step_outputs], dim=0)
+            for k in self.eval_step_outputs[0]
+        }
         self.energy_function.log_on_epoch_end(
-            self.last_samples,
-            self.last_energies,
-            self.buffer,
-            wandb_logger
+            self.last_samples, self.last_energies, self.buffer, wandb_logger
         )
-
-        if prefix == "test" and self.is_image:
-            os.makedirs("images", exist_ok=True)
-            if len(os.listdir("images")) > 0:
-                path = "/home/mila/a/alexander.tong/scratch/trajectory-inference/data/fid_stats_cifar10_train.npz"
-                from pytorch_fid import fid_score
-
-                fid = fid_score.calculate_fid_given_paths(
-                    ["images", path], 256, "cuda", 2048, 0
-                )
-                self.log(f"{prefix}/fid", fid)
-
-        ts, x, x0, x_rest = self.preprocess_epoch_end(outputs, prefix)
-        trajs, full_trajs = self.forward_eval_integrate(ts, x0, x_rest, outputs, prefix)
-
-        if self.hparams.plot:
-            if isinstance(self.dim, int):
-                plot_trajectory(
-                    x,
-                    full_trajs,
-                    title=f"{self.current_epoch}_ode",
-                    key="ode_path",
-                    wandb_logger=wandb_logger,
-                )
-            else:
-                plot_samples(
-                    trajs[-1],
-                    title=f"{self.current_epoch}_samples",
-                    wandb_logger=wandb_logger,
-                )
-
-        if prefix == "test" and not self.is_image:
-            store_trajectories(x, self.net)
+        # pad with time dimension 1
+        names, dists = compute_distribution_distances(
+            outputs["gen_0"][:, None], outputs["data_0"][:, None]
+        )
+        names = [f"{prefix}/{name}" for name in names]
+        d = dict(zip(names, dists))
+        self.log_dict(d, sync_dist=True)
+        self.eval_step_outputs.clear()
 
     def on_validation_epoch_end(self) -> None:
-        self.eval_epoch_end('val')
+        self.eval_epoch_end("val")
+
+    def on_test_epoch_end(self) -> None:
+        self.eval_epoch_end("test")
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
@@ -306,9 +301,6 @@ class DEMLitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
-
-    def test_step(self, batch, batch_idx):
-        pass
 
 
 if __name__ == "__main__":
