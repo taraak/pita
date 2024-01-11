@@ -41,7 +41,7 @@ energy_function:
 noise_schedule:
   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
   sigma_min: 0.01
-  sigma_max: 40
+  sigma_max: 80
 
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer

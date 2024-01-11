@@ -277,12 +277,12 @@ class DEMLitModule(LightningModule):
         :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
         """
 
-        def _grad_fxn(t, x, noise_schedule):
+        def _grad_fxn(t, x):
             return self.clipped_grad_fxn(
                 t,
                 x,
                 self.energy_function,
-                noise_schedule,
+                self.noise_schedule,
                 self.num_samples_per_training_step,
             )
 
