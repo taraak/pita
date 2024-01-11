@@ -1,0 +1,78 @@
+_target_: src.models.dem_module.DEMLitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: src.models.components.mlp.MyMLP
+  hidden_size: 128
+  hidden_layers: 3
+  emb_size: 128
+  time_emb: "sinusoidal"
+  input_emb: "sinusoidal"
+
+cfm_net:
+  _target_: src.models.components.mlp.MyMLP
+  hidden_size: 128
+  hidden_layers: 3
+  emb_size: 128
+  time_emb: "sinusoidal"
+  input_emb: "sinusoidal"
+
+energy_function:
+  _target_: src.energies.gmm_energy.GMM
+  dimensionality: 2
+  n_mixes: 40
+  loc_scaling: 40
+  log_var_scaling: 1.0
+  device: ${trainer.accelerator}
+  plot_samples_epoch_period: 25
+
+noise_schedule:
+  _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+  sigma_min: 0.5
+  sigma_max: 1000
+
+buffer:
+  _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
+  dim: ${model.energy_function.dimensionality}
+  max_length: 10000
+  min_sample_length: 1000
+  initial_sampler: null
+  device: ${trainer.accelerator}
+  sample_with_replacement: True
+  fill_buffer_during_init: False
+  prioritize: True
+
+clipper:
+  _target_: src.models.components.clipper.Clipper
+  should_clip_scores: True
+  should_clip_log_rewards: False
+  max_score_norm: 50
+  min_log_reward: null
+
+lambda_weighter:
+  _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
+  _partial_: true
+  epsilon: 1e-3
+
+num_init_samples: 1024
+num_estimator_mc_samples: 100
+num_to_samples_to_generate_per_epoch: 512
+num_integration_steps: 1000
+
+input_scaling_factor: 50
+output_scaling_factor: null
+
+# compile model for faster training with pytorch 2.0
+compile: False
