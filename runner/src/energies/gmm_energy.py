@@ -28,7 +28,9 @@ class GMM(BaseEnergyFunction):
         device="cpu",
         true_expectation_estimation_n_samples=int(1e5),
         plotting_buffer_sample_size=512,
-        plot_samples_epoch_period=5
+        plot_samples_epoch_period=5,
+        should_unnormalize=False,
+        data_normalization_factor=50
     ):
         use_gpu = device != "cpu"
         torch.manual_seed(0)  # seed of 0 for GMM problem
@@ -46,22 +48,33 @@ class GMM(BaseEnergyFunction):
         self.plotting_buffer_sample_size = plotting_buffer_sample_size
         self.plot_samples_epoch_period = plot_samples_epoch_period
 
+        self.should_unnormalize = should_unnormalize
+        self.data_normalization_factor = data_normalization_factor
+
         super().__init__(dimensionality=dimensionality)
 
     def setup_test_set(self):
         return self.gmm.test_set
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
+        if self.should_unnormalize:
+            samples = self.unnormalize(samples)
+
         return self.gmm.log_prob(samples)
 
     @property
     def dimensionality(self):
         return 2
 
-    def unnormalize(self, x, mins=-50, maxs=50):
+    def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
         '''
             x : [ -1, 1 ]
         '''
+        if x is None:
+            return x
+
+        maxs, mins = self.data_normalization_factor, -self.data_normalization_factor
+
         x = (x + 1) / 2
         return x * (maxs - mins) + mins
 
@@ -83,6 +96,10 @@ class GMM(BaseEnergyFunction):
             buffer_samples, _, _ = replay_buffer.sample(
                 self.plotting_buffer_sample_size
             )
+
+            if self.should_unnormalize:
+                buffer_samples = self.unnormalize(buffer_samples)
+                latest_samples = self.unnormalize(latest_samples)
 
             samples_fig = self.get_dataset_fig(
                 buffer_samples,

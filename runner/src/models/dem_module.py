@@ -102,15 +102,16 @@ class DEMLitModule(LightningModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
 
+        self.net, self.cfm_net = net, cfm_net
         if input_scaling_factor is not None or output_scaling_factor is not None:
             self.net = ScalingWrapper(
-                net,
+                self.net,
                 input_scaling_factor,
                 output_scaling_factor
             )
 
             self.cfm_net = ScalingWrapper(
-                cfm_net,
+                self.cfm_net,
                 input_scaling_factor,
                 output_scaling_factor
             )
@@ -238,8 +239,10 @@ class DEMLitModule(LightningModule):
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_to_samples_to_generate_per_epoch
         samples = torch.randn(
-            (num_samples, self.energy_function.dimensionality), device=self.device
+            (num_samples, self.energy_function.dimensionality),
+            device=self.device
         ) * (self.noise_schedule.h(1) ** 0.5)
+
         return self.integrate(
             reverse_sde=reverse_sde,
             samples=samples,
@@ -306,7 +309,12 @@ class DEMLitModule(LightningModule):
             self.num_to_samples_to_generate_per_epoch
         )
 
-        loss = self.get_loss(times, batch)
+        noised_batch = batch + (
+            torch.randn_like(batch) *
+            self.noise_schedule.h(times).sqrt().unsqueeze(-1)
+        )
+
+        loss = self.get_loss(times, noised_batch)
 
         # generate samples noise --> data if needed
         backwards_samples = self.last_samples

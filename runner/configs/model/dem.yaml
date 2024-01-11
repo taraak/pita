@@ -37,11 +37,13 @@ energy_function:
   log_var_scaling: 1.0
   device: ${trainer.accelerator}
   plot_samples_epoch_period: 25
+  should_unnormalize: true
+  data_normalization_factor: 50
 
 noise_schedule:
   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-  sigma_min: 0.1
-  sigma_max: 50
+  sigma_min: 4e-6
+  sigma_max: 0.4
 
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
@@ -75,7 +77,7 @@ num_integration_steps: 1000
 
 lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
 
-input_scaling_factor: 50
+input_scaling_factor: null
 output_scaling_factor: null
 
 # compile model for faster training with pytorch 2.0
