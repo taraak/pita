@@ -9,6 +9,7 @@ from torchmetrics import MeanMetric
 from .components.clipper import Clipper
 from .components.scaling_wrapper import ScalingWrapper
 from .components.distribution_distances import compute_distribution_distances
+from .components.lambda_weighter import BaseLambdaWeighter
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.score_estimator import estimate_grad_Rt
@@ -71,9 +72,10 @@ class DEMLitModule(LightningModule):
         scheduler: torch.optim.lr_scheduler,
         energy_function: BaseEnergyFunction,
         noise_schedule: BaseNoiseSchedule,
+        lambda_weighter: BaseLambdaWeighter,
         buffer: PrioritisedReplayBuffer,
         num_init_samples: int,
-        num_samples_per_training_step: int,
+        num_estimator_mc_samples: int,
         num_to_samples_to_generate_per_epoch: int,
         num_integration_steps: int,
         compile: bool,
@@ -120,9 +122,11 @@ class DEMLitModule(LightningModule):
         self.val_loss = MeanMetric()
 
         self.num_init_samples = num_init_samples
-        self.num_samples_per_training_step = num_samples_per_training_step
+        self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_to_samples_to_generate_per_epoch = num_to_samples_to_generate_per_epoch
         self.num_integration_steps = num_integration_steps
+
+        self.lambda_weighter = self.hparams.lambda_weighter(self.noise_schedule)
 
         self.last_samples = None
         self.last_energies = None
@@ -148,7 +152,7 @@ class DEMLitModule(LightningModule):
             samples,
             self.energy_function,
             self.noise_schedule,
-            num_mc_samples=self.num_samples_per_training_step,
+            num_mc_samples=self.num_estimator_mc_samples,
         )
 
         if self.clipper is not None and self.clipper.should_clip_scores:
@@ -156,11 +160,12 @@ class DEMLitModule(LightningModule):
 
         predicted_score = self.forward(times, samples)
 
-        return (
-            torch.linalg.vector_norm(predicted_score - estimated_score, dim=-1)
-            .pow(2)
-            .mean()
-        )
+        error_norms = torch.linalg.vector_norm(
+            predicted_score - estimated_score,
+            dim=-1
+        ).pow(2)
+
+        return (self.lambda_weighter(times) * error_norms).mean()
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -172,10 +177,13 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        iter_samples, _, _ = self.buffer.sample(self.num_samples_per_training_step)
+        iter_samples, _, _ = self.buffer.sample(
+            self.num_to_samples_to_generate_per_epoch
+        )
 
         times = torch.rand(
-            (self.num_samples_per_training_step,), device=iter_samples.device
+            (self.num_to_samples_to_generate_per_epoch,),
+            device=iter_samples.device
         )
 
         loss = self.get_loss(times, iter_samples)
@@ -220,18 +228,31 @@ class DEMLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        times = torch.rand((self.num_samples_per_training_step,), device=batch.device)
-        batch = self.energy_function.sample_test_set(self.num_samples_per_training_step)
+        times = torch.rand(
+            (self.num_to_samples_to_generate_per_epoch,),
+            device=batch.device
+        )
+
+        batch = self.energy_function.sample_test_set(
+            self.num_to_samples_to_generate_per_epoch
+        )
+
         loss = self.get_loss(times, batch)
 
-        # generate samples
-        samples = self.generate_samples(num_samples=len(batch))
+        samples = self.last_samples
+        if samples is None:
+            samples = self.generate_samples(num_samples=len(batch))
 
         # update and log metrics
         self.val_loss(loss)
         self.log(
-            f"{prefix}/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True
+            f"{prefix}/loss",
+            self.val_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True
         )
+
         self.eval_step_outputs.append({"data_0": batch, "gen_0": samples})
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
@@ -283,7 +304,7 @@ class DEMLitModule(LightningModule):
                 x,
                 self.energy_function,
                 self.noise_schedule,
-                self.num_samples_per_training_step,
+                self.num_estimator_mc_samples,
             )
 
         reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule)

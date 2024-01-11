@@ -40,8 +40,8 @@ energy_function:
 
 noise_schedule:
   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-  sigma_min: 0.01
-  sigma_max: 80
+  sigma_min: 0.5
+  sigma_max: 1000
 
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
@@ -61,8 +61,13 @@ clipper:
   max_score_norm: 50
   min_log_reward: null
 
+lambda_weighter:
+  _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
+  _partial_: true
+  epsilon: 1e-3
+
 num_init_samples: 1024
-num_samples_per_training_step: 100
+num_estimator_mc_samples: 100
 num_to_samples_to_generate_per_epoch: 512
 num_integration_steps: 1000
 
