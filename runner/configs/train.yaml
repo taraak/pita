@@ -5,6 +5,7 @@
 defaults:
   - _self_
   - data: dummy
+  - energy: gmm
   - model: dem
   - callbacks: default
   - launcher: null

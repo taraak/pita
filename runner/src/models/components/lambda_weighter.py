@@ -20,4 +20,4 @@ class BasicLambdaWeighter(BaseLambdaWeighter):
         self.epsilon = epsilon
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
-        return 1 / (self.noise_schedule.h(t) + 1e-3)
+        return 1 / (self.noise_schedule.h(t) + self.epsilon)

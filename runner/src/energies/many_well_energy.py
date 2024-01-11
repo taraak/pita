@@ -2,7 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from lightning.pytorch.loggers import WandbLogger
-from fab.target_distributions import gmm
+from fab.target_distributions.many_well import ManyWellEnergy
 from fab.utils.plotting import plot_contours, plot_marginal_pair
 
 from src.models.components.replay_buffer import ReplayBuffer
@@ -10,29 +10,22 @@ from src.energies.base_energy_function import BaseEnergyFunction
 from src.utils.logging_utils import fig_to_image
 
 
-class GMM(BaseEnergyFunction):
+class ManyWell(BaseEnergyFunction):
     def __init__(
         self,
-        dimensionality=2,
-        n_mixes=40,
-        loc_scaling=40,
-        log_var_scaling=1.0,
+        dimensionality=6,
         device="cpu",
         true_expectation_estimation_n_samples=int(1e5),
         plotting_buffer_sample_size=512,
         plot_samples_epoch_period=5,
         should_unnormalize=False,
-        data_normalization_factor=50
+        data_normalization_factor=3
     ):
-        use_gpu = device != "cpu"
-        torch.manual_seed(0)  # seed of 0 for GMM problem
-        self.gmm = gmm.GMM(
-            dim=dimensionality,
-            n_mixes=n_mixes,
-            loc_scaling=loc_scaling,
-            log_var_scaling=log_var_scaling,
-            use_gpu=use_gpu,
-            true_expectation_estimation_n_samples=true_expectation_estimation_n_samples,
+        self.many_well = ManyWellEnergy(
+            dimensionality,
+            a=-0.5,
+            b=-6,
+            use_gpu=device != 'cpu'
         )
 
         self.curr_epoch = 0
@@ -46,17 +39,13 @@ class GMM(BaseEnergyFunction):
         super().__init__(dimensionality=dimensionality)
 
     def setup_test_set(self):
-        return self.gmm.test_set
+        return self.many_well._test_set_modes
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
             samples = self.unnormalize(samples)
 
-        return self.gmm.log_prob(samples)
-
-    @property
-    def dimensionality(self):
-        return 2
+        return self.many_well.log_prob(samples)
 
     def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
         '''
@@ -103,54 +92,68 @@ class GMM(BaseEnergyFunction):
                 [samples_fig]
             )
 
-            if latest_samples is not None:
-                fig, ax = plt.subplots()
-                ax.scatter(*latest_samples.detach().cpu().T)
-
-                wandb_logger.log_image(
-                    f'{prefix}generated_samples_scatter',
-                    [fig_to_image(fig)]
-                )
-
         self.curr_epoch += 1
 
     def get_dataset_fig(
         self,
         samples,
         gen_samples=None,
-        plotting_bounds=(-1.4 * 40, 1.4 * 40)
+        plotting_bounds=(-3, 3)
     ):
-        fig, axs = plt.subplots(1, 2, figsize=(12, 4))
-
-        self.gmm.to("cpu")
-        plot_contours(
-            self.gmm.log_prob,
-            bounds=plotting_bounds,
-            ax=axs[0],
-            n_contour_levels=50,
-            grid_width_n_points=200
+        n_rows = dim // 2
+        fig, axs = plt.subplots(
+            dim // 2,
+            2,
+            sharex=True,
+            sharey=True,
+            figsize=(10, n_rows*3)
         )
 
-        # plot dataset samples
-        plot_marginal_pair(samples, ax=axs[0], bounds=plotting_bounds)
-        axs[0].set_title("Buffer")
-
-        if gen_samples is not None:
+        self.many_well.to("cpu")
+        for i in range(n_rows):
             plot_contours(
-                self.gmm.log_prob,
+                self.many_well.log_prob_2D,
                 bounds=plotting_bounds,
-                ax=axs[1],
-                n_contour_levels=50,
-                grid_width_n_points=200
+                ax=axs[i, 0],
+                n_contour_levels=40
             )
-            # plot generated samples
-            plot_marginal_pair(gen_samples, ax=axs[1], bounds=plotting_bounds)
-            axs[1].set_title("Generated samples")
 
-        # delete subplot
-        else:
-            fig.delaxes(axs[1])
+            # plot buffer samples
+            plot_marginal_pair(
+                samples,
+                ax=axs[i, 0],
+                bounds=plotting_bounds,
+                marginal_dims=(i*2, i*2+1)
+            )
 
-        self.gmm.to(self.device)
+            axs[i, 0].set_xlabel(f"dim {i*2}")
+            axs[i, 0].set_ylabel(f"dim {i*2 + 1}")
 
+            if gen_samples is not None:
+                plot_contours(
+                    target.log_prob_2D,
+                    bounds=plotting_bounds,
+                    ax=axs[i, 1],
+                    n_contour_levels=40
+                )
+
+                # plot generated samples
+                plot_marginal_pair(
+                    gen_samples,
+                    ax=axs[i, 1],
+                    bounds=plotting_bounds,
+                    marginal_dims=(i*2, i*2+1)
+                )
+
+                axs[i, 1].set_xlabel(f"dim {i*2}")
+                axs[i, 1].set_ylabel(f"dim {i*2 + 1}")
+            else:
+                fig.delaxes(axs[i, 1])
+
+
+        axs[0, 0].set_title("Dataset")
+        axs[0, 1].set_title("Generated samples")
+        plt.tight_layout()
+
+        self.many_well.to(self.device)
         return fig_to_image(fig)

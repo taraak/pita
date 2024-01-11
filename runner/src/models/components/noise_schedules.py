@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+import torch
 import numpy as np
 
 
@@ -20,7 +21,7 @@ class LinearNoiseSchedule(BaseNoiseSchedule):
         self.beta = beta
 
     def g(self, t):
-        return self.beta.sqrt()
+        return torch.full_like(t, self.beta ** 0.5)
 
     def h(self, t):
         return self.beta * t

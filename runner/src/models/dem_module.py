@@ -10,6 +10,7 @@ from src.energies.base_energy_function import BaseEnergyFunction
 
 from .components.clipper import Clipper
 from .components.scaling_wrapper import ScalingWrapper
+from .components.score_scaler import BaseScoreScaler
 from .components.distribution_distances import compute_distribution_distances
 from .components.lambda_weighter import BaseLambdaWeighter
 from .components.noise_schedules import BaseNoiseSchedule
@@ -79,12 +80,14 @@ class DEMLitModule(LightningModule):
         buffer: PrioritisedReplayBuffer,
         num_init_samples: int,
         num_estimator_mc_samples: int,
-        num_to_samples_to_generate_per_epoch: int,
+        num_samples_to_generate_per_epoch: int,
         num_integration_steps: int,
+        lr_scheduler_update_frequency: int,
         compile: bool,
         input_scaling_factor: Optional[float] = None,
         output_scaling_factor: Optional[float] = None,
         clipper: Optional[Clipper] = None,
+        score_scaler: Optional[BaseScoreScaler] = None
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -99,18 +102,27 @@ class DEMLitModule(LightningModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
 
+        self.net, self.cfm_net = net, cfm_net
         if input_scaling_factor is not None or output_scaling_factor is not None:
             self.net = ScalingWrapper(
-                net,
+                self.net,
                 input_scaling_factor,
                 output_scaling_factor
             )
 
             self.cfm_net = ScalingWrapper(
-                cfm_net,
+                self.cfm_net,
                 input_scaling_factor,
                 output_scaling_factor
             )
+
+        self.score_scaler = None
+        if score_scaler is not None:
+            self.score_scaler = self.hparams.score_scaler(noise_schedule)
+
+            self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
+            self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
+
         self.cnf = CNF(self.net)
 
         self.energy_function = energy_function
@@ -130,7 +142,7 @@ class DEMLitModule(LightningModule):
 
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
-        self.num_to_samples_to_generate_per_epoch = num_to_samples_to_generate_per_epoch
+        self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
         self.num_integration_steps = num_integration_steps
         self._prior = None
 
@@ -166,6 +178,12 @@ class DEMLitModule(LightningModule):
         if self.clipper is not None and self.clipper.should_clip_scores:
             estimated_score = self.clipper.clip_scores(estimated_score)
 
+        if self.score_scaler is not None:
+            estimated_score = self.score_scaler.scale_target_score(
+                estimated_score,
+                times
+            )
+
         predicted_score = self.forward(times, samples)
 
         error_norms = torch.linalg.vector_norm(
@@ -186,15 +204,20 @@ class DEMLitModule(LightningModule):
         :return: A tensor of losses between model predictions and targets.
         """
         iter_samples, _, _ = self.buffer.sample(
-            self.num_to_samples_to_generate_per_epoch
+            self.num_samples_to_generate_per_epoch
         )
 
         times = torch.rand(
-            (self.num_to_samples_to_generate_per_epoch,),
+            (self.num_samples_to_generate_per_epoch,),
             device=iter_samples.device
         )
 
-        loss = self.get_loss(times, iter_samples)
+        noised_samples = iter_samples + (
+            torch.randn_like(iter_samples) *
+            self.noise_schedule.h(times).sqrt().unsqueeze(-1)
+        )
+
+        loss = self.get_loss(times, noised_samples)
 
         # update and log metrics
         self.train_loss(loss)
@@ -214,10 +237,12 @@ class DEMLitModule(LightningModule):
         num_samples: Optional[int] = None,
         return_full_trajectory: bool = False,
     ) -> torch.Tensor:
-        num_samples = num_samples or self.num_to_samples_to_generate_per_epoch
+        num_samples = num_samples or self.num_samples_to_generate_per_epoch
         samples = torch.randn(
-            (num_samples, self.energy_function.dimensionality), device=self.device
+            (num_samples, self.energy_function.dimensionality),
+            device=self.device
         ) * (self.noise_schedule.h(1) ** 0.5)
+
         return self.integrate(
             reverse_sde=reverse_sde,
             samples=samples,
@@ -253,7 +278,11 @@ class DEMLitModule(LightningModule):
 
 
     def compute_nll(self, samples: torch.Tensor):
-        aug_samples = torch.cat([samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1)
+        aug_samples = torch.cat(
+            [samples, torch.zeros(samples.shape[0], 1, device=samples.device)],
+            dim=-1
+        )
+
         aug_output = self.cnf.integrate(aug_samples, self.num_integration_steps)[-1]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
         log_p_1 = self.prior.log_prob(x_1)
@@ -276,15 +305,20 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         times = torch.rand(
-            (self.num_to_samples_to_generate_per_epoch,),
+            (self.num_samples_to_generate_per_epoch,),
             device=batch.device
         )
 
         batch = self.energy_function.sample_test_set(
-            self.num_to_samples_to_generate_per_epoch
+            self.num_samples_to_generate_per_epoch
         )
 
-        loss = self.get_loss(times, batch)
+        noised_batch = batch + (
+            torch.randn_like(batch) *
+            self.noise_schedule.h(times).sqrt().unsqueeze(-1)
+        )
+
+        loss = self.get_loss(times, noised_batch)
 
         # generate samples noise --> data if needed
         backwards_samples = self.last_samples
@@ -293,17 +327,19 @@ class DEMLitModule(LightningModule):
 
         # generate data --> noise
         nll, forwards_samples, logdetjac = self.compute_nll(batch)
-        loss_metric = self.val_loss if prefix == "val" else self.test_loss
         nll_metric = self.val_nll if prefix == "val" else self.test_nll
         nll_metric.update(nll)
 
-        # update and log metrics
-        loss_metric(loss)
-        self.log(
-            f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
-        )
         self.log(
             f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
+        )
+
+        # update and log metrics
+        loss_metric = self.val_loss if prefix == "val" else self.test_loss
+        loss_metric(loss)
+
+        self.log(
+            f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
         )
         self.eval_step_outputs.append(
             {"data_0": batch, "gen_0": backwards_samples, "gen_1": forwards_samples}
@@ -390,7 +426,7 @@ class DEMLitModule(LightningModule):
                     "scheduler": scheduler,
                     "monitor": "val/loss",
                     "interval": "epoch",
-                    "frequency": 1,
+                    "frequency": self.hparams.lr_scheduler_update_frequency,
                 },
             }
         return {"optimizer": optimizer}

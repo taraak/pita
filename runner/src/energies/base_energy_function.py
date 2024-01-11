@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 import torch
 from pytorch_lightning.loggers import WandbLogger
@@ -10,10 +11,10 @@ class BaseEnergyFunction(ABC):
         self._dimensionality = dimensionality
         self._test_set = self.setup_test_set()
 
-    def setup_test_set(self):
+    def setup_test_set(self) -> Optional[torch.Tensor]:
         return None
 
-    def sample_test_set(self, num_points: int):
+    def sample_test_set(self, num_points: int) -> Optional[torch.Tensor]:
         if self.test_set is None:
             return None
 
@@ -25,7 +26,7 @@ class BaseEnergyFunction(ABC):
         return self._dimensionality
 
     @property
-    def test_set(self):
+    def test_set(self) -> Optional[torch.Tensor]:
         return self._test_set
 
     @abstractmethod
