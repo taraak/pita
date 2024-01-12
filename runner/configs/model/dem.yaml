@@ -20,6 +20,9 @@ net:
   emb_size: 128
   time_emb: "sinusoidal"
   input_emb: "sinusoidal"
+  concat_t_emb: true
+  out_dim: ${energy.dimensionality}
+  input_dim: ${energy.dimensionality}
 
 cfm_net:
   _target_: src.models.components.mlp.MyMLP
@@ -28,6 +31,9 @@ cfm_net:
   emb_size: 128
   time_emb: "sinusoidal"
   input_emb: "sinusoidal"
+  concat_t_emb: true
+  out_dim: ${energy.dimensionality}
+  input_dim: ${energy.dimensionality}
 
 noise_schedule:
   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule

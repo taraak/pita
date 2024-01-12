@@ -18,6 +18,7 @@ class ManyWell(BaseEnergyFunction):
         true_expectation_estimation_n_samples=int(1e5),
         plotting_buffer_sample_size=512,
         plot_samples_epoch_period=5,
+        test_set_size=1024,
         should_unnormalize=False,
         data_normalization_factor=3
     ):
@@ -33,13 +34,15 @@ class ManyWell(BaseEnergyFunction):
         self.plotting_buffer_sample_size = plotting_buffer_sample_size
         self.plot_samples_epoch_period = plot_samples_epoch_period
 
+        self.test_set_size = test_set_size
+
         self.should_unnormalize = should_unnormalize
         self.data_normalization_factor = data_normalization_factor
 
         super().__init__(dimensionality=dimensionality)
 
     def setup_test_set(self):
-        return self.many_well._test_set_modes
+        return self.many_well.sample((self.test_set_size,))
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
@@ -100,9 +103,9 @@ class ManyWell(BaseEnergyFunction):
         gen_samples=None,
         plotting_bounds=(-3, 3)
     ):
-        n_rows = dim // 2
+        n_rows = self.dimensionality // 2
         fig, axs = plt.subplots(
-            dim // 2,
+            self.dimensionality // 2,
             2,
             sharex=True,
             sharey=True,
@@ -131,7 +134,7 @@ class ManyWell(BaseEnergyFunction):
 
             if gen_samples is not None:
                 plot_contours(
-                    target.log_prob_2D,
+                    self.many_well.log_prob_2D,
                     bounds=plotting_bounds,
                     ax=axs[i, 1],
                     n_contour_levels=40
