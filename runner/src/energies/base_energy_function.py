@@ -14,12 +14,23 @@ class BaseEnergyFunction(ABC):
     def setup_test_set(self) -> Optional[torch.Tensor]:
         return None
 
-    def sample_test_set(self, num_points: int) -> Optional[torch.Tensor]:
+    def normalize(self, x: torch.Tensor) -> torch.Tensor:
+        return x
+
+    def sample_test_set(
+        self,
+        num_points: int,
+        normalize: bool = False
+    ) -> Optional[torch.Tensor]:
         if self.test_set is None:
             return None
 
         idxs = torch.randperm(len(self.test_set))[:num_points]
-        return self.test_set[idxs]
+        outs = self.test_set[idxs]
+        if normalize:
+            outs = self.normalize(outs)
+
+        return outs
 
     @property
     def dimensionality(self) -> int:

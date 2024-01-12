@@ -70,6 +70,11 @@ num_estimator_mc_samples: 100
 num_samples_to_generate_per_epoch: 512
 num_integration_steps: 1000
 
+nll_with_cfm: true
+cfm_sigma: 0.0
+cfm_prior_std: 1.0
+prioritize_cfm_training_samples: false
+
 lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
 
 input_scaling_factor: null

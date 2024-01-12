@@ -1,6 +1,8 @@
 import torch
 import matplotlib.pyplot as plt
 
+from typing import Optional
+
 from lightning.pytorch.loggers import WandbLogger
 from fab.target_distributions import gmm
 from fab.utils.plotting import plot_contours, plot_marginal_pair
@@ -58,6 +60,20 @@ class GMM(BaseEnergyFunction):
     def dimensionality(self):
         return 2
 
+    def normalize(self, x: torch.Tensor) -> torch.Tensor:
+        '''
+            normalizes to [-1, 1]
+        '''
+        maxs = self.data_normalization_factor
+        mins = -self.data_normalization_factor
+
+        ## [ 0, 1 ]
+        x = (x - mins) / (maxs - mins + 1e-5)
+        ## [ -1, 1 ]
+        x = x * 2 - 1
+
+        return x
+
     def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
         '''
             x : [ -1, 1 ]
@@ -74,6 +90,8 @@ class GMM(BaseEnergyFunction):
         self,
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
+        unprioritized_buffer_samples: Optional[torch.Tensor],
+        cfm_samples: Optional[torch.Tensor],
         replay_buffer: ReplayBuffer,
         wandb_logger: WandbLogger,
         prefix: str = ''
@@ -93,6 +111,14 @@ class GMM(BaseEnergyFunction):
                 buffer_samples = self.unnormalize(buffer_samples)
                 latest_samples = self.unnormalize(latest_samples)
 
+                if unprioritized_buffer_samples is not None:
+                    unprioritized_buffer_samples = self.unnormalize(
+                        unprioritized_buffer_samples
+                    )
+
+                if cfm_samples is not None:
+                    cfm_samples = self.unnormalize(cfm_samples)
+
             samples_fig = self.get_dataset_fig(
                 buffer_samples,
                 latest_samples
@@ -102,6 +128,17 @@ class GMM(BaseEnergyFunction):
                 f'{prefix}generated_samples',
                 [samples_fig]
             )
+
+            if unprioritized_buffer_samples is not None:
+                cfm_samples_fig = self.get_dataset_fig(
+                    unprioritized_buffer_samples,
+                    cfm_samples
+                )
+
+                wandb_logger.log_image(
+                    f'{prefix}cfm_generated_samples',
+                    [cfm_samples_fig]
+                )
 
             if latest_samples is not None:
                 fig, ax = plt.subplots()
