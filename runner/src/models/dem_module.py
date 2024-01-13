@@ -150,14 +150,15 @@ class DEMLitModule(LightningModule):
             self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
             self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
 
-        self.cnf = CNF(
-            self.cfm_net if nll_with_cfm else self.net, is_diffusion=not nll_with_cfm
-        )
+        self.dem_cnf = CNF(self.net, is_diffusion=True)
+        self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False)
 
         self.nll_with_cfm = nll_with_cfm
         self.cfm_prior_std = cfm_prior_std
-        self.conditional_flow_matcher = ExactOptimalTransportConditionalFlowMatcher(sigma=cfm_sigma)
-        #self.conditional_flow_matcher = ConditionalFlowMatcher(sigma=cfm_sigma)
+        self.conditional_flow_matcher = ExactOptimalTransportConditionalFlowMatcher(
+            sigma=cfm_sigma
+        )
+        # self.conditional_flow_matcher = ConditionalFlowMatcher(sigma=cfm_sigma)
 
         self.energy_function = energy_function
         self.noise_schedule = noise_schedule
@@ -179,6 +180,13 @@ class DEMLitModule(LightningModule):
         self.test_nll_log_p_1 = MeanMetric()
         self.val_nll = MeanMetric()
         self.test_nll = MeanMetric()
+
+        self.val_dem_nll_logdetjac = MeanMetric()
+        self.test_dem_nll_logdetjac = MeanMetric()
+        self.val_dem_nll_log_p_1 = MeanMetric()
+        self.test_dem_nll_log_p_1 = MeanMetric()
+        self.val_dem_nll = MeanMetric()
+        self.test_dem_nll = MeanMetric()
 
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
@@ -371,14 +379,16 @@ class DEMLitModule(LightningModule):
 
         return self._prior
 
-    def compute_nll(self, samples: torch.Tensor):
+    def compute_nll(
+        self, cnf, samples: torch.Tensor, num_integration_steps=1, method="dopri5"
+    ):
         aug_samples = torch.cat(
             [samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1
         )
 
-        aug_output = self.cnf.integrate(
-            aug_samples, num_integration_steps=1, method="dopri5"
-        )[-1]
+        aug_output = cnf.integrate(aug_samples, num_integration_steps=1, method=method)[
+            -1
+        ]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
         log_p_1 = self.prior.log_prob(x_1)
         log_p_0 = log_p_1 + logdetjac
@@ -391,6 +401,27 @@ class DEMLitModule(LightningModule):
         self.last_energies = self.energy_function(self.last_samples)
 
         self.buffer.add(self.last_samples, self.last_energies)
+
+    def compute_and_log_nll(self, cnf, samples, prefix, name):
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(cnf, samples)
+
+        nll_metric = getattr(self, f"{prefix}_{name}nll")
+        logdetjac_metric = getattr(self, f"{prefix}_{name}nll_logdetjac")
+        log_p_1_metric = getattr(self, f"{prefix}_{name}nll_log_p_1")
+
+        nll_metric.update(nll)
+        logdetjac_metric.update(logdetjac)
+        log_p_1_metric.update(log_p_1)
+
+        self.log_dict(
+            {
+                f"{prefix}/{name}nll_logdetjac": logdetjac_metric,
+                f"{prefix}/{name}nll_log_p_1": log_p_1_metric,
+                f"{prefix}/{name}nll": nll_metric,
+            },
+            on_epoch=True,
+        )
+        return forwards_samples
 
     def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
         """Perform a single eval step on a batch of data from the validation set.
@@ -418,41 +449,6 @@ class DEMLitModule(LightningModule):
         if backwards_samples is None:
             backwards_samples = self.generate_samples(num_samples=len(batch))
 
-        # generate data --> noise
-        buffer_samples = self.buffer.sample(
-            self.num_samples_to_generate_per_epoch, prioritize=False
-        )
-
-        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(batch)
-
-        nll_metric = getattr(self, f"{prefix}_nll")
-        logdetjac_metric = getattr(self, f"{prefix}_nll_logdetjac")
-        log_p_1_metric = getattr(self, f"{prefix}_nll_log_p_1")
-
-        nll_metric.update(nll)
-        logdetjac_metric.update(logdetjac)
-        log_p_1_metric.update(log_p_1)
-
-        self.log(
-            f"{prefix}/nll_logdetjac",
-            logdetjac_metric,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-        )
-
-        self.log(
-            f"{prefix}/nll_log_p_1",
-            log_p_1_metric,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-        )
-
-        self.log(
-            f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
-        )
-
         # update and log metrics
         loss_metric = self.val_loss if prefix == "val" else self.test_loss
         loss_metric(loss)
@@ -460,9 +456,18 @@ class DEMLitModule(LightningModule):
         self.log(
             f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
         )
-        self.eval_step_outputs.append(
-            {"data_0": batch, "gen_0": backwards_samples, "gen_1": forwards_samples}
-        )
+
+        forwards_samples = self.compute_and_log_nll(self.dem_cnf, batch, prefix, "dem_")
+        to_log = {
+            "data_0": batch,
+            "gen_0": backwards_samples,
+            "gen_1": forwards_samples,
+        }
+        if self.nll_with_cfm:
+            forwards_samples = self.compute_and_log_nll(self.cfm_cnf, batch, prefix, "")
+            to_log["cfm_gen_1"] = forwards_samples
+
+        self.eval_step_outputs.append(to_log)
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         self.eval_step("val", batch, batch_idx)
