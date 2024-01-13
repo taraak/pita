@@ -36,7 +36,6 @@ def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
     flat_t = batch_t.flatten().detach().cpu().numpy()
     bin_edges = np.linspace(0.0, 1.0 + 1e-3, num_bins + 1)
     bin_idx = np.sum(bin_edges[:, None] <= flat_t[None, :], axis=0) - 1
-    print(flat_losses.shape, bin_idx.shape)
     t_binned_loss = np.bincount(bin_idx, weights=flat_losses)
     t_binned_n = np.bincount(bin_idx)
     stratified_losses = {}
@@ -222,7 +221,7 @@ class DEMLitModule(LightningModule):
             )
 
         vt = self.cfm_net(t, xt)
-        return (vt - ut).pow(2).mean(dim=-1)
+        return (vt - ut).pow(2).mean(dim=-1) / (self.energy_function.data_normalization_factor ** 2)
 
     def should_train_cfm(self, batch_idx: int) -> bool:
         return self.nll_with_cfm
@@ -250,7 +249,7 @@ class DEMLitModule(LightningModule):
             predicted_score - estimated_score, dim=-1
         ).pow(2)
 
-        return (self.lambda_weighter(times) * error_norms)
+        return (error_norms / self.lambda_weighter(times))
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int

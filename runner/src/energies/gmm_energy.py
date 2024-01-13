@@ -43,6 +43,7 @@ class GMM(BaseEnergyFunction):
         self.plot_samples_epoch_period = plot_samples_epoch_period
 
         self.should_unnormalize = should_unnormalize
+        self.data_normalization_factor = data_normalization_factor
 
         super().__init__(
             dimensionality=dimensionality,
