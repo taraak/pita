@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
-from src.energies.base_energy_function import BaseEnergyFunction
 from torchmetrics import MeanMetric
 
 from torchdyn.core import NeuralODE
@@ -18,16 +17,16 @@ from src.energies.base_energy_function import BaseEnergyFunction
 from src.utils.logging_utils import fig_to_image
 
 from .components.clipper import Clipper
-from .components.scaling_wrapper import ScalingWrapper
-from .components.score_scaler import BaseScoreScaler
+from .components.cnf import CNF
 from .components.distribution_distances import compute_distribution_distances
 from .components.lambda_weighter import BaseLambdaWeighter
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
+from .components.scaling_wrapper import ScalingWrapper
 from .components.score_estimator import estimate_grad_Rt
+from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
-from .components.sdes import VEReverseSDE
-from .components.cnf import CNF
+from .components.sdes import VEReverseSDE, RegVEReverseSDE
 
 
 def get_wandb_logger(loggers):
@@ -100,7 +99,7 @@ class DEMLitModule(LightningModule):
         input_scaling_factor: Optional[float] = None,
         output_scaling_factor: Optional[float] = None,
         clipper: Optional[Clipper] = None,
-        score_scaler: Optional[BaseScoreScaler] = None
+        score_scaler: Optional[BaseScoreScaler] = None,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -118,15 +117,11 @@ class DEMLitModule(LightningModule):
         self.net, self.cfm_net = net, cfm_net
         if input_scaling_factor is not None or output_scaling_factor is not None:
             self.net = ScalingWrapper(
-                self.net,
-                input_scaling_factor,
-                output_scaling_factor
+                self.net, input_scaling_factor, output_scaling_factor
             )
 
             self.cfm_net = ScalingWrapper(
-                self.cfm_net,
-                input_scaling_factor,
-                output_scaling_factor
+                self.cfm_net, input_scaling_factor, output_scaling_factor
             )
 
         self.score_scaler = None
@@ -225,15 +220,13 @@ class DEMLitModule(LightningModule):
 
         if self.score_scaler is not None:
             estimated_score = self.score_scaler.scale_target_score(
-                estimated_score,
-                times
+                estimated_score, times
             )
 
         predicted_score = self.forward(times, samples)
 
         error_norms = torch.linalg.vector_norm(
-            predicted_score - estimated_score,
-            dim=-1
+            predicted_score - estimated_score, dim=-1
         ).pow(2)
 
         return (self.lambda_weighter(times) * error_norms).mean()
@@ -248,18 +241,15 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        iter_samples, _, _ = self.buffer.sample(
-            self.num_samples_to_generate_per_epoch
-        )
+        iter_samples, _, _ = self.buffer.sample(self.num_samples_to_generate_per_epoch)
 
         times = torch.rand(
-            (self.num_samples_to_generate_per_epoch,),
-            device=iter_samples.device
+            (self.num_samples_to_generate_per_epoch,), device=iter_samples.device
         )
 
         noised_samples = iter_samples + (
-            torch.randn_like(iter_samples) *
-            self.noise_schedule.h(times).sqrt().unsqueeze(-1)
+            torch.randn_like(iter_samples)
+            * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
         )
 
         loss = self.get_loss(times, noised_samples)
@@ -296,8 +286,7 @@ class DEMLitModule(LightningModule):
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_samples_to_generate_per_epoch
         samples = torch.randn(
-            (num_samples, self.energy_function.dimensionality),
-            device=self.device
+            (num_samples, self.energy_function.dimensionality), device=self.device
         ) * (self.noise_schedule.h(1) ** 0.5)
 
         return self.integrate(
@@ -313,12 +302,14 @@ class DEMLitModule(LightningModule):
         samples: torch.Tensor = None,
         reverse_time=True,
         return_full_trajectory=False,
+        no_grad=True,
     ) -> torch.Tensor:
         trajectory = integrate_sde(
             reverse_sde or self.reverse_sde,
             samples,
             self.num_integration_steps + 1,
             reverse_time=reverse_time,
+            no_grad=no_grad,
         )
         if return_full_trajectory:
             return trajectory
@@ -342,17 +333,16 @@ class DEMLitModule(LightningModule):
             ) * var_scale
 
             self._prior = torch.distributions.MultivariateNormal(
+
                 loc,
                 covar,
             )
 
         return self._prior
 
-
     def compute_nll(self, samples: torch.Tensor):
         aug_samples = torch.cat(
-            [samples, torch.zeros(samples.shape[0], 1, device=samples.device)],
-            dim=-1
+            [samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1
         )
 
         aug_output = self.cnf.integrate(
@@ -381,8 +371,7 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         times = torch.rand(
-            (self.num_samples_to_generate_per_epoch,),
-            device=batch.device
+            (self.num_samples_to_generate_per_epoch,), device=batch.device
         )
 
         batch = self.energy_function.sample_test_set(
@@ -390,8 +379,7 @@ class DEMLitModule(LightningModule):
         )
 
         noised_batch = batch + (
-            torch.randn_like(batch) *
-            self.noise_schedule.h(times).sqrt().unsqueeze(-1)
+            torch.randn_like(batch) * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
         )
 
         loss = self.get_loss(times, noised_batch)
@@ -592,6 +580,58 @@ class DEMLitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
+
+
+class PISLitModule(DEMLitModule):
+    def training_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+    ) -> torch.Tensor:
+        """Perform a single training step on a batch of data from the training set.
+
+        :param batch: A batch of data (a tuple) containing the input tensor of images and target
+            labels.
+        :param batch_idx: The index of the current batch.
+        :return: A tensor of losses between model predictions and targets.
+        """
+        dim = self.energy_function.dimensionality
+        prior_samples = self.prior.rsample((self.num_samples_to_generate_per_epoch,))
+        aug_prior_samples = torch.cat(
+            [prior_samples, torch.zeros_like(prior_samples[..., :1])], dim=-1
+        )
+
+        aug_output = self.integrate(
+            self.reg_reverse_sde, aug_prior_samples, return_full_trajectory=True, no_grad=False
+        )[-1]
+        x_1, quad_reg = aug_output[..., :-1], aug_output[..., -1]
+        prior_nll = self.prior.log_prob(x_1).mean() / dim
+        sample_nll = self.energy_function(x_1).mean() / dim
+        term_loss = sample_nll - prior_nll
+        quad_reg = (quad_reg / dim).mean()
+        loss = term_loss + quad_reg
+        self.log_dict(
+            {
+                "train/reg_loss": quad_reg,
+                "train/prior_nll": prior_nll,
+                "train/sample_nll": sample_nll,
+                "train/term_loss": term_loss,
+            }
+        )
+
+        # update and log metrics
+        self.train_loss(loss)
+        self.log(
+            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
+        )
+
+        if self.should_train_cfm(batch_idx):
+            loss = loss + self.get_cfm_loss(iter_samples, times)
+
+        # return loss or backpropagation will fail
+        return loss
+
+    def setup(self, stage: str) -> None:
+        super().setup(stage)
+        self.reg_reverse_sde = RegVEReverseSDE(self.net, self.noise_schedule)
 
 
 if __name__ == "__main__":

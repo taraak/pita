@@ -1,0 +1,9 @@
+defaults:
+  - dem
+_target_: src.models.dem_module.PISLitModule
+# config from
+# https://github.com/qsh-zh/pis/blob/c1cbc1f3f28f69aa001df44762fb919de5804ebb/configs/model/base.yaml
+
+num_integration_steps: 20
+
+# prior should be N(0,1)
