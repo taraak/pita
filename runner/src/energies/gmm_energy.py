@@ -43,9 +43,12 @@ class GMM(BaseEnergyFunction):
         self.plot_samples_epoch_period = plot_samples_epoch_period
 
         self.should_unnormalize = should_unnormalize
-        self.data_normalization_factor = data_normalization_factor
 
-        super().__init__(dimensionality=dimensionality)
+        super().__init__(
+            dimensionality=dimensionality,
+            normalization_min=-data_normalization_factor,
+            normalization_max=data_normalization_factor
+        )
 
     def setup_test_set(self):
         return self.gmm.test_set
@@ -59,32 +62,6 @@ class GMM(BaseEnergyFunction):
     @property
     def dimensionality(self):
         return 2
-
-    def normalize(self, x: torch.Tensor) -> torch.Tensor:
-        '''
-            normalizes to [-1, 1]
-        '''
-        maxs = self.data_normalization_factor
-        mins = -self.data_normalization_factor
-
-        ## [ 0, 1 ]
-        x = (x - mins) / (maxs - mins + 1e-5)
-        ## [ -1, 1 ]
-        x = x * 2 - 1
-
-        return x
-
-    def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
-        '''
-            x : [ -1, 1 ]
-        '''
-        if x is None:
-            return x
-
-        maxs, mins = self.data_normalization_factor, -self.data_normalization_factor
-
-        x = (x + 1) / 2
-        return x * (maxs - mins) + mins
 
     def log_on_epoch_end(
         self,

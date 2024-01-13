@@ -172,6 +172,7 @@ class DEMLitModule(LightningModule):
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
         self.num_integration_steps = num_integration_steps
+
         self.prioritize_cfm_training_samples = prioritize_cfm_training_samples
 
         self._prior = None
@@ -208,8 +209,7 @@ class DEMLitModule(LightningModule):
         return (vt - ut).pow(2).mean()
 
     def should_train_cfm(self, batch_idx: int) -> bool:
-        return True
-        #return False
+        return self.nll_with_cfm
 
     def get_loss(self, times: torch.Tensor, samples: torch.Tensor) -> torch.Tensor:
         estimated_score = estimate_grad_Rt(
@@ -494,17 +494,18 @@ class DEMLitModule(LightningModule):
             for k in self.eval_step_outputs[0]
         }
 
-        fig, ax = plt.subplots()
-        ax.scatter(*outputs['gen_1'].detach().cpu().T, label='Generated prior')
-        ax.scatter(
-            *self.prior.sample((len(outputs['gen_1']),)).detach().cpu().T,
-            label='True prior',
-            alpha=0.5
-        )
+        if self.energy_function.dimensionality == 2:
+            fig, ax = plt.subplots()
+            ax.scatter(*outputs['gen_1'].detach().cpu().T, label='Generated prior')
+            ax.scatter(
+                *self.prior.sample((len(outputs['gen_1']),)).detach().cpu().T,
+                label='True prior',
+                alpha=0.5
+            )
 
-        ax.legend()
+            ax.legend()
 
-        wandb_logger.log_image(f'{prefix}/generated_prior', [fig_to_image(fig)])
+            wandb_logger.log_image(f'{prefix}/generated_prior', [fig_to_image(fig)])
 
         unprioritized_buffer_samples, cfm_samples = None, None
         if self.nll_with_cfm:
