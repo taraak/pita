@@ -108,6 +108,8 @@ class GMM(BaseEnergyFunction):
             )
 
             if self.should_unnormalize:
+                # Don't unnormalize CFM samples since they're in the
+                # unnormalized space
                 buffer_samples = self.unnormalize(buffer_samples)
                 latest_samples = self.unnormalize(latest_samples)
 
@@ -115,9 +117,6 @@ class GMM(BaseEnergyFunction):
                     unprioritized_buffer_samples = self.unnormalize(
                         unprioritized_buffer_samples
                     )
-
-                if cfm_samples is not None:
-                    cfm_samples = self.unnormalize(cfm_samples)
 
             samples_fig = self.get_dataset_fig(
                 buffer_samples,

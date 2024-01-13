@@ -41,7 +41,7 @@ class CNF(torch.nn.Module):
         time = torch.linspace(
             start_time,
             end_time,
-            num_integration_steps,
+            num_integration_steps + 1,
             device=x.device
         )
 

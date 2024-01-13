@@ -196,7 +196,7 @@ class DEMLitModule(LightningModule):
             self.energy_function.dimensionality,
             device=self.device
         ) * self.cfm_prior_std
-        x1 = samples
+        x1 = self.energy_function.unnormalize(samples)
 
         t, xt, ut = \
             self.conditional_flow_matcher.sample_location_and_conditional_flow(
@@ -334,7 +334,7 @@ class DEMLitModule(LightningModule):
 
             var_scale = self.noise_schedule.h(1)
             if self.nll_with_cfm:
-                var_scale = self.cfm_prior_std
+                var_scale = self.cfm_prior_std ** 2
 
             covar = torch.eye(
                 self.energy_function.dimensionality,
@@ -355,7 +355,11 @@ class DEMLitModule(LightningModule):
             dim=-1
         )
 
-        aug_output = self.cnf.integrate(aug_samples, self.num_integration_steps)[-1]
+        aug_output = self.cnf.integrate(
+            aug_samples,
+            num_integration_steps=1,
+            method='dopri5'
+        )[-1]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
         log_p_1 = self.prior.log_prob(x_1)
         log_p_0 = log_p_1 + logdetjac
@@ -398,17 +402,12 @@ class DEMLitModule(LightningModule):
             backwards_samples = self.generate_samples(num_samples=len(batch))
 
         # generate data --> noise
-        normalized_batch = self.energy_function.sample_test_set(
-            self.num_samples_to_generate_per_epoch,
-            normalize=True
-        )
-
         buffer_samples = self.buffer.sample(
             self.num_samples_to_generate_per_epoch,
             prioritize=False
         )
 
-        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(normalized_batch)
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(batch)
 
         nll_metric = getattr(self, f'{prefix}_nll')
         logdetjac_metric = getattr(self, f'{prefix}_nll_logdetjac')
