@@ -1,21 +1,19 @@
 from typing import Any, Dict, Optional, Tuple
 
-import torch
 import matplotlib.pyplot as plt
-
+import numpy as np
+import torch
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
-from torchmetrics import MeanMetric
-
-from torchdyn.core import NeuralODE
 from torchcfm.conditional_flow_matching import (
     ConditionalFlowMatcher,
-    ExactOptimalTransportConditionalFlowMatcher
+    ExactOptimalTransportConditionalFlowMatcher,
 )
+from torchdyn.core import NeuralODE
+from torchmetrics import MeanMetric
 
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.utils.logging_utils import fig_to_image
-import numpy as np
 
 from .components.clipper import Clipper
 from .components.cnf import CNF
@@ -27,7 +25,7 @@ from .components.scaling_wrapper import ScalingWrapper
 from .components.score_estimator import estimate_grad_Rt
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
-from .components.sdes import VEReverseSDE, RegVEReverseSDE
+from .components.sdes import RegVEReverseSDE, VEReverseSDE
 
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
@@ -48,6 +46,7 @@ def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
         range_loss = t_binned_loss[t_bin] / t_binned_n[t_bin]
         stratified_losses[t_range] = range_loss
     return stratified_losses
+
 
 def get_wandb_logger(loggers):
     """
@@ -152,15 +151,12 @@ class DEMLitModule(LightningModule):
             self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
 
         self.cnf = CNF(
-            self.cfm_net if nll_with_cfm else self.net,
-            is_diffusion=not nll_with_cfm
+            self.cfm_net if nll_with_cfm else self.net, is_diffusion=not nll_with_cfm
         )
 
         self.nll_with_cfm = nll_with_cfm
         self.cfm_prior_std = cfm_prior_std
-        self.conditional_flow_matcher = ConditionalFlowMatcher(
-            sigma=cfm_sigma
-        )
+        self.conditional_flow_matcher = ConditionalFlowMatcher(sigma=cfm_sigma)
 
         self.energy_function = energy_function
         self.noise_schedule = noise_schedule
@@ -207,21 +203,24 @@ class DEMLitModule(LightningModule):
         return self.net(t, x)
 
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
-        x0 = torch.randn(
-            self.num_samples_to_generate_per_epoch,
-            self.energy_function.dimensionality,
-            device=self.device
-        ) * self.cfm_prior_std
+        x0 = (
+            torch.randn(
+                self.num_samples_to_generate_per_epoch,
+                self.energy_function.dimensionality,
+                device=self.device,
+            )
+            * self.cfm_prior_std
+        )
         x1 = self.energy_function.unnormalize(samples)
 
-        t, xt, ut = \
-            self.conditional_flow_matcher.sample_location_and_conditional_flow(
-                x0,
-                x1
-            )
+        t, xt, ut = self.conditional_flow_matcher.sample_location_and_conditional_flow(
+            x0, x1
+        )
 
         vt = self.cfm_net(t, xt)
-        return (vt - ut).pow(2).mean(dim=-1) / (self.energy_function.data_normalization_factor ** 2)
+        return (vt - ut).pow(2).mean(dim=-1) / (
+            self.energy_function.data_normalization_factor**2
+        )
 
     def should_train_cfm(self, batch_idx: int) -> bool:
         return self.nll_with_cfm
@@ -245,9 +244,9 @@ class DEMLitModule(LightningModule):
 
         predicted_score = self.forward(times, samples)
 
-        error_norms = (predicted_score - estimated_score).pow(2)
+        error_norms = (predicted_score - estimated_score).pow(2).mean(-1)
 
-        return (error_norms / self.lambda_weighter(times))
+        return error_norms / self.lambda_weighter(times)
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -271,28 +270,41 @@ class DEMLitModule(LightningModule):
         )
 
         loss = self.get_loss(times, noised_samples)
-        self.log_dict(t_stratified_loss(times, loss, loss_name="train/stratified/dem_loss"))
+        self.log_dict(
+            t_stratified_loss(times, loss, loss_name="train/stratified/dem_loss")
+        )
         loss = loss.mean()
 
         # update and log metrics
         self.dem_train_loss(loss)
         self.log(
-            "train/dem_loss", self.dem_train_loss, on_step=False, on_epoch=True, prog_bar=True
+            "train/dem_loss",
+            self.dem_train_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
         )
-
 
         if self.should_train_cfm(batch_idx):
             cfm_samples, _, _ = self.buffer.sample(
                 self.num_samples_to_generate_per_epoch,
-                prioritize=self.prioritize_cfm_training_samples
+                prioritize=self.prioritize_cfm_training_samples,
             )
 
             cfm_loss = self.get_cfm_loss(cfm_samples)
-            self.log_dict(t_stratified_loss(times, cfm_loss, loss_name="train/stratified/cfm_loss"))
+            self.log_dict(
+                t_stratified_loss(
+                    times, cfm_loss, loss_name="train/stratified/cfm_loss"
+                )
+            )
             cfm_loss = cfm_loss.mean()
             self.cfm_train_loss(cfm_loss)
             self.log(
-                "train/cfm_loss", self.cfm_train_loss, on_step=False, on_epoch=True, prog_bar=True
+                "train/cfm_loss",
+                self.cfm_train_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
             )
 
             loss = loss + cfm_loss
@@ -340,22 +352,18 @@ class DEMLitModule(LightningModule):
     @property
     def prior(self):
         if self._prior is None:
-            loc = torch.zeros(
-                self.energy_function.dimensionality,
-                device=self.device
-            )
+            loc = torch.zeros(self.energy_function.dimensionality, device=self.device)
 
             var_scale = self.noise_schedule.h(1)
             if self.nll_with_cfm:
-                var_scale = self.cfm_prior_std ** 2
+                var_scale = self.cfm_prior_std**2
 
-            covar = torch.eye(
-                self.energy_function.dimensionality,
-                device=self.device
-            ) * var_scale
+            covar = (
+                torch.eye(self.energy_function.dimensionality, device=self.device)
+                * var_scale
+            )
 
             self._prior = torch.distributions.MultivariateNormal(
-
                 loc,
                 covar,
             )
@@ -368,9 +376,7 @@ class DEMLitModule(LightningModule):
         )
 
         aug_output = self.cnf.integrate(
-            aug_samples,
-            num_integration_steps=1,
-            method='dopri5'
+            aug_samples, num_integration_steps=1, method="dopri5"
         )[-1]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
         log_p_1 = self.prior.log_prob(x_1)
@@ -413,15 +419,14 @@ class DEMLitModule(LightningModule):
 
         # generate data --> noise
         buffer_samples = self.buffer.sample(
-            self.num_samples_to_generate_per_epoch,
-            prioritize=False
+            self.num_samples_to_generate_per_epoch, prioritize=False
         )
 
         nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(batch)
 
-        nll_metric = getattr(self, f'{prefix}_nll')
-        logdetjac_metric = getattr(self, f'{prefix}_nll_logdetjac')
-        log_p_1_metric = getattr(self, f'{prefix}_nll_log_p_1')
+        nll_metric = getattr(self, f"{prefix}_nll")
+        logdetjac_metric = getattr(self, f"{prefix}_nll_logdetjac")
+        log_p_1_metric = getattr(self, f"{prefix}_nll_log_p_1")
 
         nll_metric.update(nll)
         logdetjac_metric.update(logdetjac)
@@ -432,7 +437,7 @@ class DEMLitModule(LightningModule):
             logdetjac_metric,
             on_step=False,
             on_epoch=True,
-            prog_bar=False
+            prog_bar=False,
         )
 
         self.log(
@@ -440,7 +445,7 @@ class DEMLitModule(LightningModule):
             log_p_1_metric,
             on_step=False,
             on_epoch=True,
-            prog_bar=False
+            prog_bar=False,
         )
 
         self.log(
@@ -485,7 +490,7 @@ class DEMLitModule(LightningModule):
         with torch.no_grad():
             shape = (
                 self.num_samples_to_generate_per_epoch,
-                self.energy_function.dimensionality
+                self.energy_function.dimensionality,
             )
 
             noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
@@ -506,22 +511,22 @@ class DEMLitModule(LightningModule):
 
         if self.energy_function.dimensionality == 2:
             fig, ax = plt.subplots()
-            ax.scatter(*outputs['gen_1'].detach().cpu().T, label='Generated prior')
+            ax.scatter(*outputs["gen_1"].detach().cpu().T, label="Generated prior")
             ax.scatter(
-                *self.prior.sample((len(outputs['gen_1']),)).detach().cpu().T,
-                label='True prior',
-                alpha=0.5
+                *self.prior.sample((len(outputs["gen_1"]),)).detach().cpu().T,
+                label="True prior",
+                alpha=0.5,
             )
 
             ax.legend()
 
-            wandb_logger.log_image(f'{prefix}/generated_prior', [fig_to_image(fig)])
+            wandb_logger.log_image(f"{prefix}/generated_prior", [fig_to_image(fig)])
 
         unprioritized_buffer_samples, cfm_samples = None, None
         if self.nll_with_cfm:
             unprioritized_buffer_samples, _, _ = self.buffer.sample(
                 self.num_samples_to_generate_per_epoch,
-                prioritize=self.prioritize_cfm_training_samples
+                prioritize=self.prioritize_cfm_training_samples,
             )
 
             cfm_samples = self.generate_cfm_samples()
@@ -532,7 +537,7 @@ class DEMLitModule(LightningModule):
             unprioritized_buffer_samples,
             cfm_samples,
             self.buffer,
-            wandb_logger
+            wandb_logger,
         )
 
         # pad with time dimension 1
@@ -622,7 +627,10 @@ class PISLitModule(DEMLitModule):
         )
 
         aug_output = self.integrate(
-            self.reg_reverse_sde, aug_prior_samples, return_full_trajectory=True, no_grad=False
+            self.reg_reverse_sde,
+            aug_prior_samples,
+            return_full_trajectory=True,
+            no_grad=False,
         )[-1]
         x_1, quad_reg = aug_output[..., :-1], aug_output[..., -1]
         prior_nll = self.prior.log_prob(x_1).mean() / dim
@@ -640,20 +648,20 @@ class PISLitModule(DEMLitModule):
         )
 
         # update and log metrics
-        self.train_loss(loss)
+        self.pis_train_loss(loss)
         self.log(
-            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
+            "train/loss",
+            self.pis_train_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
         )
-
-        if self.should_train_cfm(batch_idx):
-            loss = loss + self.get_cfm_loss(iter_samples, times)
-
-        # return loss or backpropagation will fail
         return loss
 
     def setup(self, stage: str) -> None:
         super().setup(stage)
         self.reg_reverse_sde = RegVEReverseSDE(self.net, self.noise_schedule)
+        self.pis_train_loss = MeanMetric()
 
 
 if __name__ == "__main__":
