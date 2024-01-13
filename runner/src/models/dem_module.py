@@ -156,7 +156,8 @@ class DEMLitModule(LightningModule):
 
         self.nll_with_cfm = nll_with_cfm
         self.cfm_prior_std = cfm_prior_std
-        self.conditional_flow_matcher = ConditionalFlowMatcher(sigma=cfm_sigma)
+        self.conditional_flow_matcher = ExactOptimalTransportConditionalFlowMatcher(sigma=cfm_sigma)
+        #self.conditional_flow_matcher = ConditionalFlowMatcher(sigma=cfm_sigma)
 
         self.energy_function = energy_function
         self.noise_schedule = noise_schedule
