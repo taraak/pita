@@ -245,9 +245,7 @@ class DEMLitModule(LightningModule):
 
         predicted_score = self.forward(times, samples)
 
-        error_norms = torch.linalg.vector_norm(
-            predicted_score - estimated_score, dim=-1
-        ).pow(2)
+        error_norms = (predicted_score - estimated_score).pow(2)
 
         return (error_norms / self.lambda_weighter(times))
 
