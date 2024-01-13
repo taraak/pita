@@ -15,6 +15,7 @@ from torchcfm.conditional_flow_matching import (
 
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.utils.logging_utils import fig_to_image
+import numpy as np
 
 from .components.clipper import Clipper
 from .components.cnf import CNF
@@ -28,6 +29,26 @@ from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
 from .components.sdes import VEReverseSDE, RegVEReverseSDE
 
+
+def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
+    """Stratify loss by binning t."""
+    flat_losses = batch_loss.flatten().detach().cpu().numpy()
+    flat_t = batch_t.flatten().detach().cpu().numpy()
+    bin_edges = np.linspace(0.0, 1.0 + 1e-3, num_bins + 1)
+    bin_idx = np.sum(bin_edges[:, None] <= flat_t[None, :], axis=0) - 1
+    print(flat_losses.shape, bin_idx.shape)
+    t_binned_loss = np.bincount(bin_idx, weights=flat_losses)
+    t_binned_n = np.bincount(bin_idx)
+    stratified_losses = {}
+    if loss_name is None:
+        loss_name = "loss"
+    for t_bin in np.unique(bin_idx).tolist():
+        bin_start = bin_edges[t_bin]
+        bin_end = bin_edges[t_bin + 1]
+        t_range = f"{loss_name} t=[{bin_start:.2f},{bin_end:.2f})"
+        range_loss = t_binned_loss[t_bin] / t_binned_n[t_bin]
+        stratified_losses[t_range] = range_loss
+    return stratified_losses
 
 def get_wandb_logger(loggers):
     """
@@ -201,7 +222,7 @@ class DEMLitModule(LightningModule):
             )
 
         vt = self.cfm_net(t, xt)
-        return (vt - ut).pow(2).mean()
+        return (vt - ut).pow(2).mean(dim=-1)
 
     def should_train_cfm(self, batch_idx: int) -> bool:
         return self.nll_with_cfm
@@ -229,7 +250,7 @@ class DEMLitModule(LightningModule):
             predicted_score - estimated_score, dim=-1
         ).pow(2)
 
-        return (self.lambda_weighter(times) * error_norms).mean()
+        return (self.lambda_weighter(times) * error_norms)
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -253,12 +274,15 @@ class DEMLitModule(LightningModule):
         )
 
         loss = self.get_loss(times, noised_samples)
+        self.log_dict(t_stratified_loss(times, loss, loss_name="train/stratified/dem_loss"))
+        loss = loss.mean()
 
         # update and log metrics
         self.dem_train_loss(loss)
         self.log(
             "train/dem_loss", self.dem_train_loss, on_step=False, on_epoch=True, prog_bar=True
         )
+
 
         if self.should_train_cfm(batch_idx):
             cfm_samples, _, _ = self.buffer.sample(
@@ -267,7 +291,8 @@ class DEMLitModule(LightningModule):
             )
 
             cfm_loss = self.get_cfm_loss(cfm_samples)
-
+            self.log_dict(t_stratified_loss(times, cfm_loss, loss_name="train/stratified/cfm_loss"))
+            cfm_loss = cfm_loss.mean()
             self.cfm_train_loss(cfm_loss)
             self.log(
                 "train/cfm_loss", self.cfm_train_loss, on_step=False, on_epoch=True, prog_bar=True
@@ -382,7 +407,7 @@ class DEMLitModule(LightningModule):
             torch.randn_like(batch) * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
         )
 
-        loss = self.get_loss(times, noised_batch)
+        loss = self.get_loss(times, noised_batch).mean(-1)
 
         # generate samples noise --> data if needed
         backwards_samples = self.last_samples
