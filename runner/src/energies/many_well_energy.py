@@ -1,6 +1,7 @@
 import torch
 import matplotlib.pyplot as plt
 
+from typing import Optional
 from lightning.pytorch.loggers import WandbLogger
 from fab.target_distributions.many_well import ManyWellEnergy
 from fab.utils.plotting import plot_contours, plot_marginal_pair
@@ -37,9 +38,12 @@ class ManyWell(BaseEnergyFunction):
         self.test_set_size = test_set_size
 
         self.should_unnormalize = should_unnormalize
-        self.data_normalization_factor = data_normalization_factor
 
-        super().__init__(dimensionality=dimensionality)
+        super().__init__(
+            dimensionality=dimensionality,
+            normalization_min=-data_normalization_factor,
+            normalization_max=data_normalization_factor
+        )
 
     def setup_test_set(self):
         return self.many_well.sample((self.test_set_size,))
@@ -50,22 +54,12 @@ class ManyWell(BaseEnergyFunction):
 
         return self.many_well.log_prob(samples)
 
-    def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
-        '''
-            x : [ -1, 1 ]
-        '''
-        if x is None:
-            return x
-
-        maxs, mins = self.data_normalization_factor, -self.data_normalization_factor
-
-        x = (x + 1) / 2
-        return x * (maxs - mins) + mins
-
     def log_on_epoch_end(
         self,
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
+        unprioritized_buffer_samples: Optional[torch.Tensor],
+        cfm_samples: Optional[torch.Tensor],
         replay_buffer: ReplayBuffer,
         wandb_logger: WandbLogger,
         prefix: str = ''
@@ -85,6 +79,11 @@ class ManyWell(BaseEnergyFunction):
                 buffer_samples = self.unnormalize(buffer_samples)
                 latest_samples = self.unnormalize(latest_samples)
 
+                if unprioritized_buffer_samples is not None:
+                    unprioritized_buffer_samples = self.unnormalize(
+                        unprioritized_buffer_samples
+                    )
+
             samples_fig = self.get_dataset_fig(
                 buffer_samples,
                 latest_samples
@@ -94,6 +93,17 @@ class ManyWell(BaseEnergyFunction):
                 f'{prefix}generated_samples',
                 [samples_fig]
             )
+
+            if unprioritized_buffer_samples is not None:
+                cfm_samples_fig = self.get_dataset_fig(
+                    unprioritized_buffer_samples,
+                    cfm_samples
+                )
+
+                wandb_logger.log_image(
+                    f'{prefix}cfm_generated_samples',
+                    [cfm_samples_fig]
+                )
 
         self.curr_epoch += 1
 

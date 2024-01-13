@@ -1,11 +1,20 @@
 from typing import Any, Dict, Optional, Tuple
 
 import torch
+import matplotlib.pyplot as plt
+
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
 from torchmetrics import MeanMetric
 
+from torchdyn.core import NeuralODE
+from torchcfm.conditional_flow_matching import (
+    ConditionalFlowMatcher,
+    ExactOptimalTransportConditionalFlowMatcher
+)
+
 from src.energies.base_energy_function import BaseEnergyFunction
+from src.utils.logging_utils import fig_to_image
 
 from .components.clipper import Clipper
 from .components.cnf import CNF
@@ -82,7 +91,11 @@ class DEMLitModule(LightningModule):
         num_samples_to_generate_per_epoch: int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
+        nll_with_cfm: bool,
+        cfm_sigma: float,
+        cfm_prior_std: float,
         compile: bool,
+        prioritize_cfm_training_samples: bool = False,
         input_scaling_factor: Optional[float] = None,
         output_scaling_factor: Optional[float] = None,
         clipper: Optional[Clipper] = None,
@@ -118,7 +131,16 @@ class DEMLitModule(LightningModule):
             self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
             self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
 
-        self.cnf = CNF(self.net)
+        self.cnf = CNF(
+            self.cfm_net if nll_with_cfm else self.net,
+            is_diffusion=not nll_with_cfm
+        )
+
+        self.nll_with_cfm = nll_with_cfm
+        self.cfm_prior_std = cfm_prior_std
+        self.conditional_flow_matcher = ConditionalFlowMatcher(
+            sigma=cfm_sigma
+        )
 
         self.energy_function = energy_function
         self.noise_schedule = noise_schedule
@@ -129,9 +151,15 @@ class DEMLitModule(LightningModule):
         self.clipper = clipper
         self.clipped_grad_fxn = self.clipper.wrap_grad_fxn(estimate_grad_Rt)
 
-        self.train_loss = MeanMetric()
+        self.dem_train_loss = MeanMetric()
+        self.cfm_train_loss = MeanMetric()
         self.val_loss = MeanMetric()
         self.test_loss = MeanMetric()
+
+        self.val_nll_logdetjac = MeanMetric()
+        self.test_nll_logdetjac = MeanMetric()
+        self.val_nll_log_p_1 = MeanMetric()
+        self.test_nll_log_p_1 = MeanMetric()
         self.val_nll = MeanMetric()
         self.test_nll = MeanMetric()
 
@@ -139,6 +167,9 @@ class DEMLitModule(LightningModule):
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
         self.num_integration_steps = num_integration_steps
+
+        self.prioritize_cfm_training_samples = prioritize_cfm_training_samples
+
         self._prior = None
 
         self.lambda_weighter = self.hparams.lambda_weighter(self.noise_schedule)
@@ -155,11 +186,25 @@ class DEMLitModule(LightningModule):
         """
         return self.net(t, x)
 
-    def get_cfm_loss(self) -> torch.Tensor:
-        raise NotImplementedError
+    def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
+        x0 = torch.randn(
+            self.num_samples_to_generate_per_epoch,
+            self.energy_function.dimensionality,
+            device=self.device
+        ) * self.cfm_prior_std
+        x1 = self.energy_function.unnormalize(samples)
+
+        t, xt, ut = \
+            self.conditional_flow_matcher.sample_location_and_conditional_flow(
+                x0,
+                x1
+            )
+
+        vt = self.cfm_net(t, xt)
+        return (vt - ut).pow(2).mean()
 
     def should_train_cfm(self, batch_idx: int) -> bool:
-        return False
+        return self.nll_with_cfm
 
     def get_loss(self, times: torch.Tensor, samples: torch.Tensor) -> torch.Tensor:
         estimated_score = estimate_grad_Rt(
@@ -210,13 +255,25 @@ class DEMLitModule(LightningModule):
         loss = self.get_loss(times, noised_samples)
 
         # update and log metrics
-        self.train_loss(loss)
+        self.dem_train_loss(loss)
         self.log(
-            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
+            "train/dem_loss", self.dem_train_loss, on_step=False, on_epoch=True, prog_bar=True
         )
 
         if self.should_train_cfm(batch_idx):
-            loss = loss + self.get_cfm_loss(iter_samples, times)
+            cfm_samples, _, _ = self.buffer.sample(
+                self.num_samples_to_generate_per_epoch,
+                prioritize=self.prioritize_cfm_training_samples
+            )
+
+            cfm_loss = self.get_cfm_loss(cfm_samples)
+
+            self.cfm_train_loss(cfm_loss)
+            self.log(
+                "train/cfm_loss", self.cfm_train_loss, on_step=False, on_epoch=True, prog_bar=True
+            )
+
+            loss = loss + cfm_loss
 
         # return loss or backpropagation will fail
         return loss
@@ -261,11 +318,26 @@ class DEMLitModule(LightningModule):
     @property
     def prior(self):
         if self._prior is None:
-            self._prior = torch.distributions.MultivariateNormal(
-                torch.zeros(self.energy_function.dimensionality, device=self.device),
-                torch.eye(self.energy_function.dimensionality, device=self.device)
-                * self.noise_schedule.h(1),
+            loc = torch.zeros(
+                self.energy_function.dimensionality,
+                device=self.device
             )
+
+            var_scale = self.noise_schedule.h(1)
+            if self.nll_with_cfm:
+                var_scale = self.cfm_prior_std ** 2
+
+            covar = torch.eye(
+                self.energy_function.dimensionality,
+                device=self.device
+            ) * var_scale
+
+            self._prior = torch.distributions.MultivariateNormal(
+
+                loc,
+                covar,
+            )
+
         return self._prior
 
     def compute_nll(self, samples: torch.Tensor):
@@ -273,12 +345,16 @@ class DEMLitModule(LightningModule):
             [samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1
         )
 
-        aug_output = self.cnf.integrate(aug_samples, self.num_integration_steps)[-1]
+        aug_output = self.cnf.integrate(
+            aug_samples,
+            num_integration_steps=1,
+            method='dopri5'
+        )[-1]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
         log_p_1 = self.prior.log_prob(x_1)
         log_p_0 = log_p_1 + logdetjac
         nll = -log_p_0
-        return nll, x_1, logdetjac
+        return nll, x_1, logdetjac, log_p_1
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
@@ -314,9 +390,36 @@ class DEMLitModule(LightningModule):
             backwards_samples = self.generate_samples(num_samples=len(batch))
 
         # generate data --> noise
-        nll, forwards_samples, logdetjac = self.compute_nll(batch)
-        nll_metric = self.val_nll if prefix == "val" else self.test_nll
+        buffer_samples = self.buffer.sample(
+            self.num_samples_to_generate_per_epoch,
+            prioritize=False
+        )
+
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(batch)
+
+        nll_metric = getattr(self, f'{prefix}_nll')
+        logdetjac_metric = getattr(self, f'{prefix}_nll_logdetjac')
+        log_p_1_metric = getattr(self, f'{prefix}_nll_log_p_1')
+
         nll_metric.update(nll)
+        logdetjac_metric.update(logdetjac)
+        log_p_1_metric.update(log_p_1)
+
+        self.log(
+            f"{prefix}/nll_logdetjac",
+            logdetjac_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False
+        )
+
+        self.log(
+            f"{prefix}/nll_log_p_1",
+            log_p_1_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False
+        )
 
         self.log(
             f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
@@ -339,6 +442,38 @@ class DEMLitModule(LightningModule):
     def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         self.eval_step("test", batch, batch_idx)
 
+    def generate_cfm_samples(self):
+        def reverse_wrapper(model):
+            def fxn(t, x, args=None):
+                if t.ndim == 0:
+                    t = t.unsqueeze(0)
+
+                return model(t.repeat(len(x)), x)
+
+            return fxn
+
+        node = NeuralODE(
+            reverse_wrapper(self.cfm_net),
+            solver="dopri5",
+            sensitivity="adjoint",
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+        with torch.no_grad():
+            shape = (
+                self.num_samples_to_generate_per_epoch,
+                self.energy_function.dimensionality
+            )
+
+            noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
+            traj = node.trajectory(
+                noise,
+                t_span=torch.linspace(0, 1, 100, device=self.device),
+            )
+
+            return traj[-1]
+
     def eval_epoch_end(self, prefix: str):
         wandb_logger = get_wandb_logger(self.loggers)
         # convert to dict of tensors assumes [batch, ...]
@@ -346,8 +481,36 @@ class DEMLitModule(LightningModule):
             k: torch.cat([dic[k] for dic in self.eval_step_outputs], dim=0)
             for k in self.eval_step_outputs[0]
         }
+
+        if self.energy_function.dimensionality == 2:
+            fig, ax = plt.subplots()
+            ax.scatter(*outputs['gen_1'].detach().cpu().T, label='Generated prior')
+            ax.scatter(
+                *self.prior.sample((len(outputs['gen_1']),)).detach().cpu().T,
+                label='True prior',
+                alpha=0.5
+            )
+
+            ax.legend()
+
+            wandb_logger.log_image(f'{prefix}/generated_prior', [fig_to_image(fig)])
+
+        unprioritized_buffer_samples, cfm_samples = None, None
+        if self.nll_with_cfm:
+            unprioritized_buffer_samples, _, _ = self.buffer.sample(
+                self.num_samples_to_generate_per_epoch,
+                prioritize=self.prioritize_cfm_training_samples
+            )
+
+            cfm_samples = self.generate_cfm_samples()
+
         self.energy_function.log_on_epoch_end(
-            self.last_samples, self.last_energies, self.buffer, wandb_logger
+            self.last_samples,
+            self.last_energies,
+            unprioritized_buffer_samples,
+            cfm_samples,
+            self.buffer,
+            wandb_logger
         )
 
         # pad with time dimension 1

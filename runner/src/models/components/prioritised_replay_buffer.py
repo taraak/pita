@@ -1,4 +1,4 @@
-from typing import NamedTuple, Tuple, Iterable, Callable
+from typing import NamedTuple, Tuple, Iterable, Callable, Optional
 import torch
 
 class ReplayData(NamedTuple):
@@ -93,20 +93,28 @@ class PrioritisedReplayBuffer:
         self.current_index = new_index % self.max_length
 
     @torch.no_grad()
-    def sample(self, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def sample(
+        self,
+        batch_size: int,
+        prioritize: Optional[bool] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Return a batch of sampled data, if the batch size is specified then the batch will have a
         leading axis of length batch_size, otherwise the default self.batch_size will be used."""
         if not self.can_sample:
             raise Exception("Buffer must be at minimum length before calling sample")
+
+        if prioritize is None:
+            prioritize = self.prioritize
+
         max_index = self.max_length if self.is_full else self.current_index
         if self.sample_with_replacement:
-            if self.prioritize:
+            if prioritize:
                 indices = torch.distributions.Categorical(logits=self.buffer.log_w[:max_index]
                                                         ).sample((batch_size,))
             else:
                 indices = torch.randint(max_index, (batch_size,)).to(self.device)
         else:
-            if self.prioritize:
+            if prioritize:
                 indices = sample_without_replacement(self.buffer.log_w[:max_index], batch_size).to(self.device)
             else:
                 indices = torch.randperm(max_index)[:batch_size].to(self.device)
@@ -233,20 +241,28 @@ class SimpleBuffer:
         self.current_index = new_index % self.max_length
 
     @torch.no_grad()
-    def sample(self, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def sample(
+        self,
+        batch_size: int,
+        prioritize: Optional[bool] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Return a batch of sampled data, if the batch size is specified then the batch will have a
         leading axis of length batch_size, otherwise the default self.batch_size will be used."""
         if not self.can_sample:
             raise Exception("Buffer must be at minimum length before calling sample")
+
+        if prioritize is None:
+            prioritize = self.prioritize
+
         max_index = self.max_length if self.is_full else self.current_index
         if self.sample_with_replacement:
-            if self.prioritize:
+            if prioritize:
                 indices = torch.distributions.Categorical(logits=self.buffer.energy[:max_index]
                                                         ).sample((batch_size,))
             else:
                 indices = torch.randint(max_index, (batch_size,)).to(self.device)
         else:
-            if self.prioritize:
+            if prioritize:
                 indices = sample_without_replacement(self.buffer.energy[:max_index], batch_size).to(self.device)
             else:
                 indices = torch.randperm(max_index)[:batch_size].to(self.device)

@@ -7,19 +7,64 @@ from src.models.components.replay_buffer import ReplayBuffer
 
 
 class BaseEnergyFunction(ABC):
-    def __init__(self, dimensionality: int):
+    def __init__(
+        self,
+        dimensionality: int,
+        normalization_min: Optional[float] = None,
+        normalization_max: Optional[float] = None
+    ):
         self._dimensionality = dimensionality
         self._test_set = self.setup_test_set()
+
+        self._normalization_min = normalization_min
+        self._normalization_max = normalization_max
 
     def setup_test_set(self) -> Optional[torch.Tensor]:
         return None
 
-    def sample_test_set(self, num_points: int) -> Optional[torch.Tensor]:
+    @property
+    def _can_normalize(self) -> bool:
+        return (
+            self._normalization_min is not None and
+            self._normalization_max is not None
+        )
+
+    def normalize(self, x: torch.Tensor) -> torch.Tensor:
+        if x is None or not self._can_normalize:
+            return x
+
+        mins = self._normalization_min
+        maxs = self._normalization_max
+
+        ## [ 0, 1 ]
+        x = (x - mins) / (maxs - mins + 1e-5)
+        ## [ -1, 1 ]
+        return x * 2 - 1
+
+    def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
+        if x is None or not self._can_normalize:
+            return x
+
+        mins = self._normalization_min
+        maxs = self._normalization_max
+
+        x = (x + 1) / 2
+        return x * (maxs - mins) + mins
+
+    def sample_test_set(
+        self,
+        num_points: int,
+        normalize: bool = False
+    ) -> Optional[torch.Tensor]:
         if self.test_set is None:
             return None
 
         idxs = torch.randperm(len(self.test_set))[:num_points]
-        return self.test_set[idxs]
+        outs = self.test_set[idxs]
+        if normalize:
+            outs = self.normalize(outs)
+
+        return outs
 
     @property
     def dimensionality(self) -> int:

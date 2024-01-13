@@ -67,4 +67,3 @@ def fig_to_image(fig):
         fig.canvas.get_width_height(),
         fig.canvas.tostring_rgb()
     )
-
