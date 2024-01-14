@@ -1,6 +1,7 @@
 import torch
 import matplotlib.pyplot as plt
 
+from typing import Optional
 from lightning.pytorch.loggers import WandbLogger
 from fab.target_distributions.many_well import ManyWellEnergy
 from fab.utils.plotting import plot_contours, plot_marginal_pair
@@ -18,6 +19,7 @@ class ManyWell(BaseEnergyFunction):
         true_expectation_estimation_n_samples=int(1e5),
         plotting_buffer_sample_size=512,
         plot_samples_epoch_period=5,
+        test_set_size=1024,
         should_unnormalize=False,
         data_normalization_factor=3
     ):
@@ -33,13 +35,18 @@ class ManyWell(BaseEnergyFunction):
         self.plotting_buffer_sample_size = plotting_buffer_sample_size
         self.plot_samples_epoch_period = plot_samples_epoch_period
 
-        self.should_unnormalize = should_unnormalize
-        self.data_normalization_factor = data_normalization_factor
+        self.test_set_size = test_set_size
 
-        super().__init__(dimensionality=dimensionality)
+        self.should_unnormalize = should_unnormalize
+
+        super().__init__(
+            dimensionality=dimensionality,
+            normalization_min=-data_normalization_factor,
+            normalization_max=data_normalization_factor
+        )
 
     def setup_test_set(self):
-        return self.many_well._test_set_modes
+        return self.many_well.sample((self.test_set_size,))
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
@@ -47,22 +54,12 @@ class ManyWell(BaseEnergyFunction):
 
         return self.many_well.log_prob(samples)
 
-    def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
-        '''
-            x : [ -1, 1 ]
-        '''
-        if x is None:
-            return x
-
-        maxs, mins = self.data_normalization_factor, -self.data_normalization_factor
-
-        x = (x + 1) / 2
-        return x * (maxs - mins) + mins
-
     def log_on_epoch_end(
         self,
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
+        unprioritized_buffer_samples: Optional[torch.Tensor],
+        cfm_samples: Optional[torch.Tensor],
         replay_buffer: ReplayBuffer,
         wandb_logger: WandbLogger,
         prefix: str = ''
@@ -82,6 +79,11 @@ class ManyWell(BaseEnergyFunction):
                 buffer_samples = self.unnormalize(buffer_samples)
                 latest_samples = self.unnormalize(latest_samples)
 
+                if unprioritized_buffer_samples is not None:
+                    unprioritized_buffer_samples = self.unnormalize(
+                        unprioritized_buffer_samples
+                    )
+
             samples_fig = self.get_dataset_fig(
                 buffer_samples,
                 latest_samples
@@ -92,6 +94,17 @@ class ManyWell(BaseEnergyFunction):
                 [samples_fig]
             )
 
+            if unprioritized_buffer_samples is not None:
+                cfm_samples_fig = self.get_dataset_fig(
+                    unprioritized_buffer_samples,
+                    cfm_samples
+                )
+
+                wandb_logger.log_image(
+                    f'{prefix}cfm_generated_samples',
+                    [cfm_samples_fig]
+                )
+
         self.curr_epoch += 1
 
     def get_dataset_fig(
@@ -100,9 +113,9 @@ class ManyWell(BaseEnergyFunction):
         gen_samples=None,
         plotting_bounds=(-3, 3)
     ):
-        n_rows = dim // 2
+        n_rows = self.dimensionality // 2
         fig, axs = plt.subplots(
-            dim // 2,
+            self.dimensionality // 2,
             2,
             sharex=True,
             sharey=True,
@@ -131,7 +144,7 @@ class ManyWell(BaseEnergyFunction):
 
             if gen_samples is not None:
                 plot_contours(
-                    target.log_prob_2D,
+                    self.many_well.log_prob_2D,
                     bounds=plotting_bounds,
                     ax=axs[i, 1],
                     n_contour_levels=40

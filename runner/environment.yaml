@@ -57,3 +57,5 @@ dependencies:
       - hydra-submitit-launcher
       - scikit-learn
       - scipy
+      - -e ../fab
+      - -e .
