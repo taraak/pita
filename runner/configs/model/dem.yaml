@@ -60,8 +60,6 @@ lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
 input_scaling_factor: null
 output_scaling_factor: null
 
-compute_nll: False
-
 # compile model for faster training with pytorch 2.0
 compile: false
 

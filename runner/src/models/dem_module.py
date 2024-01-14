@@ -229,7 +229,7 @@ class DEMLitModule(LightningModule):
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
         x0 = (
             torch.randn(
-                self.num_samples_to_generate_per_epoch,
+                self.num_samples_to_sample_from_buffer,
                 self.energy_function.dimensionality,
                 device=self.device,
             )
@@ -533,11 +533,13 @@ class DEMLitModule(LightningModule):
 
     def scatter_prior(self, prefix, outputs):
         wandb_logger = get_wandb_logger(self.loggers)
+        if wandb_logger is None:
+            return
         fig, ax = plt.subplots()
         n_samples = outputs.shape[0]
         ax.scatter(*outputs.detach().cpu().T, label="Generated prior")
         ax.scatter(
-            *self.prior.sample((n_samples,)).cpu().T,
+            *self.prior.sample(n_samples).cpu().T,
             label="True prior",
             alpha=0.5,
         )
@@ -612,6 +614,8 @@ class DEMLitModule(LightningModule):
 
         reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule)
 
+        self.prior = self.partial_prior(device=self.device, scale=self.noise_schedule.h(1) ** 0.5)
+
         init_states = self.generate_samples(reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale)
         init_energies = self.energy_function(init_states)
 
@@ -620,8 +624,6 @@ class DEMLitModule(LightningModule):
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
             self.cfm_net = torch.compile(self.cfm_net)
-
-        self.prior = self.partial_prior(device=self.device, scale=self.noise_schedule.h(1) ** 0.5)
 
         if self.nll_with_cfm:
             self.cfm_prior = self.partial_prior(device=self.device, scale=self.cfm_prior_std)   

@@ -30,17 +30,6 @@ model:
     _partial_: true
     dim: 2
 
-  buffer:
-    _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
-    dim: ${energy.dimensionality}
-    max_length: 10000
-    min_sample_length: 1000
-    initial_sampler: null
-    device: ${trainer.accelerator}
-    sample_with_replacement: True
-    fill_buffer_during_init: False
-    prioritize: False #True
-
   clipper:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
@@ -54,3 +43,5 @@ model:
     epsilon: 1e-3
 
   diffusion_scale: 1.0
+
+  num_samples_to_generate_per_epoch: 1000

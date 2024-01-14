@@ -7,7 +7,6 @@ from src.models.components.sdes import VEReverseSDE
 def euler_maruyama_step(sde: VEReverseSDE, t: torch.Tensor, x: torch.Tensor, dt: float, diffusion_scale=1.0):
     # Calculate drift and diffusion terms
     drift = sde.f(t, x) * dt
-    print("DIFFUSION SCALE", diffusion_scale)
     diffusion = diffusion_scale * sde.g(t, x) * np.sqrt(dt) * torch.randn_like(x)
 
     # Update the state

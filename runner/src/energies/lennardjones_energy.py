@@ -92,7 +92,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
         data_path,
         device="cpu",
         plot_samples_epoch_period = 5,
-        plotting_buffer_sample_size = 512
+        plotting_buffer_sample_size = 512,
+        data_normalization_factor = 1.0
         ):
         torch.manual_seed(0)  # seed of 0
 
@@ -102,6 +103,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.curr_epoch = 0
         self.plotting_buffer_sample_size = plotting_buffer_sample_size
         self.plot_samples_epoch_period = plot_samples_epoch_period
+
+        self.data_normalization_factor = data_normalization_factor
 
         self.lennard_jones = LennardJonesPotential(
             dim=dimensionality,
