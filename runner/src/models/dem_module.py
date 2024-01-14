@@ -111,6 +111,7 @@ class DEMLitModule(LightningModule):
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
         nll_with_cfm: bool,
+        nll_with_dem: bool,
         cfm_sigma: float,
         cfm_prior_std: float,
         compile: bool,
@@ -154,6 +155,7 @@ class DEMLitModule(LightningModule):
         self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False)
 
         self.nll_with_cfm = nll_with_cfm
+        self.nll_with_dem = nll_with_dem
         self.cfm_prior_std = cfm_prior_std
         self.conditional_flow_matcher = ExactOptimalTransportConditionalFlowMatcher(
             sigma=cfm_sigma
@@ -198,9 +200,6 @@ class DEMLitModule(LightningModule):
         self.num_integration_steps = num_integration_steps
 
         self.prioritize_cfm_training_samples = prioritize_cfm_training_samples
-
-        self._prior = None
-
         self.lambda_weighter = self.hparams.lambda_weighter(self.noise_schedule)
 
         self.last_samples = None
@@ -362,29 +361,8 @@ class DEMLitModule(LightningModule):
             return trajectory
         return trajectory[-1]
 
-    @property
-    def prior(self):
-        if self._prior is None:
-            loc = torch.zeros(self.energy_function.dimensionality, device=self.device)
-
-            var_scale = self.noise_schedule.h(1)
-            if self.nll_with_cfm:
-                var_scale = self.cfm_prior_std**2
-
-            covar = (
-                torch.eye(self.energy_function.dimensionality, device=self.device)
-                * var_scale
-            )
-
-            self._prior = torch.distributions.MultivariateNormal(
-                loc,
-                covar,
-            )
-
-        return self._prior
-
     def compute_nll(
-        self, cnf, samples: torch.Tensor, num_integration_steps=1, method="dopri5"
+        self, cnf, prior, samples: torch.Tensor, num_integration_steps=1, method="dopri5"
     ):
         aug_samples = torch.cat(
             [samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1
@@ -394,7 +372,7 @@ class DEMLitModule(LightningModule):
             -1
         ]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
-        log_p_1 = self.prior.log_prob(x_1)
+        log_p_1 = prior.log_prob(x_1)
         log_p_0 = log_p_1 + logdetjac
         nll = -log_p_0
         return nll, x_1, logdetjac, log_p_1
@@ -406,9 +384,9 @@ class DEMLitModule(LightningModule):
 
         self.buffer.add(self.last_samples, self.last_energies)
 
-    def compute_and_log_nll(self, cnf, samples, prefix, name):
+    def compute_and_log_nll(self, cnf, prior, samples, prefix, name):
         cnf.nfe = 0.0
-        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(cnf, samples)
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(cnf, prior, samples)
         nfe_metric = getattr(self, f"{prefix}_{name}nfe")
         nll_metric = getattr(self, f"{prefix}_{name}nll")
         logdetjac_metric = getattr(self, f"{prefix}_{name}nll_logdetjac")
@@ -469,15 +447,16 @@ class DEMLitModule(LightningModule):
             f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
         )
 
-        forwards_samples = self.compute_and_log_nll(self.dem_cnf, batch, prefix, "dem_")
         to_log = {
             "data_0": batch,
             "gen_0": backwards_samples,
-            "gen_1": forwards_samples,
         }
+        if self.nll_with_dem:
+            forwards_samples = self.compute_and_log_nll(self.dem_cnf, self.prior, batch, prefix, "dem_")
+            to_log["gen_1_dem"] = forwards_samples
         if self.nll_with_cfm:
-            forwards_samples = self.compute_and_log_nll(self.cfm_cnf, batch, prefix, "")
-            to_log["cfm_gen_1"] = forwards_samples
+            forwards_samples = self.compute_and_log_nll(self.cfm_cnf, self.cfm_prior, batch, prefix, "")
+            to_log["gen_1_cfm"] = forwards_samples
 
         self.eval_step_outputs.append(to_log)
 
@@ -514,10 +493,23 @@ class DEMLitModule(LightningModule):
             noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
             traj = node.trajectory(
                 noise,
-                t_span=torch.linspace(0, 1, 100, device=self.device),
+                t_span=torch.linspace(0, 1, 2, device=self.device),
             )
 
             return traj[-1]
+
+    def scatter_prior(self, prefix, outputs):
+        wandb_logger = get_wandb_logger(self.loggers)
+        fig, ax = plt.subplots()
+        n_samples = outputs.shape[0]
+        ax.scatter(*outputs.detach().cpu().T, label="Generated prior")
+        ax.scatter(
+            *self.prior.sample((n_samples,)).cpu().T,
+            label="True prior",
+            alpha=0.5,
+        )
+        ax.legend()
+        wandb_logger.log_image(f"{prefix}/generated_prior", [fig_to_image(fig)])
 
     def eval_epoch_end(self, prefix: str):
         wandb_logger = get_wandb_logger(self.loggers)
@@ -528,17 +520,10 @@ class DEMLitModule(LightningModule):
         }
 
         if self.energy_function.dimensionality == 2:
-            fig, ax = plt.subplots()
-            ax.scatter(*outputs["gen_1"].detach().cpu().T, label="Generated prior")
-            ax.scatter(
-                *self.prior.sample((len(outputs["gen_1"]),)).detach().cpu().T,
-                label="True prior",
-                alpha=0.5,
-            )
-
-            ax.legend()
-
-            wandb_logger.log_image(f"{prefix}/generated_prior", [fig_to_image(fig)])
+            if self.nll_with_cfm:
+                self.scatter_prior(prefix + "/cfm", outputs["gen_1_cfm"])
+            if self.nll_with_dem:
+                self.scatter_prior(prefix + "/dem", outputs["gen_1_dem"])
 
         unprioritized_buffer_samples, cfm_samples = None, None
         if self.nll_with_cfm:
@@ -602,6 +587,19 @@ class DEMLitModule(LightningModule):
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
             self.cfm_net = torch.compile(self.cfm_net)
+
+        var_scale = self.noise_schedule.h(1)
+        self.prior = torch.distributions.MultivariateNormal(
+            torch.zeros(self.energy_function.dimensionality, device=self.device),
+            torch.eye(self.energy_function.dimensionality, device=self.device) * var_scale
+        )
+
+        if self.nll_with_cfm:
+            var_scale = self.cfm_prior_std**2
+            self.cfm_prior = torch.distributions.MultivariateNormal(
+                torch.zeros(self.energy_function.dimensionality, device=self.device),
+                torch.eye(self.energy_function.dimensionality, device=self.device) * var_scale
+            )
 
     def configure_optimizers(self) -> Dict[str, Any]:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.

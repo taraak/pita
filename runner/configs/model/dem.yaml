@@ -71,6 +71,7 @@ num_samples_to_generate_per_epoch: 512
 num_integration_steps: 1000
 
 nll_with_cfm: true
+nll_with_dem: false
 cfm_sigma: 0.0
 cfm_prior_std: ${energy.data_normalization_factor}
 prioritize_cfm_training_samples: false
