@@ -99,7 +99,6 @@ class DEMLitModule(LightningModule):
     def __init__(
         self,
         net: torch.nn.Module,
-        cfm_net: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         energy_function: BaseEnergyFunction,
@@ -140,7 +139,7 @@ class DEMLitModule(LightningModule):
         self.save_hyperparameters(logger=False)
 
         self.net = net(energy_function=energy_function)
-        self.cfm_net = cfm_net
+        self.cfm_net = net(energy_function=energy_function)
         if input_scaling_factor is not None or output_scaling_factor is not None:
             self.net = ScalingWrapper(
                 self.net, input_scaling_factor, output_scaling_factor

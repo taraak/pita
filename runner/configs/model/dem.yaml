@@ -17,17 +17,6 @@ defaults:
   - net:
     - mlp
 
-cfm_net:
-  _target_: src.models.components.mlp.MyMLP
-  hidden_size: 128
-  hidden_layers: 3
-  emb_size: 128
-  time_emb: "sinusoidal"
-  input_emb: "sinusoidal"
-  concat_t_emb: true
-  out_dim: ${energy.dimensionality}
-  input_dim: ${energy.dimensionality}
-
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
   dim: ${energy.dimensionality}
