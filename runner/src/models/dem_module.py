@@ -13,7 +13,6 @@ from torchdyn.core import NeuralODE
 from torchmetrics import MeanMetric
 
 from src.energies.base_energy_function import BaseEnergyFunction
-from src.energies.base_prior import Prior, MeanFreePrior
 from src.utils.logging_utils import fig_to_image
 
 from .components.clipper import Clipper
@@ -124,6 +123,7 @@ class DEMLitModule(LightningModule):
         partial_prior=None,
         clipper_gen: Optional[Clipper] = None,
         diffusion_scale=1.0,
+        cfm_loss_weight=1.0,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -133,6 +133,8 @@ class DEMLitModule(LightningModule):
         :param buffer: Buffer of sampled objects
         """
         super().__init__()
+        # Seems to slow things down
+        # torch.set_float32_matmul_precision('high')
 
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
@@ -246,9 +248,10 @@ class DEMLitModule(LightningModule):
         )
 
         vt = self.cfm_net(t, xt)
-        return (vt - ut).pow(2).mean(dim=-1) / (
-            self.energy_function.data_normalization_factor**2
-        )
+        return (vt - ut).pow(2).mean(dim=-1)
+        # / (
+        #    self.energy_function.data_normalization_factor**2
+        # )
 
     def should_train_cfm(self, batch_idx: int) -> bool:
         return self.nll_with_cfm
@@ -336,7 +339,7 @@ class DEMLitModule(LightningModule):
                 prog_bar=True,
             )
 
-            loss = loss + cfm_loss
+            loss = loss + self.hparams.cfm_loss_weight * cfm_loss
 
         # return loss or backpropagation will fail
         return loss
@@ -427,7 +430,8 @@ class DEMLitModule(LightningModule):
         nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
             cnf, prior, samples
         )
-        logz = self.energy_function(samples) + nll
+        # Normalize, this seems super weird, but is the right thing to do -- AT
+        logz = self.energy_function(self.energy_function.normalize(samples)) + nll
         nfe_metric = getattr(self, f"{prefix}_{name}nfe")
         nll_metric = getattr(self, f"{prefix}_{name}nll")
         logdetjac_metric = getattr(self, f"{prefix}_{name}nll_logdetjac")
