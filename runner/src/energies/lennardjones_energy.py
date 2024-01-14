@@ -84,45 +84,53 @@ class LennardJonesPotential(Energy):
         return - self._energy(x)
     
 
-class LeonardJonesEnergy(BaseEnergyFunction):
+class LennardJonesEnergy(BaseEnergyFunction):
     def __init__(
         self,
+        dimensionality,
         n_particles,
-        n_spatial_dim = 3
+        data_path,
+        device="cpu",
+        plot_samples_epoch_period = 5,
+        plotting_buffer_sample_size = 512
         ):
         torch.manual_seed(0)  # seed of 0
-        dim = n_particles * n_spatial_dim
 
         self.n_particles = n_particles
-        self.n_spatial_dim = n_spatial_dim
+        self.n_spatial_dim = dimensionality // n_particles
 
-        self.leonard_jones = LennardJonesPotential(
-            dim=n_particles * n_spatial_dim,
+        self.curr_epoch = 0
+        self.plotting_buffer_sample_size = plotting_buffer_sample_size
+        self.plot_samples_epoch_period = plot_samples_epoch_period
+
+        self.lennard_jones = LennardJonesPotential(
+            dim=dimensionality,
             n_particles=n_particles,
             eps=1.0,
             rm=1.0,
             oscillator=True,
             oscillator_scale=1.0,
-            two_event_dims=True
+            two_event_dims=False
         )
 
-        all_data = np.load("../../../data/all_data_LJ13-2.npy", allow_pickle=True)
+        all_data = np.load(data_path, allow_pickle=True)
         self.test_data = all_data[len(all_data)//2:]
-        self.test_data = remove_mean(self.data, self.n_particles, self.n_spatial_dim)
+        self.test_data = remove_mean(self.test_data, self.n_particles, self.n_spatial_dim)
+        self.test_data = torch.tensor(self.test_data, device=device)
         del all_data
 
-        super().__init__(dim)
+        super().__init__(dimensionality=dimensionality)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
-        return self.leonard_jones._log_prob(samples).squeeze(-1)
+        return self.lennard_jones._log_prob(samples).squeeze(-1)
     
     def setup_test_set(self):
         return self.test_data
     
 
     def interatomic_dist(self, x):
-        batch_shape = x.shape[:-len(self.leonard_jones.event_shape)]
-        x = x.view(*batch_shape, self._n_particles, self._n_dims)
+        batch_shape = x.shape[:-len(self.lennard_jones.event_shape)]
+        x = x.view(*batch_shape, self.n_particles, self.n_spatial_dim)
 
         # Compute the pairwise interatomic distances
         # removes duplicates and diagonal
@@ -139,6 +147,10 @@ class LeonardJonesEnergy(BaseEnergyFunction):
         wandb_logger: WandbLogger,
         prefix: str = ''
     ) -> None:
+        
+        if latest_samples is None:
+            return
+        
         if wandb_logger is None:
             return
 
@@ -146,12 +158,8 @@ class LeonardJonesEnergy(BaseEnergyFunction):
             prefix += '/'
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
-            buffer_samples, _, _ = replay_buffer.sample(
-                self.plotting_buffer_sample_size
-            )
 
             samples_fig = self.get_dist_hist(
-                buffer_samples,
                 latest_samples
             )
 
@@ -165,33 +173,34 @@ class LeonardJonesEnergy(BaseEnergyFunction):
 
     def get_dist_hist(
         self,
-        samples,
+        samples
     ): 
-        test_data_smaller = sample_from_array(self.test_data, 2048)
+        test_data_smaller = sample_from_array(self.test_data, 10000)
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
         dist_samples = self.interatomic_dist(samples).detach().cpu()
         dist_test = self.interatomic_dist(test_data_smaller).detach().cpu()
 
-        axs[0].hist(dist_samples.view(-1), bins=200, alpha=0.5, density=True, histtype='step', linewidth=4);
+        axs[0].hist(dist_samples.view(-1), bins=100, alpha=0.5, density=True, histtype='step', linewidth=4);
         axs[0].hist(dist_test.view(-1), bins=100, alpha=0.5, density=True, histtype='step', linewidth=4);
         axs[0].set_xlabel('Interatomic distance')
         axs[0].legend(['generated data', 'test data'])
     
-        energy_samples = self(samples).detach().detach().cpu()
-        energy_test = self(test_data_smaller).detach().detach().cpu()
+        energy_samples = - self(samples).detach().detach().cpu()
+        energy_test = - self(test_data_smaller).detach().detach().cpu()
 
         min_energy = min(energy_test.min(), energy_samples.min()).item()
         max_energy = max(energy_test.max(), energy_samples.max()).item()
 
-        axs[1].hist(energy_test.cpu(), bins=100, density=True, alpha=0.4, range=(min_energy, max_energy),
+        axs[1].hist(energy_test.cpu(), bins=100, density=True, alpha=0.4, range=(-60, 0),
         color="g", histtype='step', linewidth=4, label="test data");
-
-        axs[1].hist(energy_samples.cpu(), bins=100, density=True, alpha=0.4, range=(min_energy, max_energy),
+        axs[1].hist(energy_samples.cpu(), bins=100, density=True, alpha=0.4, range=(-60, 0),
                 color="r", histtype='step', linewidth=4, label="generated data");
         axs[1].set_xlabel('Energy')
         axs[1].legend()
+
+        # plt.show()
 
         fig.canvas.draw()
         return PIL.Image.frombytes(

@@ -20,9 +20,10 @@ class EGNN_dynamics(nn.Module):
         self.counter = 0
 
     def forward(self, t, xs):
+        t = t.unsqueeze(-1)
         n_batch = xs.shape[0]
-        edges = self._cast_edges2batch(self.edges, n_batch, self._n_particles).to(xs.device)
-        edges = [edges[0], edges[1]]
+        edges = self._cast_edges2batch(self.edges, n_batch, self._n_particles)
+        edges = [edges[0].to(xs.device), edges[1].to(xs.device)]
         x = xs.reshape(n_batch*self._n_particles, self._n_dimension).clone()
         h = torch.ones(n_batch, self._n_particles).to(xs.device)
     

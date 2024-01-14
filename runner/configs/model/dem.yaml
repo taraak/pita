@@ -13,14 +13,10 @@ scheduler:
   factor: 0.1
   patience: 10
 
-net:
-  _target_: src.models.components.mlp.MyMLP
-  hidden_size: 128
-  hidden_layers: 3
-  emb_size: 128
-  time_emb: "sinusoidal"
-  input_emb: "sinusoidal"
-
+defaults:
+  - net:
+    - egnn
+    
 cfm_net:
   _target_: src.models.components.mlp.MyMLP
   hidden_size: 128
@@ -29,10 +25,20 @@ cfm_net:
   time_emb: "sinusoidal"
   input_emb: "sinusoidal"
 
+# noise_schedule:
+#   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+#   sigma_min: 4e-6
+#   sigma_max: 0.4
+
 noise_schedule:
-  _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-  sigma_min: 4e-6
-  sigma_max: 0.4
+  _target_: src.models.components.noise_schedules.QuadraticNoiseSchedule
+  beta: 1.5
+
+partial_prior:
+  _target_: src.energies.base_prior.MeanFreePrior
+  _partial_: true
+  n_particles: 13
+  spatial_dim: 3
 
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
@@ -43,7 +49,7 @@ buffer:
   device: ${trainer.accelerator}
   sample_with_replacement: True
   fill_buffer_during_init: False
-  prioritize: True
+  prioritize: False #True
 
 clipper:
   _target_: src.models.components.clipper.Clipper
@@ -52,8 +58,17 @@ clipper:
   max_score_norm: 50
   min_log_reward: null
 
+clipper_gen:
+  _target_: src.models.components.clipper.Clipper
+  should_clip_scores: True
+  should_clip_log_rewards: False
+  max_score_norm: 100
+  min_log_reward: null
+  
+clip_grad_for_generation: False
+
 lambda_weighter:
-  _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
+  _target_: src.models.components.lambda_weighter.NoLambdaWeighter #BasicLambdaWeighter
   _partial_: true
   epsilon: 1e-3
 
@@ -61,13 +76,16 @@ score_scaler: null
 
 num_init_samples: 1024
 num_estimator_mc_samples: 100
-num_samples_to_generate_per_epoch: 512
+num_samples_to_generate_per_epoch: 1024
+num_samples_to_sample_from_buffer: 5120
 num_integration_steps: 1000
 
 lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
 
 input_scaling_factor: null
 output_scaling_factor: null
+
+compute_nll: False
 
 # compile model for faster training with pytorch 2.0
 compile: false

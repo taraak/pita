@@ -7,6 +7,7 @@ from src.energies.base_energy_function import BaseEnergyFunction
 from torchmetrics import MeanMetric
 
 from src.energies.base_energy_function import BaseEnergyFunction
+from src.energies.base_prior import Prior, MeanFreePrior
 
 from .components.clipper import Clipper
 from .components.scaling_wrapper import ScalingWrapper
@@ -81,13 +82,19 @@ class DEMLitModule(LightningModule):
         num_init_samples: int,
         num_estimator_mc_samples: int,
         num_samples_to_generate_per_epoch: int,
+        num_samples_to_sample_from_buffer:int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
         compile: bool,
         input_scaling_factor: Optional[float] = None,
         output_scaling_factor: Optional[float] = None,
         clipper: Optional[Clipper] = None,
-        score_scaler: Optional[BaseScoreScaler] = None
+        score_scaler: Optional[BaseScoreScaler] = None,
+        compute_nll = True,
+        partial_prior = None,
+        clip_grad_for_generation = False,
+        clipper_gen: Optional[Clipper] = None,
+        diffusion_scale = 1.0
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -143,6 +150,7 @@ class DEMLitModule(LightningModule):
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
+        self.num_samples_to_sample_from_buffer = num_samples_to_sample_from_buffer
         self.num_integration_steps = num_integration_steps
         self._prior = None
 
@@ -151,6 +159,13 @@ class DEMLitModule(LightningModule):
         self.last_samples = None
         self.last_energies = None
         self.eval_step_outputs = []
+
+        self.partial_prior = partial_prior
+
+        self.clip_grad_for_generation = clip_grad_for_generation
+        self.clipper_gen = clipper_gen
+
+        self.diffusion_scale = diffusion_scale
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -186,12 +201,11 @@ class DEMLitModule(LightningModule):
 
         predicted_score = self.forward(times, samples)
 
-        error_norms = torch.linalg.vector_norm(
-            predicted_score - estimated_score,
-            dim=-1
+        error_norms = (
+            predicted_score - estimated_score
         ).pow(2)
 
-        return (self.lambda_weighter(times) * error_norms).mean()
+        return (self.lambda_weighter(times) * error_norms).mean() #[:,None]
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -204,11 +218,11 @@ class DEMLitModule(LightningModule):
         :return: A tensor of losses between model predictions and targets.
         """
         iter_samples, _, _ = self.buffer.sample(
-            self.num_samples_to_generate_per_epoch
+            self.num_samples_to_sample_from_buffer
         )
 
         times = torch.rand(
-            (self.num_samples_to_generate_per_epoch,),
+            (self.num_samples_to_sample_from_buffer,),
             device=iter_samples.device
         )
 
@@ -236,18 +250,18 @@ class DEMLitModule(LightningModule):
         reverse_sde: VEReverseSDE = None,
         num_samples: Optional[int] = None,
         return_full_trajectory: bool = False,
+        diffusion_scale = 1.0
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_samples_to_generate_per_epoch
-        samples = torch.randn(
-            (num_samples, self.energy_function.dimensionality),
-            device=self.device
-        ) * (self.noise_schedule.h(1) ** 0.5)
+        samples = self.prior.sample(num_samples)
+
 
         return self.integrate(
             reverse_sde=reverse_sde,
             samples=samples,
             reverse_time=True,
             return_full_trajectory=return_full_trajectory,
+            diffusion_scale = diffusion_scale
         )
 
     def integrate(
@@ -256,12 +270,14 @@ class DEMLitModule(LightningModule):
         samples: torch.Tensor = None,
         reverse_time=True,
         return_full_trajectory=False,
+        diffusion_scale = 1.0
     ) -> torch.Tensor:
         trajectory = integrate_sde(
             reverse_sde or self.reverse_sde,
             samples,
             self.num_integration_steps + 1,
-            reverse_time=reverse_time,
+            reverse_time = reverse_time,
+            diffusion_scale = diffusion_scale
         )
         if return_full_trajectory:
             return trajectory
@@ -270,12 +286,8 @@ class DEMLitModule(LightningModule):
     @property
     def prior(self):
         if self._prior is None:
-            self._prior = torch.distributions.MultivariateNormal(
-                torch.zeros(self.energy_function.dimensionality, device=self.device),
-                torch.eye(self.energy_function.dimensionality, device=self.device) * self.noise_schedule.h(1),
-            )
+            self._prior = self.partial_prior(device=self.device, scale=self.noise_schedule.h(1) ** 0.5)
         return self._prior
-
 
     def compute_nll(self, samples: torch.Tensor):
         aug_samples = torch.cat(
@@ -292,8 +304,18 @@ class DEMLitModule(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
-        self.last_samples = self.generate_samples()
-        self.last_energies = self.energy_function(self.last_samples)
+        # self.last_samples = self.generate_samples()
+        # self.last_energies = self.energy_function(self.last_samples)
+        if self.clip_grad_for_generation:
+            reverse_sde = VEReverseSDE(
+                self.clipper_gen.wrap_grad_fxn(self.net),
+                self.noise_schedule
+              )
+            self.last_samples = self.generate_samples(reverse_sde=reverse_sde, diffusion_scale = self.diffusion_scale)
+            self.last_energies = self.energy_function(self.last_samples)
+        else:
+            self.last_samples = self.generate_samples(diffusion_scale = self.diffusion_scale)
+            self.last_energies = self.energy_function(self.last_samples)
 
         self.buffer.add(self.last_samples, self.last_energies)
 
@@ -326,13 +348,14 @@ class DEMLitModule(LightningModule):
             backwards_samples = self.generate_samples(num_samples=len(batch))
 
         # generate data --> noise
-        nll, forwards_samples, logdetjac = self.compute_nll(batch)
-        nll_metric = self.val_nll if prefix == "val" else self.test_nll
-        nll_metric.update(nll)
+        if self.hparams.compute_nll:
+            nll, forwards_samples, logdetjac = self.compute_nll(batch)
+            nll_metric = self.val_nll if prefix == "val" else self.test_nll
+            nll_metric.update(nll)
 
-        self.log(
-            f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
-        )
+            self.log(
+                f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
+            )
 
         # update and log metrics
         loss_metric = self.val_loss if prefix == "val" else self.test_loss
@@ -342,7 +365,7 @@ class DEMLitModule(LightningModule):
             f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
         )
         self.eval_step_outputs.append(
-            {"data_0": batch, "gen_0": backwards_samples, "gen_1": forwards_samples}
+            {"data_0": batch, "gen_0": backwards_samples} #, "gen_1": forwards_samples
         )
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:

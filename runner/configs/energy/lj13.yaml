@@ -1,0 +1,10 @@
+  _target_: src.energies.lennardjones_energy.LennardJonesEnergy
+
+  dimensionality: 39
+  n_particles: 13
+  data_path: "../data/all_data_LJ13-2.npy"
+
+  device: ${trainer.accelerator}
+
+  plot_samples_epoch_period: 1
+
