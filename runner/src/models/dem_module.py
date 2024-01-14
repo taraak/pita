@@ -13,6 +13,7 @@ from torchdyn.core import NeuralODE
 from torchmetrics import MeanMetric
 
 from src.energies.base_energy_function import BaseEnergyFunction
+from src.energies.base_prior import Prior, MeanFreePrior
 from src.utils.logging_utils import fig_to_image
 
 from .components.clipper import Clipper
@@ -108,6 +109,7 @@ class DEMLitModule(LightningModule):
         num_init_samples: int,
         num_estimator_mc_samples: int,
         num_samples_to_generate_per_epoch: int,
+        num_samples_to_sample_from_buffer:int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
         nll_with_cfm: bool,
@@ -120,6 +122,9 @@ class DEMLitModule(LightningModule):
         output_scaling_factor: Optional[float] = None,
         clipper: Optional[Clipper] = None,
         score_scaler: Optional[BaseScoreScaler] = None,
+        partial_prior = None,
+        clipper_gen: Optional[Clipper] = None,
+        diffusion_scale = 1.0
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -197,6 +202,7 @@ class DEMLitModule(LightningModule):
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
+        self.num_samples_to_sample_from_buffer = num_samples_to_sample_from_buffer
         self.num_integration_steps = num_integration_steps
 
         self.prioritize_cfm_training_samples = prioritize_cfm_training_samples
@@ -205,6 +211,12 @@ class DEMLitModule(LightningModule):
         self.last_samples = None
         self.last_energies = None
         self.eval_step_outputs = []
+
+        self.partial_prior = partial_prior
+
+        self.clipper_gen = clipper_gen
+
+        self.diffusion_scale = diffusion_scale
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -217,7 +229,7 @@ class DEMLitModule(LightningModule):
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
         x0 = (
             torch.randn(
-                self.num_samples_to_generate_per_epoch,
+                self.num_samples_to_sample_from_buffer,
                 self.energy_function.dimensionality,
                 device=self.device,
             )
@@ -256,9 +268,12 @@ class DEMLitModule(LightningModule):
 
         predicted_score = self.forward(times, samples)
 
-        error_norms = (predicted_score - estimated_score).pow(2).mean(-1)
+        error_norms = (
+            predicted_score - estimated_score
+        ).pow(2).mean(-1)
 
-        return error_norms / self.lambda_weighter(times)
+        return (self.lambda_weighter(times) * error_norms)
+
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -270,10 +285,14 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        iter_samples, _, _ = self.buffer.sample(self.num_samples_to_generate_per_epoch)
+
+        iter_samples, _, _ = self.buffer.sample(
+            self.num_samples_to_sample_from_buffer
+        )
 
         times = torch.rand(
-            (self.num_samples_to_generate_per_epoch,), device=iter_samples.device
+            (self.num_samples_to_sample_from_buffer,),
+            device=iter_samples.device
         )
 
         noised_samples = iter_samples + (
@@ -329,17 +348,18 @@ class DEMLitModule(LightningModule):
         reverse_sde: VEReverseSDE = None,
         num_samples: Optional[int] = None,
         return_full_trajectory: bool = False,
+        diffusion_scale = 1.0
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_samples_to_generate_per_epoch
-        samples = torch.randn(
-            (num_samples, self.energy_function.dimensionality), device=self.device
-        ) * (self.noise_schedule.h(1) ** 0.5)
+
+        samples = self.prior.sample(num_samples)
 
         return self.integrate(
             reverse_sde=reverse_sde,
             samples=samples,
             reverse_time=True,
             return_full_trajectory=return_full_trajectory,
+            diffusion_scale = diffusion_scale
         )
 
     def integrate(
@@ -348,12 +368,14 @@ class DEMLitModule(LightningModule):
         samples: torch.Tensor = None,
         reverse_time=True,
         return_full_trajectory=False,
+        diffusion_scale = 1.0,
         no_grad=True,
     ) -> torch.Tensor:
         trajectory = integrate_sde(
             reverse_sde or self.reverse_sde,
             samples,
             self.num_integration_steps + 1,
+            diffusion_scale = diffusion_scale,
             reverse_time=reverse_time,
             no_grad=no_grad,
         )
@@ -379,8 +401,18 @@ class DEMLitModule(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
-        self.last_samples = self.generate_samples()
-        self.last_energies = self.energy_function(self.last_samples)
+        # self.last_samples = self.generate_samples()
+        # self.last_energies = self.energy_function(self.last_samples)
+        if self.clipper_gen is not None:
+            reverse_sde = VEReverseSDE(
+                self.clipper_gen.wrap_grad_fxn(self.net),
+                self.noise_schedule
+              )
+            self.last_samples = self.generate_samples(reverse_sde=reverse_sde, diffusion_scale = self.diffusion_scale)
+            self.last_energies = self.energy_function(self.last_samples)
+        else:
+            self.last_samples = self.generate_samples(diffusion_scale = self.diffusion_scale)
+            self.last_energies = self.energy_function(self.last_samples)
 
         self.buffer.add(self.last_samples, self.last_energies)
 
@@ -438,6 +470,7 @@ class DEMLitModule(LightningModule):
         backwards_samples = self.last_samples
         if backwards_samples is None:
             backwards_samples = self.generate_samples(num_samples=len(batch))
+
 
         # update and log metrics
         loss_metric = self.val_loss if prefix == "val" else self.test_loss
@@ -500,11 +533,13 @@ class DEMLitModule(LightningModule):
 
     def scatter_prior(self, prefix, outputs):
         wandb_logger = get_wandb_logger(self.loggers)
+        if wandb_logger is None:
+            return
         fig, ax = plt.subplots()
         n_samples = outputs.shape[0]
         ax.scatter(*outputs.detach().cpu().T, label="Generated prior")
         ax.scatter(
-            *self.prior.sample((n_samples,)).cpu().T,
+            *self.prior.sample(n_samples).cpu().T,
             label="True prior",
             alpha=0.5,
         )
@@ -579,7 +614,9 @@ class DEMLitModule(LightningModule):
 
         reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule)
 
-        init_states = self.generate_samples(reverse_sde, self.num_init_samples)
+        self.prior = self.partial_prior(device=self.device, scale=self.noise_schedule.h(1) ** 0.5)
+
+        init_states = self.generate_samples(reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale)
         init_energies = self.energy_function(init_states)
 
         self.buffer.add(init_states, init_energies)
@@ -588,18 +625,8 @@ class DEMLitModule(LightningModule):
             self.net = torch.compile(self.net)
             self.cfm_net = torch.compile(self.cfm_net)
 
-        var_scale = self.noise_schedule.h(1)
-        self.prior = torch.distributions.MultivariateNormal(
-            torch.zeros(self.energy_function.dimensionality, device=self.device),
-            torch.eye(self.energy_function.dimensionality, device=self.device) * var_scale
-        )
-
         if self.nll_with_cfm:
-            var_scale = self.cfm_prior_std**2
-            self.cfm_prior = torch.distributions.MultivariateNormal(
-                torch.zeros(self.energy_function.dimensionality, device=self.device),
-                torch.eye(self.energy_function.dimensionality, device=self.device) * var_scale
-            )
+            self.cfm_prior = self.partial_prior(device=self.device, scale=self.cfm_prior_std)   
 
     def configure_optimizers(self) -> Dict[str, Any]:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.

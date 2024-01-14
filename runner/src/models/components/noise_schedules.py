@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import numpy as np
+import torch
 
 
 class BaseNoiseSchedule(ABC):
@@ -25,6 +26,28 @@ class LinearNoiseSchedule(BaseNoiseSchedule):
 
     def h(self, t):
         return self.beta * t
+    
+
+class QuadraticNoiseSchedule(BaseNoiseSchedule):
+    def __init__(self, beta):
+        self.beta = beta
+        
+    def g(self, t):
+        return torch.sqrt(self.beta * 2 * t)
+    
+    def h(self, t):
+        return self.beta * t **2
+    
+
+class SubLinearNoiseSchedule(BaseNoiseSchedule):
+    def __init__(self, beta):
+        self.beta = beta 
+        
+    def g(self, t):
+        return torch.sqrt(self.beta * 0.5 * 1/(t ** 0.5 + 1e-3))
+    
+    def h(self, t):
+        return self.beta * t ** 0.5
 
 
 class GeometricNoiseSchedule(BaseNoiseSchedule):
