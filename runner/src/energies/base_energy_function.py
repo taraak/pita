@@ -3,6 +3,7 @@ from typing import Optional
 
 import torch
 from pytorch_lightning.loggers import WandbLogger
+
 from src.models.components.replay_buffer import ReplayBuffer
 
 
@@ -11,7 +12,7 @@ class BaseEnergyFunction(ABC):
         self,
         dimensionality: int,
         normalization_min: Optional[float] = None,
-        normalization_max: Optional[float] = None
+        normalization_max: Optional[float] = None,
     ):
         self._dimensionality = dimensionality
         self._test_set = self.setup_test_set()
@@ -25,8 +26,7 @@ class BaseEnergyFunction(ABC):
     @property
     def _can_normalize(self) -> bool:
         return (
-            self._normalization_min is not None and
-            self._normalization_max is not None
+            self._normalization_min is not None and self._normalization_max is not None
         )
 
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
@@ -52,9 +52,7 @@ class BaseEnergyFunction(ABC):
         return x * (maxs - mins) + mins
 
     def sample_test_set(
-        self,
-        num_points: int,
-        normalize: bool = False
+        self, num_points: int, normalize: bool = False
     ) -> Optional[torch.Tensor]:
         if self.test_set is None:
             return None
@@ -78,6 +76,11 @@ class BaseEnergyFunction(ABC):
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
+    def score(self, samples: torch.Tensor) -> torch.Tensor:
+        grad_fxn = torch.func.grad(self.__call__)
+        vmapped_grad = torch.vmap(grad_fxn)
+        return vmapped_grad(samples)
+
     def log_on_epoch_end(
         self,
         latest_samples: torch.Tensor,
@@ -86,4 +89,3 @@ class BaseEnergyFunction(ABC):
         wandb_logger: WandbLogger,
     ) -> None:
         pass
-

@@ -1,4 +1,5 @@
 _target_: src.models.components.mlp.MyMLP
+_partial_: true
 hidden_size: 128
 hidden_layers: 3
 emb_size: 128

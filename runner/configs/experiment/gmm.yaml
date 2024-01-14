@@ -5,6 +5,10 @@
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
+defaults: 
+  - override /energy: gmm
+  - override /model/net: pis
+
 
 tags: ["GMM"]
 
@@ -14,10 +18,6 @@ logger:
   wandb:
     tags: ${tags}
     group: "gmm"
-
-defaults: 
-  - override /energy: gmm
-  - override /model/net: mlp
 
 model:
   noise_schedule:

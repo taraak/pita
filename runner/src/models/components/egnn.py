@@ -6,7 +6,7 @@ from src.utils.data_utils import remove_mean
 class EGNN_dynamics(nn.Module):
     def __init__(self, n_particles, n_dimension, hidden_nf=64, act_fn=torch.nn.SiLU(),
                  n_layers=4, recurrent=True, attention=False,
-                 condition_time=True, tanh=False, agg='sum'):
+                 condition_time=True, tanh=False, agg='sum', energy_function=None):
         super().__init__()
         self.egnn = EGNN(in_node_nf=1, in_edge_nf=1, hidden_nf=hidden_nf, act_fn=act_fn, 
                          n_layers=n_layers, recurrent=recurrent, attention=attention, tanh=tanh, agg=agg)

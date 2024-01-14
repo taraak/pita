@@ -139,7 +139,8 @@ class DEMLitModule(LightningModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
 
-        self.net, self.cfm_net = net, cfm_net
+        self.net = net(energy_function=energy_function)
+        self.cfm_net = cfm_net
         if input_scaling_factor is not None or output_scaling_factor is not None:
             self.net = ScalingWrapper(
                 self.net, input_scaling_factor, output_scaling_factor
