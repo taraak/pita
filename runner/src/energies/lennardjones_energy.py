@@ -119,9 +119,20 @@ class LennardJonesEnergy(BaseEnergyFunction):
         )
 
         all_data = np.load(data_path, allow_pickle=True)
-        self.test_data = all_data[len(all_data)//2:]
-        self.test_data = remove_mean(self.test_data, self.n_particles, self.n_spatial_dim)
-        self.test_data = torch.tensor(self.test_data, device=device)
+
+
+        # Following the Equivarinat FM paper for the partitions
+        if self.n_particles == 13:
+            self.test_data = all_data[len(all_data)//2:]
+            self.test_data = remove_mean(self.test_data, self.n_particles, self.n_spatial_dim)
+            self.test_data = torch.tensor(self.test_data, device=device)
+        
+        elif self.n_particles == 55:
+            idx = np.random.choice(np.arange(len(all_data)), len(all_data), replace=False)
+            holdout_start = 200000
+            self.test_data = all_data[idx[holdout_start:]]
+            self.test_data = remove_mean(self.test_data, self.n_particles, self.n_spatial_dim)
+            self.test_data = torch.tensor(self.test_data, device=device)
         del all_data
 
         super().__init__(dimensionality=dimensionality)
@@ -132,7 +143,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
     def setup_test_set(self):
         return self.test_data
     
-
     def interatomic_dist(self, x):
         batch_shape = x.shape[:-len(self.lennard_jones.event_shape)]
         x = x.view(*batch_shape, self.n_particles, self.n_spatial_dim)
@@ -166,7 +176,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
 
-            samples_fig = self.get_dist_hist(
+            samples_fig = self.get_dataset_fig(
                 latest_samples
             )
 
@@ -177,7 +187,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
             if unprioritized_buffer_samples is not None:
                 cfm_samples_fig = self.get_dataset_fig(
-                    unprioritized_buffer_samples,
                     cfm_samples
                 )
 
@@ -189,7 +198,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.curr_epoch += 1
 
 
-    def get_dist_hist(
+    def get_dataset_fig(
         self,
         samples
     ): 
