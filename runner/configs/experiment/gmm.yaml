@@ -7,7 +7,7 @@
 # this allows you to overwrite only specified parameters
 defaults: 
   - override /energy: gmm
-  - override /model/net: pis
+  - override /model/net: mlp
 
 
 tags: ["GMM"]
