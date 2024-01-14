@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm
 
+
 class SinusoidalEmbedding(nn.Module):
     def __init__(self, size: int, scale: float = 1.0):
         super().__init__()
@@ -93,7 +94,9 @@ class PositionalEmbedding(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, size: int, t_emb_size: int = 0, add_t_emb=False, concat_t_emb=False):
+    def __init__(
+        self, size: int, t_emb_size: int = 0, add_t_emb=False, concat_t_emb=False
+    ):
         super().__init__()
 
         in_size = size + t_emb_size if concat_t_emb else size
@@ -119,12 +122,13 @@ class MyMLP(nn.Module):
         hidden_size: int = 128,
         hidden_layers: int = 3,
         emb_size: int = 128,
-        out_dim: int=2,
+        out_dim: int = 2,
         time_emb: str = "sinusoidal",
         input_emb: str = "sinusoidal",
         add_t_emb: bool = False,
         concat_t_emb: bool = False,
-        input_dim: int = 2
+        input_dim: int = 2,
+        energy_function=None,
     ):
         super().__init__()
 
@@ -135,23 +139,17 @@ class MyMLP(nn.Module):
 
         positional_embeddings = []
         for i in range(input_dim):
-            embedding = PositionalEmbedding(
-                emb_size,
-                input_emb,
-                scale=25.0
-            )
+            embedding = PositionalEmbedding(emb_size, input_emb, scale=25.0)
 
-            self.add_module(
-                f'input_mlp{i}',
-                embedding
-            )
+            self.add_module(f"input_mlp{i}", embedding)
 
             positional_embeddings.append(embedding)
 
         self.channels = 1
         self.self_condition = False
-        concat_size = len(self.time_mlp.layer) + \
-            sum(map(lambda x: len(x.layer), positional_embeddings))
+        concat_size = len(self.time_mlp.layer) + sum(
+            map(lambda x: len(x.layer), positional_embeddings)
+        )
 
         layers = [nn.Linear(concat_size, hidden_size)]
         for _ in range(hidden_layers):
@@ -165,8 +163,7 @@ class MyMLP(nn.Module):
 
     def forward(self, t, x, x_self_cond=False):
         positional_embs = [
-            self.get_submodule(f'input_mlp{i}')(x[:, i])
-            for i in range(x.shape[-1])
+            self.get_submodule(f"input_mlp{i}")(x[:, i]) for i in range(x.shape[-1])
         ]
 
         t_emb = self.time_mlp(t.squeeze())
@@ -189,9 +186,19 @@ class MyMLP(nn.Module):
 
         return x
 
+
 class MyMLPNoSpaceEmbedding(nn.Module):
-    def __init__(self, hidden_size: int = 128, hidden_layers: int = 3, emb_size: int = 128, out_dim: int=2,
-                 time_emb: str = "sinusoidal", input_emb: str = "sinusoidal", add_t_emb: bool = False, concat_t_emb: bool = False):
+    def __init__(
+        self,
+        hidden_size: int = 128,
+        hidden_layers: int = 3,
+        emb_size: int = 128,
+        out_dim: int = 2,
+        time_emb: str = "sinusoidal",
+        input_emb: str = "sinusoidal",
+        add_t_emb: bool = False,
+        concat_t_emb: bool = False,
+    ):
         super().__init__()
 
         self.add_t_emb = add_t_emb
@@ -232,9 +239,19 @@ class MyMLPNoSpaceEmbedding(nn.Module):
 
         return x
 
+
 class MyMLPNoEmbedding(nn.Module):
-    def __init__(self, hidden_size: int = 128, hidden_layers: int = 3, emb_size: int = 128, out_dim: int=2,
-                 time_emb: str = "sinusoidal", input_emb: str = "sinusoidal", add_t_emb: bool = False, concat_t_emb: bool = False):
+    def __init__(
+        self,
+        hidden_size: int = 128,
+        hidden_layers: int = 3,
+        emb_size: int = 128,
+        out_dim: int = 2,
+        time_emb: str = "sinusoidal",
+        input_emb: str = "sinusoidal",
+        add_t_emb: bool = False,
+        concat_t_emb: bool = False,
+    ):
         super().__init__()
 
         self.add_t_emb = add_t_emb
@@ -256,7 +273,7 @@ class MyMLPNoEmbedding(nn.Module):
         self.joint_mlp = nn.Sequential(*layers)
 
     def forward(self, t, x, x_self_cond=False):
-        #t_emb = self.time_mlp(t.squeeze())
+        # t_emb = self.time_mlp(t.squeeze())
         t_emb = t.unsqueeze(1)
         x = torch.cat((x, t_emb), dim=-1)
 
@@ -277,9 +294,16 @@ class MyMLPNoEmbedding(nn.Module):
 
         return x
 
+
 class MyMLP6dim(nn.Module):
-    def __init__(self, hidden_size: int = 128, hidden_layers: int = 3, emb_size: int = 128,
-                 time_emb: str = "sinusoidal", input_emb: str = "sinusoidal"):
+    def __init__(
+        self,
+        hidden_size: int = 128,
+        hidden_layers: int = 3,
+        emb_size: int = 128,
+        time_emb: str = "sinusoidal",
+        input_emb: str = "sinusoidal",
+    ):
         super().__init__()
 
         self.time_mlp = PositionalEmbedding(emb_size, time_emb)
@@ -292,10 +316,15 @@ class MyMLP6dim(nn.Module):
 
         self.channels = 1
         self.self_condition = False
-        concat_size = len(self.time_mlp.layer) + \
-            len(self.input_mlp1.layer) + len(self.input_mlp2.layer) + \
-            len(self.input_mlp3.layer) + len(self.input_mlp4.layer) + \
-            len(self.input_mlp5.layer) + len(self.input_mlp6.layer)
+        concat_size = (
+            len(self.time_mlp.layer)
+            + len(self.input_mlp1.layer)
+            + len(self.input_mlp2.layer)
+            + len(self.input_mlp3.layer)
+            + len(self.input_mlp4.layer)
+            + len(self.input_mlp5.layer)
+            + len(self.input_mlp6.layer)
+        )
         layers = [nn.Linear(concat_size, hidden_size), nn.GELU()]
         for _ in range(hidden_layers):
             layers.append(Block(hidden_size))
@@ -314,8 +343,15 @@ class MyMLP6dim(nn.Module):
         x = self.joint_mlp(x)
         return x
 
+
 class SpectralNormMLP(nn.Module):
-    def __init__(self, input_size: int = 2, hidden1_size: int = 64, hidden2_size: int = 128, output_size: int = 1):
+    def __init__(
+        self,
+        input_size: int = 2,
+        hidden1_size: int = 64,
+        hidden2_size: int = 128,
+        output_size: int = 1,
+    ):
         super(SpectralNormMLP, self).__init__()
 
         # First hidden layer with spectral normalization
@@ -326,7 +362,6 @@ class SpectralNormMLP(nn.Module):
 
         # Output layer with spectral normalization
         self.fc3 = spectral_norm(nn.Linear(hidden2_size, output_size))
-
 
     def forward(self, x):
         x = F.relu(self.fc1(x))

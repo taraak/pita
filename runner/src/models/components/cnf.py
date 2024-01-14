@@ -41,10 +41,7 @@ class CNF(torch.nn.Module):
         start_time = 1.0 - end_time
 
         time = torch.linspace(
-            start_time,
-            end_time,
-            num_integration_steps + 1,
-            device=x.device
+            start_time, end_time, num_integration_steps + 1, device=x.device
         )
 
         return odeint(self, x, t=time, method=method)

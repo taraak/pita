@@ -32,5 +32,7 @@ class RegVEReverseSDE(VEReverseSDE):
     def g(self, t, x):
         g = self.noise_schedule.g(t)
         if g.ndim > 0:
-            return g.unsqueeze(1) 
-        return torch.cat([torch.full_like(x[..., :-1], g), torch.zeros_like(x[..., -1:])], dim=-1)
+            return g.unsqueeze(1)
+        return torch.cat(
+            [torch.full_like(x[..., :-1], g), torch.zeros_like(x[..., -1:])], dim=-1
+        )

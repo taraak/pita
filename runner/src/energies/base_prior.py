@@ -14,13 +14,14 @@ class Prior:
 
     def log_prob(self, x):
         return self.dist.log_prob(x)
-    
+
     def sample(self, n_samples):
         return self.dist.sample((n_samples,))
-    
+
 
 class MeanFreePrior(torch.distributions.Distribution):
     arg_constraints: Dict[str, constraints.Constraint] = {}
+
     def __init__(self, n_particles, spatial_dim, scale, device="cpu"):
         super(MeanFreePrior, self).__init__()
         self.n_particles = n_particles
@@ -28,7 +29,7 @@ class MeanFreePrior(torch.distributions.Distribution):
         self.dim = n_particles * spatial_dim
         self.scale = scale
         self.device = device
-    
+
     def log_prob(self, x):
         x = x.reshape(-1, self.n_particles, self.spatial_dim)
         N, D = x.shape[-2:]
@@ -37,16 +38,17 @@ class MeanFreePrior(torch.distributions.Distribution):
         r2 = torch.sum(x**2, dim=(-1, -2)) / self.scale**2
 
         # The relevant hyperplane is (N-1) * D dimensional.
-        degrees_of_freedom = (N-1) * D
+        degrees_of_freedom = (N - 1) * D
 
         # Normalizing constant and logpx are computed:
-        log_normalizing_constant = -0.5 * degrees_of_freedom * math.log(2*torch.pi*self.scale**2)
+        log_normalizing_constant = (
+            -0.5 * degrees_of_freedom * math.log(2 * torch.pi * self.scale**2)
+        )
         log_px = -0.5 * r2 + log_normalizing_constant
         return log_px
-    
+
     def sample(self, n_samples):
         samples = torch.randn(n_samples, self.dim, device=self.device) * self.scale
         samples = samples.reshape(-1, self.n_particles, self.spatial_dim)
         samples = samples - samples.mean(-2, keepdims=True)
         return samples.reshape(-1, self.n_particles * self.spatial_dim)
-

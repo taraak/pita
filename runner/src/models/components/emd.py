@@ -43,7 +43,9 @@ def earth_mover_distance(
         weights2 = weights2.astype("float64")
         q_weights = weights2 / weights2.sum()
 
-    pairwise_dist = np.ascontiguousarray(pairwise_distances(p, Y=q, metric=metric, n_jobs=-1))
+    pairwise_dist = np.ascontiguousarray(
+        pairwise_distances(p, Y=q, metric=metric, n_jobs=-1)
+    )
 
     result = pot.emd2(
         p_weights, q_weights, pairwise_dist, numItermax=1e7, return_matrix=return_matrix
@@ -147,6 +149,9 @@ def interpolate_per_point_with_ot(p0, p1, tmap, interp_frac):
     p = p / p.sum(axis=0)
     choices = np.array([np.random.choice(I, p=p[i]) for i in range(I)])
     return np.asarray(
-        [p0[i] * (1 - interp_frac) + p1[j] * interp_frac for i, j in enumerate(choices)],
+        [
+            p0[i] * (1 - interp_frac) + p1[j] * interp_frac
+            for i, j in enumerate(choices)
+        ],
         dtype=np.float64,
     )

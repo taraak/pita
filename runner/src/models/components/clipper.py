@@ -3,13 +3,14 @@ from typing import Optional
 
 _EPSILON = 1e-6
 
+
 class Clipper:
     def __init__(
         self,
         should_clip_scores: bool,
         should_clip_log_rewards: bool,
         max_score_norm: Optional[float] = None,
-        min_log_reward: Optional[float] = None
+        min_log_reward: Optional[float] = None,
     ):
         self._should_clip_scores = should_clip_scores
         self._should_clip_log_rewards = should_clip_log_rewards
@@ -28,8 +29,7 @@ class Clipper:
         score_norms = torch.linalg.vector_norm(scores, dim=-1)
 
         clip_coefficient = torch.clamp(
-            self.max_score_norm / (score_norms + _EPSILON),
-            max=1
+            self.max_score_norm / (score_norms + _EPSILON), max=1
         )
 
         return scores * clip_coefficient.unsqueeze(-1)

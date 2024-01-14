@@ -16,7 +16,7 @@ scheduler:
 defaults:
   - net:
     - mlp
-    
+
 cfm_net:
   _target_: src.models.components.mlp.MyMLP
   hidden_size: 128

@@ -1,4 +1,5 @@
 _target_: src.models.components.egnn.EGNN_dynamics
+_partial_: true
 n_particles: 13
 n_dimension: 3
 hidden_nf: 32
