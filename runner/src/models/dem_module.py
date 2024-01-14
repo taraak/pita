@@ -696,10 +696,10 @@ class PISLitModule(DEMLitModule):
             no_grad=False,
         )[-1]
         x_1, quad_reg = aug_output[..., :-1], aug_output[..., -1]
-        prior_nll = self.prior.log_prob(x_1).mean() / dim
-        sample_nll = self.energy_function(x_1).mean() / dim
-        term_loss = sample_nll - prior_nll
-        quad_reg = (quad_reg / dim).mean()
+        prior_ll = self.prior.log_prob(x_1).mean() / dim
+        sample_ll = self.energy_function(x_1).mean() / dim
+        term_loss = prior_ll - sample_ll
+        quad_reg = (quad_reg).mean() / dim
         loss = term_loss + quad_reg
         self.log_dict(
             {
