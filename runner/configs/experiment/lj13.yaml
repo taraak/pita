@@ -26,9 +26,8 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01
-    sigma_max: 10
-
+    sigma_min: 0.01 #0.3
+    sigma_max: 10 #1.2
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -44,7 +43,7 @@ model:
   #   min_log_reward: null
 
   lambda_weighter:
-    _target_: src.models.components.lambda_weighter.NoLambdaWeighter
+    _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
     _partial_: true
 
   clipper:
