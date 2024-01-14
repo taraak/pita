@@ -198,6 +198,10 @@ class DEMLitModule(LightningModule):
         self.test_dem_nll = MeanMetric()
         self.val_dem_nfe = MeanMetric()
         self.test_dem_nfe = MeanMetric()
+        self.val_dem_logz = MeanMetric()
+        self.val_logz = MeanMetric()
+        self.test_dem_logz = MeanMetric()
+        self.test_logz = MeanMetric()
 
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
@@ -423,20 +427,24 @@ class DEMLitModule(LightningModule):
         nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
             cnf, prior, samples
         )
+        logz = self.energy_function(samples) + nll
         nfe_metric = getattr(self, f"{prefix}_{name}nfe")
         nll_metric = getattr(self, f"{prefix}_{name}nll")
         logdetjac_metric = getattr(self, f"{prefix}_{name}nll_logdetjac")
         log_p_1_metric = getattr(self, f"{prefix}_{name}nll_log_p_1")
+        logz_metric = getattr(self, f"{prefix}_{name}logz")
         nfe_metric.update(cnf.nfe)
         nll_metric.update(nll)
         logdetjac_metric.update(logdetjac)
         log_p_1_metric.update(log_p_1)
+        logz_metric.update(logz)
 
         self.log_dict(
             {
                 f"{prefix}/{name}_nfe": nfe_metric,
                 f"{prefix}/{name}nll_logdetjac": logdetjac_metric,
                 f"{prefix}/{name}nll_log_p_1": log_p_1_metric,
+                f"{prefix}/{name}logz": logz_metric,
             },
             on_epoch=True,
         )
