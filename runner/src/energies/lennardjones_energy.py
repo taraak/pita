@@ -3,6 +3,8 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
+from typing import Optional
+
 from lightning.pytorch.loggers import WandbLogger
 
 from bgflow import Energy
@@ -146,6 +148,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self,
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
+        unprioritized_buffer_samples: Optional[torch.Tensor],
+        cfm_samples: Optional[torch.Tensor],
         replay_buffer: ReplayBuffer,
         wandb_logger: WandbLogger,
         prefix: str = ''
@@ -170,6 +174,17 @@ class LennardJonesEnergy(BaseEnergyFunction):
                 f'{prefix}generated_samples',
                 [samples_fig]
             )
+
+            if unprioritized_buffer_samples is not None:
+                cfm_samples_fig = self.get_dataset_fig(
+                    unprioritized_buffer_samples,
+                    cfm_samples
+                )
+
+                wandb_logger.log_image(
+                    f'{prefix}cfm_generated_samples',
+                    [cfm_samples_fig]
+                )
 
         self.curr_epoch += 1
 
