@@ -10,4 +10,4 @@ conda activate actinfenv
 
 export seed=62;
 
-python src/train.py energy=lj13 trainer=gpu
+python src/train.py experiment=lj13 trainer=gpu

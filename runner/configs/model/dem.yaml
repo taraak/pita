@@ -25,16 +25,6 @@ cfm_net:
   time_emb: "sinusoidal"
   input_emb: "sinusoidal"
 
-noise_schedule:
-  _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-  sigma_min: 4e-6
-  sigma_max: 0.4
-
-partial_prior:
-  _target_: src.energies.base_prior.Prior
-  _partial_: true
-  dim: 2
-
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
   dim: ${energy.dimensionality}
@@ -44,29 +34,17 @@ buffer:
   device: ${trainer.accelerator}
   sample_with_replacement: True
   fill_buffer_during_init: False
-  prioritize: False #True
-
-clipper:
-  _target_: src.models.components.clipper.Clipper
-  should_clip_scores: True
-  should_clip_log_rewards: False
-  max_score_norm: 50
-  min_log_reward: null
-
-lambda_weighter:
-  _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
-  _partial_: true
-  epsilon: 1e-3
+  prioritize: False
 
 score_scaler: null
 
 num_init_samples: 1024
 num_estimator_mc_samples: 100
 num_samples_to_generate_per_epoch: 1024
-num_samples_to_sample_from_buffer: 5120
+num_samples_to_sample_from_buffer: 512
 num_integration_steps: 1000
 
-diffusion_scale: 1.0
+# diffusion_scale: 1.0
 
 lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
 

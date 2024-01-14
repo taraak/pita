@@ -29,8 +29,8 @@ class LinearNoiseSchedule(BaseNoiseSchedule):
     
 
 class QuadraticNoiseSchedule(BaseNoiseSchedule):
-    def __init__(self, beta, norm_factor=1.0):
-        self.beta = beta / norm_factor
+    def __init__(self, beta):
+        self.beta = beta
         
     def g(self, t):
         return torch.sqrt(self.beta * 2 * t)
@@ -40,8 +40,8 @@ class QuadraticNoiseSchedule(BaseNoiseSchedule):
     
 
 class SubLinearNoiseSchedule(BaseNoiseSchedule):
-    def __init__(self, beta, norm_factor=1.0):
-        self.beta = beta / norm_factor
+    def __init__(self, beta):
+        self.beta = beta 
         
     def g(self, t):
         return torch.sqrt(self.beta * 0.5 * 1/(t ** 0.5 + 1e-3))

@@ -23,6 +23,6 @@ class BasicLambdaWeighter(BaseLambdaWeighter):
         return self.noise_schedule.h(t) + self.epsilon
 
 
-class NoLambdaWeighter(BaseLambdaWeighter):
+class NoLambdaWeighter(BasicLambdaWeighter):
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
         return 1

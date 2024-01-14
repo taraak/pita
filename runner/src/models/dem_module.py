@@ -420,7 +420,7 @@ class DEMLitModule(LightningModule):
 
         reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule)
 
-        init_states = self.generate_samples(reverse_sde, self.num_init_samples)
+        init_states = self.generate_samples(reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale)
         init_energies = self.energy_function(init_states)
 
         self.buffer.add(init_states, init_energies)

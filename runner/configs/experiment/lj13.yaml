@@ -15,37 +15,44 @@ logger:
     tags: ${tags}
     group: "lj13"
 
-defualts: 
+defaults: 
   - override /energy: lj13
+  - override /model/net: egnn
 
 model:
-  - net:
-    - egnn
+  # noise_schedule:
+  #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
+  #   beta: 1.5
 
-noise_schedule:
-  _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-  beta: 1.5
+  noise_schedule:
+    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+    sigma_min: 0.3
+    sigma_max: 1.2
 
-partial_prior:
-  _target_: src.energies.base_prior.MeanFreePrior
-  _partial_: true
-  n_particles: 13
-  spatial_dim: 3
 
-# clipper_gen:
-#   _target_: src.models.components.clipper.Clipper
-#   should_clip_scores: True
-#   should_clip_log_rewards: False
-#   max_score_norm: 100
-#   min_log_reward: null
+  partial_prior:
+    _target_: src.energies.base_prior.MeanFreePrior
+    _partial_: true
+    n_particles: 13
+    spatial_dim: 3
 
-lambda_weighter:
-  _target_: src.models.components.lambda_weighter.NoLambdaWeighter
-  _partial_: true
+  # clipper_gen:
+  #   _target_: src.models.components.clipper.Clipper
+  #   should_clip_scores: True
+  #   should_clip_log_rewards: False
+  #   max_score_norm: 100
+  #   min_log_reward: null
 
-clipper:
-  _target_: src.models.components.clipper.Clipper
-  should_clip_scores: True
-  should_clip_log_rewards: False
-  max_score_norm: 50
-  min_log_reward: null
+  lambda_weighter:
+    _target_: src.models.components.lambda_weighter.NoLambdaWeighter
+    _partial_: true
+
+  clipper:
+    _target_: src.models.components.clipper.Clipper
+    should_clip_scores: True
+    should_clip_log_rewards: False
+    max_score_norm: 50
+    min_log_reward: null
+
+  # num_samples_to_sample_from_buffer: 5120
+  diffusion_scale: 0.1
