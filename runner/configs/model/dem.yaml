@@ -80,6 +80,8 @@ num_samples_to_generate_per_epoch: 1024
 num_samples_to_sample_from_buffer: 5120
 num_integration_steps: 1000
 
+diffusion_scale: 1.0
+
 lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
 
 input_scaling_factor: null
@@ -89,3 +91,4 @@ compute_nll: False
 
 # compile model for faster training with pytorch 2.0
 compile: false
+
