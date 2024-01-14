@@ -407,26 +407,31 @@ class DEMLitModule(LightningModule):
         self.buffer.add(self.last_samples, self.last_energies)
 
     def compute_and_log_nll(self, cnf, samples, prefix, name):
-        assert cnf.nfe == 0.0
-        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(cnf, samples)
-        self.log("{prefix}_{name}_nfe", cnf.nfe)
         cnf.nfe = 0.0
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(cnf, samples)
         nfe_metric = getattr(self, f"{prefix}_{name}nfe")
         nll_metric = getattr(self, f"{prefix}_{name}nll")
         logdetjac_metric = getattr(self, f"{prefix}_{name}nll_logdetjac")
         log_p_1_metric = getattr(self, f"{prefix}_{name}nll_log_p_1")
-
+        nfe_metric.update(cnf.nfe)
         nll_metric.update(nll)
         logdetjac_metric.update(logdetjac)
         log_p_1_metric.update(log_p_1)
 
         self.log_dict(
             {
+                f"{prefix}/{name}_nfe": nfe_metric,
                 f"{prefix}/{name}nll_logdetjac": logdetjac_metric,
                 f"{prefix}/{name}nll_log_p_1": log_p_1_metric,
-                f"{prefix}/{name}nll": nll_metric,
             },
             on_epoch=True,
+        )
+        self.log(
+            f"{prefix}/{name}nll",
+            nll_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
         )
         return forwards_samples
 
