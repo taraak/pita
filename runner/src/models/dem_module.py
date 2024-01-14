@@ -637,10 +637,7 @@ class PISLitModule(DEMLitModule):
         :return: A tensor of losses between model predictions and targets.
         """
         dim = self.energy_function.dimensionality
-        prior_samples = self.prior.rsample((self.num_samples_to_generate_per_epoch,))
-        aug_prior_samples = torch.cat(
-            [prior_samples, torch.zeros_like(prior_samples[..., :1])], dim=-1
-        )
+        aug_prior_samples = torch.zeros(self.num_samples_to_generate_per_epoch, dim+1, device=self.device)
 
         aug_output = self.integrate(
             self.reg_reverse_sde,
