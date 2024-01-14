@@ -1,0 +1,14 @@
+  _target_: src.energies.lennardjones_energy.LennardJonesEnergy
+
+  dimensionality: 165 
+  n_particles: 55
+  data_path: "../data/all_data_LJ55.npy"
+
+  device: ${trainer.accelerator}
+
+  plot_samples_epoch_period: 1
+
+  data_normalization_factor: 1.0
+
+  
+
