@@ -11,11 +11,7 @@ class BaseLambdaWeighter(ABC):
 
 
 class BasicLambdaWeighter(BaseLambdaWeighter):
-    def __init__(
-        self,
-        noise_schedule: BaseNoiseSchedule,
-        epsilon: float = 1e-3
-    ):
+    def __init__(self, noise_schedule: BaseNoiseSchedule, epsilon: float = 1e-3):
         self.noise_schedule = noise_schedule
         self.epsilon = epsilon
 

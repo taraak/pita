@@ -105,7 +105,9 @@ class CFMLitModule(LightningModule):
             l2_reg=1,
             squared_l2_reg=1,
         )
-        self.val_aug_net = AugmentedVectorField(self.net, self.val_augmentations.regs, self.dim)
+        self.val_aug_net = AugmentedVectorField(
+            self.net, self.val_augmentations.regs, self.dim
+        )
         if neural_ode is not None:
             self.aug_node = Sequential(
                 self.augmentations.augmenter,
@@ -165,7 +167,9 @@ class CFMLitModule(LightningModule):
                         and self.ot_sampler is not None
                         and t != self.hparams.leaveout_timepoint
                     ):
-                        tmp_ot = torch.stack(self.ot_sampler.sample_plan(tmp_ot[0], tmp_ot[1]))
+                        tmp_ot = torch.stack(
+                            self.ot_sampler.sample_plan(tmp_ot[0], tmp_ot[1])
+                        )
 
                     tmp_ot_list.append(tmp_ot)
                 tmp_ot_list = torch.stack(tmp_ot_list)
@@ -185,7 +189,9 @@ class CFMLitModule(LightningModule):
                 if training and ti_next == self.hparams.leaveout_timepoint:
                     ti_next += 1
                 if hasattr(self.datamodule, "HAS_JOINT_PLANS"):
-                    x0.append(torch.tensor(self.datamodule.timepoint_data[ti][X[i, ti]]))
+                    x0.append(
+                        torch.tensor(self.datamodule.timepoint_data[ti][X[i, ti]])
+                    )
                     pi = self.datamodule.pi[ti]
                     if training and ti + 1 == self.hparams.leaveout_timepoint:
                         pi = self.datamodule.pi_leaveout[ti]
@@ -193,7 +199,9 @@ class CFMLitModule(LightningModule):
                     i_next = np.random.choice(
                         pi.shape[1], p=pi[index_batch] / pi[index_batch].sum()
                     )
-                    x1.append(torch.tensor(self.datamodule.timepoint_data[ti_next][i_next]))
+                    x1.append(
+                        torch.tensor(self.datamodule.timepoint_data[ti_next][i_next])
+                    )
                 else:
                     x0.append(tmp_ot_list[ti][0][i])
                     x1.append(tmp_ot_list[ti][1][i])
@@ -263,7 +271,9 @@ class CFMLitModule(LightningModule):
         if self.ot_sampler is not None and not self.is_trajectory:
             x0, x1 = self.ot_sampler.sample_plan(x0, x1)
 
-        x, ut, t, mu_t, sigma_t, eps_t = self.calc_loc_and_target(x0, x1, t, t_select, training)
+        x, ut, t, mu_t, sigma_t, eps_t = self.calc_loc_and_target(
+            x0, x1, t, t_select, training
+        )
 
         if self.hparams.avg_size > 0:
             x, ut, t = self.average_ut(x, t, mu_t, sigma_t, ut)
@@ -327,16 +337,20 @@ class CFMLitModule(LightningModule):
             raise NotImplementedError(f"Unknown test procedure {self.hparams.test_nfe}")
         if True:
             from torchdiffeq import odeint
+
             print("RUNNING ADAPTIVE INTEGRATION")
             print(self.net.nfe)
             x = torch.randn(batch[0].shape[0] * 5, *self.dim).type_as(batch[0])
             t_span = torch.linspace(0, 1, 2)
-            traj = odeint(self.net, x, t_span, rtol=1e-5, atol=1e-5, method="dopri5")[-1]
+            traj = odeint(self.net, x, t_span, rtol=1e-5, atol=1e-5, method="dopri5")[
+                -1
+            ]
             print(self.net.nfe)
         else:
             n_scale = 1 if self.hparams.nice_name == "short" else 5
             traj = solver.odeint(
-                torch.randn(batch[0].shape[0] * n_scale, *self.dim).type_as(batch[0]), t_span
+                torch.randn(batch[0].shape[0] * n_scale, *self.dim).type_as(batch[0]),
+                t_span,
             )[-1]
         traj = traj * 0.5 + 0.5
         os.makedirs("images", exist_ok=True)
@@ -361,7 +375,11 @@ class CFMLitModule(LightningModule):
             self.image_eval_step(batch, batch_idx, prefix)
         shapes = [b.shape[0] for b in batch]
 
-        if not self.is_image and prefix == "val" and shapes.count(shapes[0]) == len(shapes):
+        if (
+            not self.is_image
+            and prefix == "val"
+            and shapes.count(shapes[0]) == len(shapes)
+        ):
             reg, mse = self.step(batch, training=False)
             loss = mse + reg
             self.log_dict(
@@ -376,7 +394,11 @@ class CFMLitModule(LightningModule):
 
     def preprocess_epoch_end(self, outputs: List[Any], prefix: str):
         """Preprocess the outputs of the epoch end function."""
-        if self.is_trajectory and prefix == "test" and isinstance(outputs[0]["x"], list):
+        if (
+            self.is_trajectory
+            and prefix == "test"
+            and isinstance(outputs[0]["x"], list)
+        ):
             # x is jagged if doing a trajectory
             x = outputs[0]["x"]
             ts = len(x)
@@ -489,10 +511,15 @@ class CFMLitModule(LightningModule):
             traj = solver.odeint(x0, t_span)
             assert traj.shape[0] == t_span.shape[0]
             kls = [
-                self.datamodule.KL(xt, self.hparams.sigma_min, t) for t, xt in zip(t_span, traj)
+                self.datamodule.KL(xt, self.hparams.sigma_min, t)
+                for t, xt in zip(t_span, traj)
             ]
-            self.log_dict({f"{prefix}/kl/mean": torch.stack(kls).mean().item()}, sync_dist=True)
-            self.log_dict({f"{prefix}/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True)
+            self.log_dict(
+                {f"{prefix}/kl/mean": torch.stack(kls).mean().item()}, sync_dist=True
+            )
+            self.log_dict(
+                {f"{prefix}/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True
+            )
 
         return trajs, full_trajs
 
@@ -504,7 +531,9 @@ class CFMLitModule(LightningModule):
                 path = "/home/mila/a/alexander.tong/scratch/trajectory-inference/data/fid_stats_cifar10_train.npz"
                 from pytorch_fid import fid_score
 
-                fid = fid_score.calculate_fid_given_paths(["images", path], 256, "cuda", 2048, 0)
+                fid = fid_score.calculate_fid_given_paths(
+                    ["images", path], 256, "cuda", 2048, 0
+                )
                 self.log(f"{prefix}/fid", fid)
 
         ts, x, x0, x_rest = self.preprocess_epoch_end(outputs, prefix)
@@ -627,7 +656,9 @@ class RectifiedFlowLitModule(CFMLitModule):
                 l2_reg=1,
                 squared_l2_reg=1,
             )
-        self.val_aug_net = AugmentedVectorField(self.net, self.val_augmentations.regs, self.dim)
+        self.val_aug_net = AugmentedVectorField(
+            self.net, self.val_augmentations.regs, self.dim
+        )
         if neural_ode is not None:
             self.aug_node = Sequential(
                 self.augmentations.augmenter,
@@ -741,7 +772,11 @@ class VariancePreservingCFM(CFMLitModule):
 
     def calc_u(self, x0, x1, x, t, mu_t, sigma_t):
         del x, mu_t, sigma_t
-        return math.pi / 2 * (torch.cos(math.pi / 2 * t) * x1 - torch.sin(math.pi / 2 * t) * x0)
+        return (
+            math.pi
+            / 2
+            * (torch.cos(math.pi / 2 * t) * x1 - torch.sin(math.pi / 2 * t) * x0)
+        )
 
 
 class SBCFMLitModule(CFMLitModule):
@@ -843,7 +878,9 @@ class SF2MLitModule(CFMLitModule):
             l2_reg=1,
             squared_l2_reg=1,
         )
-        self.val_aug_net = AugmentedVectorField(self.net, self.val_augmentations.regs, self.dim)
+        self.val_aug_net = AugmentedVectorField(
+            self.net, self.val_augmentations.regs, self.dim
+        )
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.sigma = sigma
@@ -989,7 +1026,9 @@ class SF2MLitModule(CFMLitModule):
                 to_add = {
                     f"{prefix}/sde/t_out/{key.split('/')[-1]}": val
                     for key, val in d.items()
-                    if key.startswith(f"{prefix}/sde/t{self.hparams.leaveout_timepoint}")
+                    if key.startswith(
+                        f"{prefix}/sde/t{self.hparams.leaveout_timepoint}"
+                    )
                 }
                 d.update(to_add)
             d[f"{prefix}/sde/nfe"] = nfe
@@ -1003,13 +1042,16 @@ class SF2MLitModule(CFMLitModule):
             traj = solver.sdeint(x0, t_span)
             assert traj.shape[0] == t_span.shape[0]
             kls = [
-                self.datamodule.KL(xt, self.hparams.sigma_min, t) for t, xt in zip(t_span, traj)
+                self.datamodule.KL(xt, self.hparams.sigma_min, t)
+                for t, xt in zip(t_span, traj)
             ]
             self.log_dict(
                 {f"{prefix}/sde/kl/mean": torch.stack(kls).mean().item()},
                 sync_dist=True,
             )
-            self.log_dict({f"{prefix}/sde/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True)
+            self.log_dict(
+                {f"{prefix}/sde/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True
+            )
         return trajs, full_trajs
 
     def eval_epoch_end(self, outputs: List[Any], prefix: str):
@@ -1047,7 +1089,9 @@ class SF2MLitModule(CFMLitModule):
         ):
             X = self.unpack_batch(batch)
             x0, x1, t_select = self.preprocess_batch(X, training=True)
-            assert not torch.any(t_select)  # resampling outerloop can only handle 2 timepoints
+            assert not torch.any(
+                t_select
+            )  # resampling outerloop can only handle 2 timepoints
             solver = self.partial_solver
             t_span = torch.linspace(0, 1, 2)
             solver = self.partial_solver(
@@ -1125,7 +1169,10 @@ class OneWaySF2MLitModule(SF2MLitModule):
         t_xshape = t.reshape(-1, *([1] * (x0.dim() - 1)))
         eps_t = -score_target * 2 / (self.sigma(t_xshape) ** 2)
         forward_target = (
-            x1 - x0 - (self.sigma(t_xshape) * torch.sqrt(t_xshape / (1 - t_xshape + 1e-6))) * eps_t
+            x1
+            - x0
+            - (self.sigma(t_xshape) * torch.sqrt(t_xshape / (1 - t_xshape + 1e-6)))
+            * eps_t
         )
         return x, forward_target, t, mu_t, sigma_t, None
 
@@ -1142,9 +1189,13 @@ class OneWaySF2MLitModule(SF2MLitModule):
         if self.ot_sampler is not None and self.stored_data is None:
             x0, x1 = self.ot_sampler.sample_plan(x0, x1)
 
-        x, forward_target, t, _, _, _ = self.calc_loc_and_target(x0, x1, t, t_select, training)
+        x, forward_target, t, _, _, _ = self.calc_loc_and_target(
+            x0, x1, t, t_select, training
+        )
         t_xshape = t.reshape(-1, *([1] * (x0.dim() - 1)))
-        forward_scaling = (1 + self.sigma(t_xshape) ** 2 * t_xshape / (1 - t_xshape + 1e-6)) ** -1
+        forward_scaling = (
+            1 + self.sigma(t_xshape) ** 2 * t_xshape / (1 - t_xshape + 1e-6)
+        ) ** -1
         reg, vt, st = self.forward_flow_and_score(t, x)
         forward_flow_loss = torch.mean(forward_scaling * (vt - forward_target) ** 2)
         return torch.mean(reg), forward_flow_loss
@@ -1202,12 +1253,17 @@ class OneWaySF2MLitModule(SF2MLitModule):
             # traj = traj[::5]
             assert traj.shape[0] == t_span.shape[0]
             kls = [
-                self.datamodule.KL(xt, self.hparams.sigma_min, t) for t, xt in zip(t_span, traj)
+                self.datamodule.KL(xt, self.hparams.sigma_min, t)
+                for t, xt in zip(t_span, traj)
             ]
             # others = torch.stack([self.datamodule.detailed_evaluation(xt, self.hparams.sigma_min, t) for t, xt in zip(t_span, traj)])
 
-            self.log_dict({f"{prefix}/kl/mean": torch.stack(kls).mean().item()}, sync_dist=True)
-            self.log_dict({f"{prefix}/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True)
+            self.log_dict(
+                {f"{prefix}/kl/mean": torch.stack(kls).mean().item()}, sync_dist=True
+            )
+            self.log_dict(
+                {f"{prefix}/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True
+            )
 
         full_trajs = torch.cat(full_trajs)
         return trajs, full_trajs
@@ -1232,7 +1288,8 @@ class OneWaySF2MLitModuleV2(SF2MLitModule):
         forward_target = (
             x1
             - x0
-            - (self.sigma(t_xshape) * torch.sqrt(t_xshape / (1 - t_xshape + 1e-6))) * score_target
+            - (self.sigma(t_xshape) * torch.sqrt(t_xshape / (1 - t_xshape + 1e-6)))
+            * score_target
         )
         forward_scaling = (1 + self.sigma(t) ** 2 * t / (1 - t + 1e-6)) ** -1
         reg, vt, st = self.forward_flow_and_score(t, x)
@@ -1293,12 +1350,17 @@ class OneWaySF2MLitModuleV2(SF2MLitModule):
             # traj = traj[::5]
             assert traj.shape[0] == t_span.shape[0]
             kls = [
-                self.datamodule.KL(xt, self.hparams.sigma_min, t) for t, xt in zip(t_span, traj)
+                self.datamodule.KL(xt, self.hparams.sigma_min, t)
+                for t, xt in zip(t_span, traj)
             ]
             # others = torch.stack([self.datamodule.detailed_evaluation(xt, self.hparams.sigma_min, t) for t, xt in zip(t_span, traj)])
 
-            self.log_dict({f"{prefix}/kl/mean": torch.stack(kls).mean().item()}, sync_dist=True)
-            self.log_dict({f"{prefix}/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True)
+            self.log_dict(
+                {f"{prefix}/kl/mean": torch.stack(kls).mean().item()}, sync_dist=True
+            )
+            self.log_dict(
+                {f"{prefix}/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True
+            )
 
         full_trajs = torch.cat(full_trajs)
         return trajs, full_trajs
@@ -1314,12 +1376,16 @@ class DSBMLitModule(SF2MLitModule):
             x0, x1, t, t_select, training
         )
         forward_target = (
-            x1 - x0 - (self.sigma(t_xshape) * torch.sqrt(t_xshape / (1 - t_xshape + 1e-6))) * eps_t
+            x1
+            - x0
+            - (self.sigma(t_xshape) * torch.sqrt(t_xshape / (1 - t_xshape + 1e-6)))
+            * eps_t
         )
         backward_target = (
             x0
             - x1
-            - (self.sigma(t_xshape) * torch.sqrt((1 - t_xshape) / (t_xshape + 1e-6))) * eps_t
+            - (self.sigma(t_xshape) * torch.sqrt((1 - t_xshape) / (t_xshape + 1e-6)))
+            * eps_t
         )
         return x, forward_target, t_plus_t_select, mu_t, sigma_t, backward_target
 
@@ -1343,9 +1409,15 @@ class DSBMLitModule(SF2MLitModule):
         )
         # print(forward_target, backward_target, x0, x1, t, t_select)
         reg, vt, st = self.forward_flow_and_score(t, x)
-        forward_flow_loss = torch.mean(forward_scaling[:, None] * (vt - forward_target) ** 2)
-        backward_flow_loss = torch.mean(backward_scaling[:, None] * (st - backward_target) ** 2)
-        if not torch.isfinite(forward_flow_loss) or not torch.isfinite(backward_flow_loss):
+        forward_flow_loss = torch.mean(
+            forward_scaling[:, None] * (vt - forward_target) ** 2
+        )
+        backward_flow_loss = torch.mean(
+            backward_scaling[:, None] * (st - backward_target) ** 2
+        )
+        if not torch.isfinite(forward_flow_loss) or not torch.isfinite(
+            backward_flow_loss
+        ):
             raise ValueError("Loss Not Finite")
 
         return torch.mean(reg) + backward_flow_loss, forward_flow_loss
@@ -1406,12 +1478,17 @@ class DSBMLitModule(SF2MLitModule):
             # traj = traj[::5]
             assert traj.shape[0] == t_span.shape[0]
             kls = [
-                self.datamodule.KL(xt, self.hparams.sigma_min, t) for t, xt in zip(t_span, traj)
+                self.datamodule.KL(xt, self.hparams.sigma_min, t)
+                for t, xt in zip(t_span, traj)
             ]
             # others = torch.stack([self.datamodule.detailed_evaluation(xt, self.hparams.sigma_min, t) for t, xt in zip(t_span, traj)])
 
-            self.log_dict({f"{prefix}/kl/mean": torch.stack(kls).mean().item()}, sync_dist=True)
-            self.log_dict({f"{prefix}/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True)
+            self.log_dict(
+                {f"{prefix}/kl/mean": torch.stack(kls).mean().item()}, sync_dist=True
+            )
+            self.log_dict(
+                {f"{prefix}/kl/tp_{i}": kls[i] for i in range(21)}, sync_dist=True
+            )
 
         full_trajs = torch.cat(full_trajs)
         return trajs, full_trajs
@@ -1442,7 +1519,9 @@ class DSBMSharedLitModule(SF2MLitModule):
             x, ut, t = self.average_ut(x, t, mu_t, sigma_t, ut)
         aug_x = self.aug_net(t, x, augmented_input=False)
         reg, vt = self.augmentations(aug_x)
-        forward_flow_loss = self.criterion(vt + sigma_t * self.score_net(t, x), ut + score_target)
+        forward_flow_loss = self.criterion(
+            vt + sigma_t * self.score_net(t, x), ut + score_target
+        )
         backward_flow_loss = self.criterion(
             -vt + sigma_t * self.score_net(t, x), -ut + score_target
         )
@@ -1552,7 +1631,9 @@ class CNFLitModule(CFMLitModule):
             torch.zeros(self.dim).type_as(obs), torch.eye(self.dim).type_as(obs)
         )
         # Minimize the log likelihood by integrating all back to the initial timepoint
-        reversed_ts = torch.cat([torch.flip(even_ts, [0]), torch.tensor([0]).type_as(even_ts)])
+        reversed_ts = torch.cat(
+            [torch.flip(even_ts, [0]), torch.tensor([0]).type_as(even_ts)]
+        )
 
         # If only one timepoint then Gaussian is at t0, data t1
         # If multiple timepoints then Gaussian is at t_{-1} data is at times 0 to T

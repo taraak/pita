@@ -1,10 +1,7 @@
 import torch
 
-def remove_mean(
-        samples,
-        n_particles,
-        n_dimensions
-        ):
+
+def remove_mean(samples, n_particles, n_dimensions):
     """
     Makes a configuration of many particle system mean-free.
 
@@ -34,8 +31,10 @@ def interatomic_dist(samples):
     n_particles = samples.shape[-2]
     # Compute the pairwise differences and distances
     distances = samples[:, None, :, :] - samples[:, :, None, :]
-    distances  = distances[:, torch.triu(torch.ones((n_particles, n_particles)), diagonal=1) == 1]
- 
+    distances = distances[
+        :, torch.triu(torch.ones((n_particles, n_particles)), diagonal=1) == 1
+    ]
+
     dist = torch.linalg.norm(distances, dim=-1)
 
     return dist

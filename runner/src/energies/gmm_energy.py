@@ -24,7 +24,7 @@ class GMM(BaseEnergyFunction):
         plotting_buffer_sample_size=512,
         plot_samples_epoch_period=5,
         should_unnormalize=False,
-        data_normalization_factor=50
+        data_normalization_factor=50,
     ):
         use_gpu = device != "cpu"
         torch.manual_seed(0)  # seed of 0 for GMM problem
@@ -48,7 +48,7 @@ class GMM(BaseEnergyFunction):
         super().__init__(
             dimensionality=dimensionality,
             normalization_min=-data_normalization_factor,
-            normalization_max=data_normalization_factor
+            normalization_max=data_normalization_factor,
         )
 
     def setup_test_set(self):
@@ -72,13 +72,13 @@ class GMM(BaseEnergyFunction):
         cfm_samples: Optional[torch.Tensor],
         replay_buffer: ReplayBuffer,
         wandb_logger: WandbLogger,
-        prefix: str = ''
+        prefix: str = "",
     ) -> None:
         if wandb_logger is None:
             return
 
-        if len(prefix) > 0 and prefix[-1] != '/':
-            prefix += '/'
+        if len(prefix) > 0 and prefix[-1] != "/":
+            prefix += "/"
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
             buffer_samples, _, _ = replay_buffer.sample(
@@ -96,25 +96,17 @@ class GMM(BaseEnergyFunction):
                         unprioritized_buffer_samples
                     )
 
-            samples_fig = self.get_dataset_fig(
-                buffer_samples,
-                latest_samples
-            )
+            samples_fig = self.get_dataset_fig(buffer_samples, latest_samples)
 
-            wandb_logger.log_image(
-                f'{prefix}generated_samples',
-                [samples_fig]
-            )
+            wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 
             if unprioritized_buffer_samples is not None:
                 cfm_samples_fig = self.get_dataset_fig(
-                    unprioritized_buffer_samples,
-                    cfm_samples
+                    unprioritized_buffer_samples, cfm_samples
                 )
 
                 wandb_logger.log_image(
-                    f'{prefix}cfm_generated_samples',
-                    [cfm_samples_fig]
+                    f"{prefix}cfm_generated_samples", [cfm_samples_fig]
                 )
 
             if latest_samples is not None:
@@ -122,17 +114,13 @@ class GMM(BaseEnergyFunction):
                 ax.scatter(*latest_samples.detach().cpu().T)
 
                 wandb_logger.log_image(
-                    f'{prefix}generated_samples_scatter',
-                    [fig_to_image(fig)]
+                    f"{prefix}generated_samples_scatter", [fig_to_image(fig)]
                 )
 
         self.curr_epoch += 1
 
     def get_dataset_fig(
-        self,
-        samples,
-        gen_samples=None,
-        plotting_bounds=(-1.4 * 40, 1.4 * 40)
+        self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40)
     ):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -142,7 +130,7 @@ class GMM(BaseEnergyFunction):
             bounds=plotting_bounds,
             ax=axs[0],
             n_contour_levels=50,
-            grid_width_n_points=200
+            grid_width_n_points=200,
         )
 
         # plot dataset samples
@@ -155,7 +143,7 @@ class GMM(BaseEnergyFunction):
                 bounds=plotting_bounds,
                 ax=axs[1],
                 n_contour_levels=50,
-                grid_width_n_points=200
+                grid_width_n_points=200,
             )
             # plot generated samples
             plot_marginal_pair(gen_samples, ax=axs[1], bounds=plotting_bounds)

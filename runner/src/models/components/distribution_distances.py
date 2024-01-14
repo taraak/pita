@@ -41,7 +41,9 @@ def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor,
     dists = []
     to_return = []
     names = []
-    filtered_names = [name for name in NAMES if not is_jagged or not name.endswith("MMD")]
+    filtered_names = [
+        name for name in NAMES if not is_jagged or not name.endswith("MMD")
+    ]
     ts = len(pred) if pred_is_jagged else pred.shape[1]
     for t in np.arange(ts):
         if pred_is_jagged:
@@ -59,11 +61,15 @@ def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor,
             mmd_poly = poly_mmd2(a, b, d=2, alpha=1.0, c=2.0).item()
             mmd_rbf = mix_rbf_mmd2(a, b, sigma_list=[0.01, 0.1, 1, 10, 100]).item()
         mean_dists = compute_distances(torch.mean(a, dim=0), torch.mean(b, dim=0))
-        median_dists = compute_distances(torch.median(a, dim=0)[0], torch.median(b, dim=0)[0])
+        median_dists = compute_distances(
+            torch.median(a, dim=0)[0], torch.median(b, dim=0)[0]
+        )
         if pred_is_jagged or is_jagged:
             dists.append((w1, w2, *mean_dists, *median_dists))
         else:
-            dists.append((w1, w2, mmd_linear, mmd_poly, mmd_rbf, *mean_dists, *median_dists))
+            dists.append(
+                (w1, w2, mmd_linear, mmd_poly, mmd_rbf, *mean_dists, *median_dists)
+            )
         # For multipoint datasets add timepoint specific distances
         if ts > 1:
             names.extend([f"t{t+1}/{name}" for name in filtered_names])

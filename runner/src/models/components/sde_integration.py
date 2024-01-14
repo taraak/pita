@@ -4,7 +4,9 @@ import torch
 from src.models.components.sdes import VEReverseSDE
 
 
-def euler_maruyama_step(sde: VEReverseSDE, t: torch.Tensor, x: torch.Tensor, dt: float, diffusion_scale=1.0):
+def euler_maruyama_step(
+    sde: VEReverseSDE, t: torch.Tensor, x: torch.Tensor, dt: float, diffusion_scale=1.0
+):
     # Calculate drift and diffusion terms
     drift = sde.f(t, x) * dt
     diffusion = diffusion_scale * sde.g(t, x) * np.sqrt(dt) * torch.randn_like(x)
@@ -42,7 +44,7 @@ def integrate_sde(
     x0: torch.Tensor,
     num_integration_steps: int,
     reverse_time: bool = True,
-    diffusion_scale = 1.0,
+    diffusion_scale=1.0,
     no_grad=True,
 ):
     start_time = 1.0 if reverse_time else 0.0
@@ -57,12 +59,15 @@ def integrate_sde(
     if no_grad:
         with torch.no_grad():
             for t in times:
-                x, f = euler_maruyama_step(sde, t, x, 1 / num_integration_steps, diffusion_scale)
+                x, f = euler_maruyama_step(
+                    sde, t, x, 1 / num_integration_steps, diffusion_scale
+                )
                 samples.append(x)
     else:
         for t in times:
-            x, f = euler_maruyama_step(sde, t, x, 1 / num_integration_steps, diffusion_scale)
+            x, f = euler_maruyama_step(
+                sde, t, x, 1 / num_integration_steps, diffusion_scale
+            )
             samples.append(x)
 
     return torch.stack(samples)
-

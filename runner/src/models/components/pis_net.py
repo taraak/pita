@@ -59,6 +59,7 @@ class PISNN(torch.nn.Module):
                     self.grad_net(t, x_dot), -self.nn_clip, self.nn_clip
                 )
                 return f_x + f_x_dot
+
         else:
             _fn = self.f_func
 

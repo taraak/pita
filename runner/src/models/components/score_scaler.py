@@ -7,9 +7,7 @@ from .noise_schedules import BaseNoiseSchedule
 class BaseScoreScaler(ABC):
     @abstractmethod
     def scale_target_score(
-        self,
-        target_score: torch.Tensor,
-        times: torch.Tensor
+        self, target_score: torch.Tensor, times: torch.Tensor
     ) -> torch.Tensor:
         pass
 
@@ -23,27 +21,26 @@ class BadScoreScaler(BaseScoreScaler):
         self,
         noise_schedule: BaseNoiseSchedule,
         constant_scaling_factor: float,
-        epsilon: float
+        epsilon: float,
     ):
         self.noise_schedule = noise_schedule
         self.constant_scaling_factor = constant_scaling_factor
         self.epsilon = epsilon
 
-    def _get_scale_factor(self, score: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
+    def _get_scale_factor(
+        self, score: torch.Tensor, times: torch.Tensor
+    ) -> torch.Tensor:
         # call view to expand h_t to the number of dimensions of target_score
         h_t = self.noise_schedule.h(times).view(
-            -1,
-            *(1 for _ in range(score.ndim - times.ndim))
+            -1, *(1 for _ in range(score.ndim - times.ndim))
         )
 
         h_t = h_t * self.constant_scaling_factor
 
-        return ((h_t * self.constant_scaling_factor) + self.epsilon)
+        return (h_t * self.constant_scaling_factor) + self.epsilon
 
     def scale_target_score(
-        self,
-        target_score: torch.Tensor,
-        times: torch.Tensor
+        self, target_score: torch.Tensor, times: torch.Tensor
     ) -> torch.Tensor:
         return target_score * self._get_scale_factor(target_score, times)
 
@@ -55,10 +52,7 @@ class BadScoreScaler(BaseScoreScaler):
 
             def forward(inner_self, t, x):
                 out_score = inner_self.model(t, x)
-                return out_score / self._get_scale_factor(
-                    out_score,
-                    t
-                )
+                return out_score / self._get_scale_factor(out_score, t)
 
         return _ScalingOutputWrapper
 

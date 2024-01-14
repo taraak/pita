@@ -21,13 +21,10 @@ class ManyWell(BaseEnergyFunction):
         plot_samples_epoch_period=5,
         test_set_size=1024,
         should_unnormalize=False,
-        data_normalization_factor=3
+        data_normalization_factor=3,
     ):
         self.many_well = ManyWellEnergy(
-            dimensionality,
-            a=-0.5,
-            b=-6,
-            use_gpu=device != 'cpu'
+            dimensionality, a=-0.5, b=-6, use_gpu=device != "cpu"
         )
 
         self.curr_epoch = 0
@@ -42,7 +39,7 @@ class ManyWell(BaseEnergyFunction):
         super().__init__(
             dimensionality=dimensionality,
             normalization_min=-data_normalization_factor,
-            normalization_max=data_normalization_factor
+            normalization_max=data_normalization_factor,
         )
 
     def setup_test_set(self):
@@ -62,13 +59,13 @@ class ManyWell(BaseEnergyFunction):
         cfm_samples: Optional[torch.Tensor],
         replay_buffer: ReplayBuffer,
         wandb_logger: WandbLogger,
-        prefix: str = ''
+        prefix: str = "",
     ) -> None:
         if wandb_logger is None:
             return
 
-        if len(prefix) > 0 and prefix[-1] != '/':
-            prefix += '/'
+        if len(prefix) > 0 and prefix[-1] != "/":
+            prefix += "/"
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
             buffer_samples, _, _ = replay_buffer.sample(
@@ -84,42 +81,29 @@ class ManyWell(BaseEnergyFunction):
                         unprioritized_buffer_samples
                     )
 
-            samples_fig = self.get_dataset_fig(
-                buffer_samples,
-                latest_samples
-            )
+            samples_fig = self.get_dataset_fig(buffer_samples, latest_samples)
 
-            wandb_logger.log_image(
-                f'{prefix}generated_samples',
-                [samples_fig]
-            )
+            wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 
             if unprioritized_buffer_samples is not None:
                 cfm_samples_fig = self.get_dataset_fig(
-                    unprioritized_buffer_samples,
-                    cfm_samples
+                    unprioritized_buffer_samples, cfm_samples
                 )
 
                 wandb_logger.log_image(
-                    f'{prefix}cfm_generated_samples',
-                    [cfm_samples_fig]
+                    f"{prefix}cfm_generated_samples", [cfm_samples_fig]
                 )
 
         self.curr_epoch += 1
 
-    def get_dataset_fig(
-        self,
-        samples,
-        gen_samples=None,
-        plotting_bounds=(-3, 3)
-    ):
+    def get_dataset_fig(self, samples, gen_samples=None, plotting_bounds=(-3, 3)):
         n_rows = self.dimensionality // 2
         fig, axs = plt.subplots(
             self.dimensionality // 2,
             2,
             sharex=True,
             sharey=True,
-            figsize=(10, n_rows*3)
+            figsize=(10, n_rows * 3),
         )
 
         self.many_well.to("cpu")
@@ -128,7 +112,7 @@ class ManyWell(BaseEnergyFunction):
                 self.many_well.log_prob_2D,
                 bounds=plotting_bounds,
                 ax=axs[i, 0],
-                n_contour_levels=40
+                n_contour_levels=40,
             )
 
             # plot buffer samples
@@ -136,7 +120,7 @@ class ManyWell(BaseEnergyFunction):
                 samples,
                 ax=axs[i, 0],
                 bounds=plotting_bounds,
-                marginal_dims=(i*2, i*2+1)
+                marginal_dims=(i * 2, i * 2 + 1),
             )
 
             axs[i, 0].set_xlabel(f"dim {i*2}")
@@ -147,7 +131,7 @@ class ManyWell(BaseEnergyFunction):
                     self.many_well.log_prob_2D,
                     bounds=plotting_bounds,
                     ax=axs[i, 1],
-                    n_contour_levels=40
+                    n_contour_levels=40,
                 )
 
                 # plot generated samples
@@ -155,14 +139,13 @@ class ManyWell(BaseEnergyFunction):
                     gen_samples,
                     ax=axs[i, 1],
                     bounds=plotting_bounds,
-                    marginal_dims=(i*2, i*2+1)
+                    marginal_dims=(i * 2, i * 2 + 1),
                 )
 
                 axs[i, 1].set_xlabel(f"dim {i*2}")
                 axs[i, 1].set_ylabel(f"dim {i*2 + 1}")
             else:
                 fig.delaxes(axs[i, 1])
-
 
         axs[0, 0].set_title("Dataset")
         axs[0, 1].set_title("Generated samples")

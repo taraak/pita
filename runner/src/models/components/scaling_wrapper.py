@@ -3,14 +3,15 @@ import torch
 
 
 class ScalingWrapper(torch.nn.Module):
-    '''
+    """
     (Tries to) normalize data and blah blah blah
-    '''
+    """
+
     def __init__(
         self,
         network: torch.nn.Module,
         input_scaling_factor: Optional[float] = None,
-        output_scaling_factor: Optional[float] = None
+        output_scaling_factor: Optional[float] = None,
     ):
         super().__init__()
 

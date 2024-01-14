@@ -63,7 +63,5 @@ def fig_to_image(fig):
     fig.canvas.draw()
 
     return PIL.Image.frombytes(
-        'RGB',
-        fig.canvas.get_width_height(),
-        fig.canvas.tostring_rgb()
+        "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
     )
