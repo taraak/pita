@@ -92,7 +92,6 @@ class DEMLitModule(LightningModule):
         score_scaler: Optional[BaseScoreScaler] = None,
         compute_nll = True,
         partial_prior = None,
-        clip_grad_for_generation = False,
         clipper_gen: Optional[Clipper] = None,
         diffusion_scale = 1.0
     ) -> None:
@@ -162,7 +161,6 @@ class DEMLitModule(LightningModule):
 
         self.partial_prior = partial_prior
 
-        self.clip_grad_for_generation = clip_grad_for_generation
         self.clipper_gen = clipper_gen
 
         self.diffusion_scale = diffusion_scale
@@ -306,7 +304,7 @@ class DEMLitModule(LightningModule):
         "Lightning hook that is called when a training epoch ends."
         # self.last_samples = self.generate_samples()
         # self.last_energies = self.energy_function(self.last_samples)
-        if self.clip_grad_for_generation:
+        if self.clipper_gen is not None:
             reverse_sde = VEReverseSDE(
                 self.clipper_gen.wrap_grad_fxn(self.net),
                 self.noise_schedule

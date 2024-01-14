@@ -15,7 +15,7 @@ scheduler:
 
 defaults:
   - net:
-    - egnn
+    - mlp
     
 cfm_net:
   _target_: src.models.components.mlp.MyMLP
@@ -25,20 +25,15 @@ cfm_net:
   time_emb: "sinusoidal"
   input_emb: "sinusoidal"
 
-# noise_schedule:
-#   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-#   sigma_min: 4e-6
-#   sigma_max: 0.4
-
 noise_schedule:
-  _target_: src.models.components.noise_schedules.QuadraticNoiseSchedule
-  beta: 1.5
+  _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+  sigma_min: 4e-6
+  sigma_max: 0.4
 
 partial_prior:
-  _target_: src.energies.base_prior.MeanFreePrior
+  _target_: src.energies.base_prior.Prior
   _partial_: true
-  n_particles: 13
-  spatial_dim: 3
+  dim: 2
 
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
@@ -58,17 +53,8 @@ clipper:
   max_score_norm: 50
   min_log_reward: null
 
-clipper_gen:
-  _target_: src.models.components.clipper.Clipper
-  should_clip_scores: True
-  should_clip_log_rewards: False
-  max_score_norm: 100
-  min_log_reward: null
-  
-clip_grad_for_generation: False
-
 lambda_weighter:
-  _target_: src.models.components.lambda_weighter.NoLambdaWeighter #BasicLambdaWeighter
+  _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
   _partial_: true
   epsilon: 1e-3
 
