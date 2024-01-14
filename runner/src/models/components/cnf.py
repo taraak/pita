@@ -19,6 +19,7 @@ class CNF(torch.nn.Module):
 
         self.vf = vf
         self.is_diffusion = is_diffusion
+        self.nfe = 0.0
 
     def forward(self, t, x):
         x = x[..., :-1].clone().detach().requires_grad_(True)
@@ -32,6 +33,7 @@ class CNF(torch.nn.Module):
 
         dx = vecfield(x)
         div = torch.vmap(div_fn(vecfield), randomness="different")(x)
+        self.nfe += 1
         return torch.cat([dx, div[:, None]], dim=-1)
 
     def integrate(self, x, num_integration_steps: int, method="euler"):
