@@ -123,6 +123,8 @@ def main(cfg: DictConfig) -> Optional[float]:
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)
 
+    import ray; ray.init()
+
     # train the model
     metric_dict, _ = train(cfg)
 

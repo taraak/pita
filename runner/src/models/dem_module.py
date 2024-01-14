@@ -115,6 +115,8 @@ class DEMLitModule(LightningModule):
         nll_with_dem: bool,
         cfm_sigma: float,
         cfm_prior_std: float,
+        use_otcfm: bool,
+        nll_integration_method: str,
         compile: bool,
         prioritize_cfm_training_samples: bool = False,
         input_scaling_factor: Optional[float] = None,
@@ -162,7 +164,12 @@ class DEMLitModule(LightningModule):
         self.nll_with_cfm = nll_with_cfm
         self.nll_with_dem = nll_with_dem
         self.cfm_prior_std = cfm_prior_std
-        self.conditional_flow_matcher = ExactOptimalTransportConditionalFlowMatcher(
+
+        flow_matcher = ConditionalFlowMatcher
+        if use_otcfm:
+            flow_matcher = ExactOptimalTransportConditionalFlowMatcher
+
+        self.conditional_flow_matcher = flow_matcher(
             sigma=cfm_sigma
         )
         # self.conditional_flow_matcher = ConditionalFlowMatcher(sigma=cfm_sigma)
@@ -307,11 +314,7 @@ class DEMLitModule(LightningModule):
         # update and log metrics
         self.dem_train_loss(loss)
         self.log(
-            "train/dem_loss",
-            self.dem_train_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
+            "train/dem_loss", self.dem_train_loss, on_step=True, on_epoch=False, prog_bar=True
         )
 
         if self.should_train_cfm(batch_idx):
@@ -329,11 +332,7 @@ class DEMLitModule(LightningModule):
             cfm_loss = cfm_loss.mean()
             self.cfm_train_loss(cfm_loss)
             self.log(
-                "train/cfm_loss",
-                self.cfm_train_loss,
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
+                "train/cfm_loss", self.cfm_train_loss, on_step=True, on_epoch=False, prog_bar=True
             )
 
             loss = loss + cfm_loss
@@ -464,12 +463,21 @@ class DEMLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        times = torch.rand(
-            (self.num_samples_to_generate_per_epoch,), device=batch.device
-        )
-
         batch = self.energy_function.sample_test_set(
             self.num_samples_to_generate_per_epoch
+        )
+
+        # generate samples noise --> data if needed
+        backwards_samples = self.last_samples
+        if backwards_samples is None:
+            backwards_samples = self.generate_samples(num_samples=len(batch))
+
+        if batch is None:
+            self.eval_step_outputs.append({"gen_0": backwards_samples})
+            return
+
+        times = torch.rand(
+            (self.num_samples_to_generate_per_epoch,), device=batch.device
         )
 
         noised_batch = batch + (
@@ -478,10 +486,36 @@ class DEMLitModule(LightningModule):
 
         loss = self.get_loss(times, noised_batch).mean(-1)
 
-        # generate samples noise --> data if needed
-        backwards_samples = self.last_samples
-        if backwards_samples is None:
-            backwards_samples = self.generate_samples(num_samples=len(batch))
+        # generate data --> noise
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(batch)
+
+        nll_metric = getattr(self, f'{prefix}_nll')
+        logdetjac_metric = getattr(self, f'{prefix}_nll_logdetjac')
+        log_p_1_metric = getattr(self, f'{prefix}_nll_log_p_1')
+
+        nll_metric.update(nll)
+        logdetjac_metric.update(logdetjac)
+        log_p_1_metric.update(log_p_1)
+
+        self.log(
+            f"{prefix}/nll_logdetjac",
+            logdetjac_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False
+        )
+
+        self.log(
+            f"{prefix}/nll_log_p_1",
+            log_p_1_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False
+        )
+
+        self.log(
+            f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
+        )
 
         # update and log metrics
         loss_metric = self.val_loss if prefix == "val" else self.test_loss
@@ -578,8 +612,8 @@ class DEMLitModule(LightningModule):
         unprioritized_buffer_samples, cfm_samples = None, None
         if self.nll_with_cfm:
             unprioritized_buffer_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_generate_per_epoch,
-                prioritize=self.prioritize_cfm_training_samples,
+                self.num_samples_to_generate_per_epoch * 10,
+                prioritize=self.prioritize_cfm_training_samples
             )
 
             cfm_samples = self.generate_cfm_samples()
@@ -593,13 +627,15 @@ class DEMLitModule(LightningModule):
             wandb_logger,
         )
 
-        # pad with time dimension 1
-        names, dists = compute_distribution_distances(
-            outputs["gen_0"][:, None], outputs["data_0"][:, None]
-        )
-        names = [f"{prefix}/{name}" for name in names]
-        d = dict(zip(names, dists))
-        self.log_dict(d, sync_dist=True)
+        if "data_0" in outputs:
+            # pad with time dimension 1
+            names, dists = compute_distribution_distances(
+                outputs["gen_0"][:, None], outputs["data_0"][:, None]
+            )
+            names = [f"{prefix}/{name}" for name in names]
+            d = dict(zip(names, dists))
+            self.log_dict(d, sync_dist=True)
+
         self.eval_step_outputs.clear()
 
     def on_validation_epoch_end(self) -> None:
