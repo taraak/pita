@@ -53,3 +53,5 @@ output_scaling_factor: null
 compile: false
 
 cfm_loss_weight: 1.0
+use_ema: false
+debug_use_train_data: false

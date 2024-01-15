@@ -1,3 +1,4 @@
+import re
 import PIL
 import torch
 import numpy as np
@@ -115,11 +116,17 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.n_particles = n_particles
         self.n_spatial_dim = dimensionality // n_particles
 
+        if self.n_particles != 13 and self.n_particles != 55:
+            raise NotImplementedError
+
         self.curr_epoch = 0
         self.plotting_buffer_sample_size = plotting_buffer_sample_size
         self.plot_samples_epoch_period = plot_samples_epoch_period
 
         self.data_normalization_factor = data_normalization_factor
+
+        self.data_path = data_path
+        self.device = device
 
         self.lennard_jones = LennardJonesPotential(
             dim=dimensionality,
@@ -131,35 +138,61 @@ class LennardJonesEnergy(BaseEnergyFunction):
             two_event_dims=False,
         )
 
-        all_data = np.load(data_path, allow_pickle=True)
-
-        # Following the Equivarinat FM paper for the partitions
-        if self.n_particles == 13:
-            self.test_data = all_data[len(all_data) // 2 :]
-            self.test_data = remove_mean(
-                self.test_data, self.n_particles, self.n_spatial_dim
-            )
-            self.test_data = torch.tensor(self.test_data, device=device)
-
-        elif self.n_particles == 55:
-            idx = np.random.choice(
-                np.arange(len(all_data)), len(all_data), replace=False
-            )
-            holdout_start = 200000
-            self.test_data = all_data[idx[holdout_start:]]
-            self.test_data = remove_mean(
-                self.test_data, self.n_particles, self.n_spatial_dim
-            )
-            self.test_data = torch.tensor(self.test_data, device=device)
-        del all_data
-
         super().__init__(dimensionality=dimensionality)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         return self.lennard_jones._log_prob(samples).squeeze(-1)
 
     def setup_test_set(self):
-        return self.test_data
+        all_data = np.load(self.data_path, allow_pickle=True)
+        
+        # Following the Equivarinat FM paper for the partitions
+        if self.n_particles == 13:
+            test_data = all_data[len(all_data) // 2 :]
+            test_data = remove_mean(
+                test_data, self.n_particles, self.n_spatial_dim
+            )
+            test_data = torch.tensor(test_data,
+                                     device=self.device)
+
+        elif self.n_particles == 55:
+            idx = np.random.choice(
+                np.arange(len(all_data)), len(all_data), replace=False
+            )
+            holdout_start = 200000
+            test_data = all_data[idx[holdout_start:]]
+            test_data = remove_mean(
+                test_data, self.n_particles, self.n_spatial_dim
+            )
+            test_data = torch.tensor(test_data,
+                                     device=self.device)
+        del all_data
+        return test_data
+
+    
+    def setup_train_set(self):
+            all_data = np.load(self.data_path, allow_pickle=True)
+            if self.n_particles == 13:
+                train_data = all_data[: len(all_data) // 2]
+                train_data = remove_mean(
+                    train_data, self.n_particles, self.n_spatial_dim
+                )
+                train_data = torch.tensor(train_data,
+                                        device=self.device)
+                
+            elif self.n_particles == 55:
+                trainset_size=100000
+                idx = np.random.choice(np.arange(len(all_data)),
+                                       len(all_data), replace=False)
+                train_data = all_data[idx[:trainset_size]]
+                train_data = remove_mean(
+                    train_data, self.n_particles, self.n_spatial_dim
+                )
+                train_data = torch.tensor(train_data,
+                                          device=self.device)
+            del all_data
+            return train_data
+
 
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
@@ -267,7 +300,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         axs[1].set_xlabel("Energy")
         axs[1].legend()
 
-        # plt.show()
 
         fig.canvas.draw()
         return PIL.Image.frombytes(
