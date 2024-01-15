@@ -18,6 +18,7 @@ from src.utils.logging_utils import fig_to_image
 from .components.clipper import Clipper
 from .components.cnf import CNF
 from .components.distribution_distances import compute_distribution_distances
+from .components.ema import EMAWrapper
 from .components.lambda_weighter import BaseLambdaWeighter
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
@@ -26,7 +27,6 @@ from .components.score_estimator import estimate_grad_Rt
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
 from .components.sdes import RegVEReverseSDE, VEReverseSDE
-from .components.ema import EMAWrapper
 
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
@@ -295,17 +295,7 @@ class DEMLitModule(LightningModule):
 
         return self.lambda_weighter(times) * error_norms
 
-    def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        """Perform a single training step on a batch of data from the training set.
-
-        :param batch: A batch of data (a tuple) containing the input tensor of images and target
-            labels.
-        :param batch_idx: The index of the current batch.
-        :return: A tensor of losses between model predictions and targets.
-        """
-
+    def training_step(self, batch, batch_idx):
         iter_samples, _, _ = self.buffer.sample(self.num_samples_to_sample_from_buffer)
 
         times = torch.rand(
@@ -356,9 +346,14 @@ class DEMLitModule(LightningModule):
             )
 
             loss = loss + self.hparams.cfm_loss_weight * cfm_loss
-
-        # return loss or backpropagation will fail
         return loss
+
+    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_closure):
+        optimizer.step(closure=optimizer_closure)
+        if self.hparams.use_ema:
+            self.net.update_ema()
+            if self.should_train_cfm(batch_idx):
+                self.cfm_net.update_ema()
 
     def generate_samples(
         self,
@@ -525,7 +520,9 @@ class DEMLitModule(LightningModule):
                 self.cfm_cnf, self.cfm_prior, batch, prefix, ""
             )
             to_log["gen_1_cfm"] = forwards_samples
-            iter_samples, _, _ = self.buffer.sample(self.num_samples_to_generate_per_epoch)
+            iter_samples, _, _ = self.buffer.sample(
+                self.num_samples_to_generate_per_epoch
+            )
             forwards_samples = self.compute_and_log_nll(
                 self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
             )
