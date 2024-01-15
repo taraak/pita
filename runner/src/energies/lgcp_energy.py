@@ -222,7 +222,6 @@ class CoxDist(BaseSet):
         self.data_ndim = dim
 
     def log_pdf(self, x):
-        import pdb; pdb.set_trace()
         return self.cox.evaluate_log_density(x)
 
     def get_gt_disc(self, x):

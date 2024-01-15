@@ -473,7 +473,7 @@ class DEMLitModule(LightningModule):
         # generate samples noise --> data if needed
         backwards_samples = self.last_samples
         if backwards_samples is None:
-            backwards_samples = self.generate_samples(num_samples=len(batch))
+            backwards_samples = self.generate_samples()
 
         if batch is None:
             self.eval_step_outputs.append({"gen_0": backwards_samples})
