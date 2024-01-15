@@ -126,6 +126,7 @@ class DEMLitModule(LightningModule):
         diffusion_scale=1.0,
         cfm_loss_weight=1.0,
         use_ema=False,
+        debug_use_train_data=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -296,38 +297,50 @@ class DEMLitModule(LightningModule):
         return self.lambda_weighter(times) * error_norms
 
     def training_step(self, batch, batch_idx):
-        iter_samples, _, _ = self.buffer.sample(self.num_samples_to_sample_from_buffer)
+        loss = 0.0
+        if not self.hparams.debug_use_train_data:
+            iter_samples, _, _ = self.buffer.sample(
+                self.num_samples_to_sample_from_buffer
+            )
 
-        times = torch.rand(
-            (self.num_samples_to_sample_from_buffer,), device=iter_samples.device
-        )
+            times = torch.rand(
+                (self.num_samples_to_sample_from_buffer,), device=iter_samples.device
+            )
 
-        noised_samples = iter_samples + (
-            torch.randn_like(iter_samples)
-            * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
-        )
+            noised_samples = iter_samples + (
+                torch.randn_like(iter_samples)
+                * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
+            )
 
-        loss = self.get_loss(times, noised_samples)
-        self.log_dict(
-            t_stratified_loss(times, loss, loss_name="train/stratified/dem_loss")
-        )
-        loss = loss.mean()
+            dem_loss = self.get_loss(times, noised_samples)
+            self.log_dict(
+                t_stratified_loss(
+                    times, dem_loss, loss_name="train/stratified/dem_loss"
+                )
+            )
+            dem_loss = dem_loss.mean()
+            loss = loss + dem_loss
 
-        # update and log metrics
-        self.dem_train_loss(loss)
-        self.log(
-            "train/dem_loss",
-            self.dem_train_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
+            # update and log metrics
+            self.dem_train_loss(dem_loss)
+            self.log(
+                "train/dem_loss",
+                self.dem_train_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+            )
 
         if self.should_train_cfm(batch_idx):
-            cfm_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_generate_per_epoch,
-                prioritize=self.prioritize_cfm_training_samples,
-            )
+            if self.hparams.debug_use_train_data:
+                cfm_samples = self.energy_function.sample_train_set(
+                    self.num_samples_to_generate_per_epoch
+                )
+            else:
+                cfm_samples, _, _ = self.buffer.sample(
+                    self.num_samples_to_generate_per_epoch,
+                    prioritize=self.prioritize_cfm_training_samples,
+                )
 
             cfm_loss = self.get_cfm_loss(cfm_samples)
             self.log_dict(
