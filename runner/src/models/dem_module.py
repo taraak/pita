@@ -278,8 +278,8 @@ class DEMLitModule(LightningModule):
         vt = self.cfm_net(t, xt)
         loss = (vt - ut).pow(2).mean(dim=-1)
 
-        if self.energy_function.normalization_max is not None:
-            loss = loss / (self.energy_function.normalization_max ** 2)
+        #if self.energy_function.normalization_max is not None:
+        #    loss = loss / (self.energy_function.normalization_max ** 2)
 
         return loss
 
@@ -347,11 +347,11 @@ class DEMLitModule(LightningModule):
         if self.should_train_cfm(batch_idx):
             if self.hparams.debug_use_train_data:
                 cfm_samples = self.energy_function.sample_train_set(
-                    self.num_samples_to_generate_per_epoch
+                    self.num_samples_to_sample_from_buffer
                 )
             else:
                 cfm_samples, _, _ = self.buffer.sample(
-                    self.num_samples_to_generate_per_epoch,
+                    self.num_samples_to_sample_from_buffer,
                     prioritize=self.prioritize_cfm_training_samples,
                 )
 
