@@ -2,7 +2,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm
-
+from einops import rearrange
+import numpy as np
 
 class SinusoidalEmbedding(nn.Module):
     def __init__(self, size: int, scale: float = 1.0):
@@ -114,6 +115,81 @@ class Block(nn.Module):
             out = out + t_emb
 
         return out
+
+
+class FourierMLP(nn.Module):
+    def __init__(self, in_shape = 2, out_shape = 2, num_layers=2, channels=128, zero_init=True, energy_function=None):
+        super().__init__()
+
+        self.in_shape = (in_shape,)
+        self.out_shape = (out_shape,)
+
+        self.register_buffer(
+            "timestep_coeff", torch.linspace(start=0.1, end=100, steps=channels)[None]
+        )
+        self.timestep_phase = nn.Parameter(torch.randn(channels)[None])
+        self.input_embed = nn.Linear(int(np.prod(in_shape)), channels)
+        self.timestep_embed = nn.Sequential(
+            nn.Linear(2 * channels, channels),
+            nn.GELU(),
+            nn.Linear(channels, channels),
+        )
+        self.layers = nn.Sequential(
+            nn.GELU(),
+            *[
+                nn.Sequential(nn.Linear(channels, channels), nn.GELU())
+                for _ in range(num_layers)
+            ],
+            nn.Linear(channels, int(np.prod(self.out_shape))),
+        )
+        if zero_init:
+            self.layers[-1].weight.data.fill_(0.0)
+            self.layers[-1].bias.data.fill_(0.0)
+
+    def forward(self, cond, inputs):
+        cond = cond.view(-1, 1).expand((inputs.shape[0], 1))
+        sin_embed_cond = torch.sin(
+            (self.timestep_coeff * cond.float()) + self.timestep_phase
+        )
+        cos_embed_cond = torch.cos(
+            (self.timestep_coeff * cond.float()) + self.timestep_phase
+        )
+        embed_cond = self.timestep_embed(
+            rearrange([sin_embed_cond, cos_embed_cond], "d b w -> b (d w)")
+        )
+        embed_ins = self.input_embed(inputs.view(inputs.shape[0], -1))
+        out = self.layers(embed_ins + embed_cond)
+        return out.view(-1, *self.out_shape)
+
+
+class TimeConder(nn.Module):
+    def __init__(self, channel, out_dim, num_layers):
+        super().__init__()
+        self.register_buffer(
+            "timestep_coeff", torch.linspace(start=0.1, end=100, steps=channel)[None]
+        )
+        self.timestep_phase = nn.Parameter(torch.randn(channel)[None])
+        self.layers = nn.Sequential(
+            nn.Linear(2 * channel, channel),
+            *[
+                nn.Sequential(
+                    nn.GELU(),
+                    nn.Linear(channel, channel),
+                )
+                for _ in range(num_layers - 1)
+            ],
+            nn.GELU(),
+            nn.Linear(channel, out_dim)
+        )
+
+        self.layers[-1].weight.data.fill_(0.0)
+        self.layers[-1].bias.data.fill_(0.01)
+
+    def forward(self, t):
+        sin_cond = torch.sin((self.timestep_coeff * t.float()) + self.timestep_phase)
+        cos_cond = torch.cos((self.timestep_coeff * t.float()) + self.timestep_phase)
+        cond = rearrange([sin_cond, cos_cond], "d b w -> b (d w)")
+        return self.layers(cond)
 
 
 class MyMLP(nn.Module):

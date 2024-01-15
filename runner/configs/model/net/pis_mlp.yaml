@@ -1,0 +1,4 @@
+_target_: src.models.components.mlp.FourierMLP
+_partial_: true
+num_layers: 2
+channels: 64

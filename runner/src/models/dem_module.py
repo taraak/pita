@@ -25,8 +25,9 @@ from .components.scaling_wrapper import ScalingWrapper
 from .components.score_estimator import estimate_grad_Rt
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
-from .components.sdes import RegVEReverseSDE, VEReverseSDE
+from .components.sdes import PIS_SDE, VEReverseSDE
 
+from .components.mlp import TimeConder
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
     """Stratify loss by binning t."""
@@ -124,6 +125,7 @@ class DEMLitModule(LightningModule):
         clipper_gen: Optional[Clipper] = None,
         diffusion_scale=1.0,
         cfm_loss_weight=1.0,
+        pis_scale=1.0,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -172,6 +174,7 @@ class DEMLitModule(LightningModule):
         self.energy_function = energy_function
         self.noise_schedule = noise_schedule
         self.buffer = buffer
+        self.dim = self.energy_function.dimensionality
 
         self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
 
@@ -223,6 +226,7 @@ class DEMLitModule(LightningModule):
         self.clipper_gen = clipper_gen
 
         self.diffusion_scale = diffusion_scale
+        self.pis_scale = pis_scale
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -688,28 +692,28 @@ class PISLitModule(DEMLitModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        dim = self.energy_function.dimensionality
         aug_prior_samples = torch.zeros(
-            self.num_samples_to_generate_per_epoch, dim + 1, device=self.device
+            self.num_samples_to_generate_per_epoch, self.dim + 1, device=self.device
         )
 
         aug_output = self.integrate(
-            self.reg_reverse_sde,
+            self.pis_sde,
             aug_prior_samples,
             return_full_trajectory=True,
             no_grad=False,
+            reverse_time=False
         )[-1]
         x_1, quad_reg = aug_output[..., :-1], aug_output[..., -1]
-        prior_ll = self.prior.log_prob(x_1).mean() / dim
-        sample_ll = self.energy_function(x_1).mean() / dim
+        prior_ll = self.prior.log_prob(x_1).mean() / self.dim
+        sample_ll = self.energy_function(x_1).mean() / self.dim
         term_loss = prior_ll - sample_ll
-        quad_reg = (quad_reg).mean() / dim
+        quad_reg = (quad_reg).mean() / self.dim
         loss = term_loss + quad_reg
         self.log_dict(
             {
                 "train/reg_loss": quad_reg,
-                "train/prior_nll": prior_nll,
-                "train/sample_nll": sample_nll,
+                "train/prior_ll": prior_ll,
+                "train/sample_ll": sample_ll,
                 "train/term_loss": term_loss,
             }
         )
@@ -725,11 +729,37 @@ class PISLitModule(DEMLitModule):
         )
         return loss
 
-    def setup(self, stage: str) -> None:
-        super().setup(stage)
-        self.reg_reverse_sde = RegVEReverseSDE(self.net, self.noise_schedule)
-        self.pis_train_loss = MeanMetric()
+    def generate_samples(
+        self,
+        reverse_sde: VEReverseSDE = None,
+        num_samples: Optional[int] = None,
+        return_full_trajectory: bool = False,
+        diffusion_scale=1.0,
+    ) -> torch.Tensor:
+        num_samples = num_samples or self.num_samples_to_generate_per_epoch
+        samples = torch.zeros(
+            num_samples, self.dim + 1, device=self.device
+        )
 
+        return self.integrate(
+            reverse_sde=self.pis_sde,
+            samples=samples,
+            reverse_time=False,
+            return_full_trajectory=return_full_trajectory,
+            diffusion_scale=diffusion_scale,
+        )[..., :-1]
+
+    def setup(self, stage: str) -> None:
+        self.tcond = TimeConder(64, 1, 3)
+        self.prior = self.partial_prior(
+            device=self.device, scale=self.pis_scale
+        )
+        self.tcond = TimeConder(64, 1, 3).to(self.device)
+        self.pis_sde = PIS_SDE(self.net, self.tcond, self.pis_scale, self.energy_function).to(self.device)
+        self.pis_train_loss = MeanMetric()
+        # torch.nn.init.zeros_(self.net.joint_mlp[-1].weight.data)
+        # torch.nn.init.zeros_(self.net.joint_mlp[-1].bias.data)
+        super().setup(stage)
 
 if __name__ == "__main__":
     _ = DEMLitModule(

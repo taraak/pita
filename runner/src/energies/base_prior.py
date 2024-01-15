@@ -18,7 +18,6 @@ class Prior:
     def sample(self, n_samples):
         return self.dist.sample((n_samples,))
 
-
 class MeanFreePrior(torch.distributions.Distribution):
     arg_constraints: Dict[str, constraints.Constraint] = {}
 
