@@ -18,6 +18,7 @@ from src.utils.logging_utils import fig_to_image
 from .components.clipper import Clipper
 from .components.cnf import CNF
 from .components.distribution_distances import compute_distribution_distances
+from .components.ema import EMAWrapper
 from .components.lambda_weighter import BaseLambdaWeighter
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
@@ -26,7 +27,6 @@ from .components.score_estimator import estimate_grad_Rt
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
 from .components.sdes import RegVEReverseSDE, VEReverseSDE
-from .components.ema import EMAWrapper
 
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
@@ -126,6 +126,7 @@ class DEMLitModule(LightningModule):
         diffusion_scale=1.0,
         cfm_loss_weight=1.0,
         use_ema=False,
+        debug_use_train_data=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -210,6 +211,17 @@ class DEMLitModule(LightningModule):
         self.test_dem_logz = MeanMetric()
         self.test_logz = MeanMetric()
 
+        self.val_buffer_nll_logdetjac = MeanMetric()
+        self.val_buffer_nll_log_p_1 = MeanMetric()
+        self.val_buffer_nll = MeanMetric()
+        self.val_buffer_nfe = MeanMetric()
+        self.val_buffer_logz = MeanMetric()
+        self.test_buffer_nll_logdetjac = MeanMetric()
+        self.test_buffer_nll_log_p_1 = MeanMetric()
+        self.test_buffer_nll = MeanMetric()
+        self.test_buffer_nfe = MeanMetric()
+        self.test_buffer_logz = MeanMetric()
+
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
@@ -284,49 +296,51 @@ class DEMLitModule(LightningModule):
 
         return self.lambda_weighter(times) * error_norms
 
-    def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        """Perform a single training step on a batch of data from the training set.
+    def training_step(self, batch, batch_idx):
+        loss = 0.0
+        if not self.hparams.debug_use_train_data:
+            iter_samples, _, _ = self.buffer.sample(
+                self.num_samples_to_sample_from_buffer
+            )
 
-        :param batch: A batch of data (a tuple) containing the input tensor of images and target
-            labels.
-        :param batch_idx: The index of the current batch.
-        :return: A tensor of losses between model predictions and targets.
-        """
+            times = torch.rand(
+                (self.num_samples_to_sample_from_buffer,), device=iter_samples.device
+            )
 
-        iter_samples, _, _ = self.buffer.sample(self.num_samples_to_sample_from_buffer)
+            noised_samples = iter_samples + (
+                torch.randn_like(iter_samples)
+                * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
+            )
 
-        times = torch.rand(
-            (self.num_samples_to_sample_from_buffer,), device=iter_samples.device
-        )
+            dem_loss = self.get_loss(times, noised_samples)
+            self.log_dict(
+                t_stratified_loss(
+                    times, dem_loss, loss_name="train/stratified/dem_loss"
+                )
+            )
+            dem_loss = dem_loss.mean()
+            loss = loss + dem_loss
 
-        noised_samples = iter_samples + (
-            torch.randn_like(iter_samples)
-            * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
-        )
-
-        loss = self.get_loss(times, noised_samples)
-        self.log_dict(
-            t_stratified_loss(times, loss, loss_name="train/stratified/dem_loss")
-        )
-        loss = loss.mean()
-
-        # update and log metrics
-        self.dem_train_loss(loss)
-        self.log(
-            "train/dem_loss",
-            self.dem_train_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
+            # update and log metrics
+            self.dem_train_loss(dem_loss)
+            self.log(
+                "train/dem_loss",
+                self.dem_train_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+            )
 
         if self.should_train_cfm(batch_idx):
-            cfm_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_generate_per_epoch,
-                prioritize=self.prioritize_cfm_training_samples,
-            )
+            if self.hparams.debug_use_train_data:
+                cfm_samples = self.energy_function.sample_train_set(
+                    self.num_samples_to_generate_per_epoch
+                )
+            else:
+                cfm_samples, _, _ = self.buffer.sample(
+                    self.num_samples_to_generate_per_epoch,
+                    prioritize=self.prioritize_cfm_training_samples,
+                )
 
             cfm_loss = self.get_cfm_loss(cfm_samples)
             self.log_dict(
@@ -345,9 +359,14 @@ class DEMLitModule(LightningModule):
             )
 
             loss = loss + self.hparams.cfm_loss_weight * cfm_loss
-
-        # return loss or backpropagation will fail
         return loss
+
+    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_closure):
+        optimizer.step(closure=optimizer_closure)
+        if self.hparams.use_ema:
+            self.net.update_ema()
+            if self.should_train_cfm(batch_idx):
+                self.cfm_net.update_ema()
 
     def generate_samples(
         self,
@@ -514,6 +533,12 @@ class DEMLitModule(LightningModule):
                 self.cfm_cnf, self.cfm_prior, batch, prefix, ""
             )
             to_log["gen_1_cfm"] = forwards_samples
+            iter_samples, _, _ = self.buffer.sample(
+                self.num_samples_to_generate_per_epoch
+            )
+            forwards_samples = self.compute_and_log_nll(
+                self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
+            )
 
         self.eval_step_outputs.append(to_log)
 
