@@ -210,6 +210,17 @@ class DEMLitModule(LightningModule):
         self.test_dem_logz = MeanMetric()
         self.test_logz = MeanMetric()
 
+        self.val_buffer_nll_logdetjac = MeanMetric()
+        self.val_buffer_nll_log_p_1 = MeanMetric()
+        self.val_buffer_nll = MeanMetric()
+        self.val_buffer_nfe = MeanMetric()
+        self.val_buffer_logz = MeanMetric()
+        self.test_buffer_nll_logdetjac = MeanMetric()
+        self.test_buffer_nll_log_p_1 = MeanMetric()
+        self.test_buffer_nll = MeanMetric()
+        self.test_buffer_nfe = MeanMetric()
+        self.test_buffer_logz = MeanMetric()
+
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
@@ -514,6 +525,10 @@ class DEMLitModule(LightningModule):
                 self.cfm_cnf, self.cfm_prior, batch, prefix, ""
             )
             to_log["gen_1_cfm"] = forwards_samples
+            iter_samples, _, _ = self.buffer.sample(self.num_samples_to_generate_per_epoch)
+            forwards_samples = self.compute_and_log_nll(
+                self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
+            )
 
         self.eval_step_outputs.append(to_log)
 
