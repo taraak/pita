@@ -21,7 +21,7 @@ buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
   dim: ${energy.dimensionality}
   max_length: 10000
-  min_sample_length: 1000
+  min_sample_length: 500
   initial_sampler: null
   device: ${trainer.accelerator}
   sample_with_replacement: True
@@ -37,6 +37,7 @@ num_samples_to_sample_from_buffer: 512
 num_integration_steps: 1000
 
 
+nll_integration_method: euler
 nll_with_cfm: true
 nll_with_dem: false
 cfm_sigma: 0.0

@@ -253,9 +253,12 @@ class DEMLitModule(LightningModule):
         )
 
         vt = self.cfm_net(t, xt)
-        return (vt - ut).pow(2).mean(dim=-1) / (
-            self.energy_function.data_normalization_factor**2
-        )
+        loss = (vt - ut).pow(2).mean(dim=-1)
+
+        if self.energy_function.normalization_max is not None:
+            loss = loss / (self.energy_function.normalization_max ** 2)
+
+        return loss
 
     def should_train_cfm(self, batch_idx: int) -> bool:
         return self.nll_with_cfm
@@ -319,7 +322,7 @@ class DEMLitModule(LightningModule):
 
         if self.should_train_cfm(batch_idx):
             cfm_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_generate_per_epoch,
+                self.num_samples_to_sample_from_buffer,
                 prioritize=self.prioritize_cfm_training_samples,
             )
 
@@ -485,37 +488,6 @@ class DEMLitModule(LightningModule):
         )
 
         loss = self.get_loss(times, noised_batch).mean(-1)
-
-        # generate data --> noise
-        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(batch)
-
-        nll_metric = getattr(self, f'{prefix}_nll')
-        logdetjac_metric = getattr(self, f'{prefix}_nll_logdetjac')
-        log_p_1_metric = getattr(self, f'{prefix}_nll_log_p_1')
-
-        nll_metric.update(nll)
-        logdetjac_metric.update(logdetjac)
-        log_p_1_metric.update(log_p_1)
-
-        self.log(
-            f"{prefix}/nll_logdetjac",
-            logdetjac_metric,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False
-        )
-
-        self.log(
-            f"{prefix}/nll_log_p_1",
-            log_p_1_metric,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False
-        )
-
-        self.log(
-            f"{prefix}/nll", nll_metric, on_step=False, on_epoch=True, prog_bar=True
-        )
 
         # update and log metrics
         loss_metric = self.val_loss if prefix == "val" else self.test_loss

@@ -4,10 +4,10 @@
 root_dir: ${oc.env:PROJECT_ROOT}
 
 # path to data directory
-data_dir: ${oc.env:SCRATCH}/dem/data/
+data_dir: ${oc.env:PROJECT_ROOT}/dem/data/
 
 # path to logging directory
-log_dir: ${oc.env:SCRATCH}/dem/logs/
+log_dir: ${oc.env:PROJECT_ROOT}/dem/logs/
 
 # path to output directory, created dynamically by hydra
 # path generation pattern is specified in `configs/hydra/default.yaml`

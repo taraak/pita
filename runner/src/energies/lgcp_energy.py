@@ -222,6 +222,7 @@ class CoxDist(BaseSet):
         self.data_ndim = dim
 
     def log_pdf(self, x):
+        import pdb; pdb.set_trace()
         return self.cox.evaluate_log_density(x)
 
     def get_gt_disc(self, x):
@@ -232,6 +233,7 @@ class LogGaussianCoxProcessEnergy(BaseEnergyFunction, CoxDist):
     def __init__(
         self,
         dimensionality: int,
+        data_normalization_factor: int,
         data_path: str ='../data/df_pines.csv',
     ):
         CoxDist.__init__(self, data_path, -1, _LGCP_DIM)

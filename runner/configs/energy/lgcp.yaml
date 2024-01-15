@@ -1,3 +1,4 @@
 _target_: src.energies.lgcp_energy.LogGaussianCoxProcessEnergy
 
 dimensionality: 1600
+data_normalization_factor: 1
