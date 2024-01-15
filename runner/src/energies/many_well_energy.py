@@ -20,6 +20,7 @@ class ManyWell(BaseEnergyFunction):
         plotting_buffer_sample_size=512,
         plot_samples_epoch_period=5,
         test_set_size=1024,
+        train_set_size=100000,
         should_unnormalize=False,
         data_normalization_factor=3,
     ):
@@ -44,6 +45,9 @@ class ManyWell(BaseEnergyFunction):
 
     def setup_test_set(self):
         return self.many_well.sample((self.test_set_size,))
+        
+    def setup_train_set(self):
+        return self.many_well.sample((self.train_set_size,))
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:

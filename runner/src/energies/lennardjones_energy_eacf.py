@@ -85,13 +85,14 @@ class LennardJonesEnergy(BaseEnergyFunction):
         plot_samples_epoch_period=5,
         plotting_buffer_sample_size=512,
         data_normalization_factor=1.0,
+        data_path_train=None,
     ):
         torch.manual_seed(0)  # seed of 0
 
         self.n_particles = n_particles
         self.n_spatial_dim = dimensionality // n_particles
 
-        if self.n_particles == 55:
+        if self.n_particles != 13:
             raise NotImplementedError
 
         self.curr_epoch = 0
@@ -99,6 +100,10 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.plot_samples_epoch_period = plot_samples_epoch_period
 
         self.data_normalization_factor = data_normalization_factor
+
+        self.device = device
+        self.data_path = data_path
+        self.data_path_train = data_path_train
 
         self.lennard_jones = LennardJonesPotential(
             dim=dimensionality,
@@ -110,26 +115,34 @@ class LennardJonesEnergy(BaseEnergyFunction):
             device=device,
         )
 
-        all_data = np.load(data_path, allow_pickle=True)
-
-        # Following the EACF paper for the partitions
-        # This test set is bad. It's a single MC Chain
-        if self.n_particles == 13:
-            self.test_data = all_data[:1000]
-            self.test_data = remove_mean(
-                self.test_data, self.n_particles, self.n_spatial_dim
-            )
-            self.test_data = torch.tensor(self.test_data,
-                                          device=device)
-        del all_data
-
         super().__init__(dimensionality=dimensionality)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         return self.lennard_jones._log_prob(samples)
 
     def setup_test_set(self):
-        return self.test_data
+        all_data = np.load(self.data_path, allow_pickle=True)
+        # Following the EACF paper for the partitions
+        # This test set is bad. It's a single MC Chain
+        test_data = all_data[:1000]
+        test_data = remove_mean(
+            test_data, self.n_particles, self.n_spatial_dim
+        )
+        test_data = torch.tensor(test_data,
+                                 device=self.device)
+        del all_data
+        return test_data
+    
+    def setup_train_set(self):
+            if self.data_path_train is None:
+                raise ValueError("No train data path provided")
+            train_data = np.load(self.data_path_train, allow_pickle=True)
+            train_data = remove_mean(
+                train_data, self.n_particles, self.n_spatial_dim
+            )
+            train_data = torch.tensor(train_data,
+                                      device=self.device)
+            return train_data
 
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
