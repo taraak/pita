@@ -26,6 +26,7 @@ from .components.score_estimator import estimate_grad_Rt
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
 from .components.sdes import RegVEReverseSDE, VEReverseSDE
+from .components.ema import EMAWrapper
 
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
@@ -124,6 +125,7 @@ class DEMLitModule(LightningModule):
         clipper_gen: Optional[Clipper] = None,
         diffusion_scale=1.0,
         cfm_loss_weight=1.0,
+        use_ema=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -142,6 +144,9 @@ class DEMLitModule(LightningModule):
 
         self.net = net(energy_function=energy_function)
         self.cfm_net = net(energy_function=energy_function)
+        if use_ema:
+            self.net = EMAWrapper(self.net)
+            self.cfm_net = EMAWrapper(self.cfm_net)
         if input_scaling_factor is not None or output_scaling_factor is not None:
             self.net = ScalingWrapper(
                 self.net, input_scaling_factor, output_scaling_factor
