@@ -6,17 +6,17 @@
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["LJ13"]
+tags: ["LJ13-2"]
 
 seed: 12345
 
 logger:
   wandb:
     tags: ${tags}
-    group: "lj13"
+    group: "lj13-2"
 
 defaults: 
-  - override /energy: lj13
+  - override /energy: lj13_2
   - override /model/net: egnn
 
 model:
@@ -28,6 +28,7 @@ model:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
     sigma_min: 0.01 #0.3
     sigma_max: 10 #1.2
+
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -55,3 +56,7 @@ model:
 
   # num_samples_to_sample_from_buffer: 5120
   diffusion_scale: 0.4
+
+
+  # this can be max 1000 cause test set is 1000
+  num_samples_to_generate_per_epoch: 1000

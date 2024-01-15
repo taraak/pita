@@ -1,4 +1,3 @@
-import re
 import PIL
 import torch
 import numpy as np
@@ -26,78 +25,54 @@ def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
     return lj
 
 
-class LennardJonesPotential(Energy):
+class LennardJonesPotential():
     def __init__(
         self,
         dim,
         n_particles,
         eps=1.0,
         rm=1.0,
-        oscillator=True,
-        oscillator_scale=1.0,
-        two_event_dims=True,
+        tau=1.0,
+        harmonic_potential_coef=0.5,
+        device="cpu",
     ):
-        """Energy for a Lennard-Jones cluster
-
-        Parameters
-        ----------
-        dim : int
-            Number of degrees of freedom ( = space dimension x n_particles)
-        n_particles : int
-            Number of Lennard-Jones particles
-        eps : float
-            LJ well depth epsilon
-        rm : float
-            LJ well radius R_min
-        oscillator : bool
-            Whether to use a harmonic oscillator as an external force
-        oscillator_scale : float
-            Force constant of the harmonic oscillator energy
-        two_event_dims : bool
-            If True, the energy expects inputs with two event dimensions (particle_id, coordinate).
-            Else, use only one event dimension.
-        """
-        if two_event_dims:
-            super().__init__([n_particles, dim // n_particles])
-        else:
-            super().__init__(dim)
+        self._dim = dim
         self._n_particles = n_particles
         self._n_dims = dim // n_particles
+        self.eps = eps
+        self.rm = rm
+        self.tau = tau
+        self.harmonic_potential_coef = harmonic_potential_coef
+        self.device = device
 
-        self._eps = eps
-        self._rm = rm
-        self.oscillator = oscillator
-        self._oscillator_scale = oscillator_scale
+        self.event_shape = torch.Size([dim])
 
-    def _energy(self, x):
-        batch_shape = x.shape[: -len(self.event_shape)]
-        x = x.view(*batch_shape, self._n_particles, self._n_dims)
+        
+    def _get_senders_and_receivers_fully_connected(self, n_nodes):
+        receivers = []
+        senders = []
+        for i in range(n_nodes):
+            for j in range(n_nodes - 1):
+                receivers.append(i)
+                senders.append((i + 1 + j) % n_nodes)
+        return torch.tensor(senders), torch.tensor(receivers)
 
-        dists = distances_from_vectors(
-            distance_vectors(x.view(-1, self._n_particles, self._n_dims))
-        )
+    def _energy(self, x: torch.Tensor):
+        if isinstance(self.rm, float):
+            r = torch.ones(self._n_particles, device=self.device) * self.rm
+        senders, receivers = self._get_senders_and_receivers_fully_connected(self._n_particles)
+        vectors = x[senders] - x[receivers]
+        d = torch.linalg.norm(vectors, ord=2, dim=-1)
+        term_inside_sum = (r[receivers] / d)**12 - 2*(r[receivers] / d)**6
+        energy = self.eps / (2 * self.tau) * term_inside_sum.sum()
 
-        lj_energies = lennard_jones_energy_torch(dists, self._eps, self._rm)
-        lj_energies = lj_energies.view(*batch_shape, -1).sum(dim=-1)  # / 2
+        centre_of_mass = x.mean(dim=0)
+        harmonic_potential = self.harmonic_potential_coef * (x - centre_of_mass).pow(2).sum()
+        return energy + harmonic_potential
 
-        if self.oscillator:
-            osc_energies = 0.5 * self._remove_mean(x).pow(2).sum(dim=(-2, -1)).view(
-                *batch_shape
-            )
-            lj_energies = lj_energies + osc_energies * self._oscillator_scale
-
-        return lj_energies[:, None]
-
-    def _remove_mean(self, x):
-        x = x.view(-1, self._n_particles, self._n_dims)
-        return x - torch.mean(x, dim=1, keepdim=True)
-
-    def _energy_numpy(self, x):
-        x = torch.Tensor(x)
-        return self._energy(x).cpu().numpy()
-
-    def _log_prob(self, x):
-        return -self._energy(x)
+    def _log_prob(self, x: torch.Tensor):
+        x = x.reshape(-1, self._n_particles, self._n_dims)
+        return - torch.vmap(self._energy)(x)
 
 
 class LennardJonesEnergy(BaseEnergyFunction):
@@ -110,13 +85,14 @@ class LennardJonesEnergy(BaseEnergyFunction):
         plot_samples_epoch_period=5,
         plotting_buffer_sample_size=512,
         data_normalization_factor=1.0,
+        data_path_train=None,
     ):
         torch.manual_seed(0)  # seed of 0
 
         self.n_particles = n_particles
         self.n_spatial_dim = dimensionality // n_particles
 
-        if self.n_particles != 13 and self.n_particles != 55:
+        if self.n_particles != 13:
             raise NotImplementedError
 
         self.curr_epoch = 0
@@ -125,74 +101,48 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
-        self.data_path = data_path
         self.device = device
+        self.data_path = data_path
+        self.data_path_train = data_path_train
 
         self.lennard_jones = LennardJonesPotential(
             dim=dimensionality,
             n_particles=n_particles,
             eps=1.0,
             rm=1.0,
-            oscillator=True,
-            oscillator_scale=1.0,
-            two_event_dims=False,
+            tau=1.0,
+            harmonic_potential_coef=0.5,
+            device=device,
         )
 
         super().__init__(dimensionality=dimensionality)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
-        return self.lennard_jones._log_prob(samples).squeeze(-1)
+        return self.lennard_jones._log_prob(samples)
 
     def setup_test_set(self):
         all_data = np.load(self.data_path, allow_pickle=True)
-        
-        # Following the Equivarinat FM paper for the partitions
-        if self.n_particles == 13:
-            test_data = all_data[len(all_data) // 2 :]
-            test_data = remove_mean(
-                test_data, self.n_particles, self.n_spatial_dim
-            )
-            test_data = torch.tensor(test_data,
-                                     device=self.device)
-
-        elif self.n_particles == 55:
-            idx = np.random.choice(
-                np.arange(len(all_data)), len(all_data), replace=False
-            )
-            holdout_start = 200000
-            test_data = all_data[idx[holdout_start:]]
-            test_data = remove_mean(
-                test_data, self.n_particles, self.n_spatial_dim
-            )
-            test_data = torch.tensor(test_data,
-                                     device=self.device)
+        # Following the EACF paper for the partitions
+        # This test set is bad. It's a single MC Chain
+        test_data = all_data[:1000]
+        test_data = remove_mean(
+            test_data, self.n_particles, self.n_spatial_dim
+        )
+        test_data = torch.tensor(test_data,
+                                 device=self.device)
         del all_data
         return test_data
-
     
     def setup_train_set(self):
-            all_data = np.load(self.data_path, allow_pickle=True)
-            if self.n_particles == 13:
-                train_data = all_data[: len(all_data) // 2]
-                train_data = remove_mean(
-                    train_data, self.n_particles, self.n_spatial_dim
-                )
-                train_data = torch.tensor(train_data,
-                                        device=self.device)
-                
-            elif self.n_particles == 55:
-                trainset_size=100000
-                idx = np.random.choice(np.arange(len(all_data)),
-                                       len(all_data), replace=False)
-                train_data = all_data[idx[:trainset_size]]
-                train_data = remove_mean(
-                    train_data, self.n_particles, self.n_spatial_dim
-                )
-                train_data = torch.tensor(train_data,
-                                          device=self.device)
-            del all_data
+            if self.data_path_train is None:
+                raise ValueError("No train data path provided")
+            train_data = np.load(self.data_path_train, allow_pickle=True)
+            train_data = remove_mean(
+                train_data, self.n_particles, self.n_spatial_dim
+            )
+            train_data = torch.tensor(train_data,
+                                      device=self.device)
             return train_data
-
 
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
@@ -280,7 +230,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
             bins=100,
             density=True,
             alpha=0.4,
-            range=(-60, 0),
+            range=(-30, 0),
             color="g",
             histtype="step",
             linewidth=4,
@@ -291,7 +241,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
             bins=100,
             density=True,
             alpha=0.4,
-            range=(-60, 0),
+            range=(-30, 0),
             color="r",
             histtype="step",
             linewidth=4,
@@ -300,6 +250,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         axs[1].set_xlabel("Energy")
         axs[1].legend()
 
+        # plt.show()
 
         fig.canvas.draw()
         return PIL.Image.frombytes(

@@ -13,12 +13,12 @@ from torchdyn.core import NeuralODE
 from torchmetrics import MeanMetric
 
 from src.energies.base_energy_function import BaseEnergyFunction
-from src.energies.base_prior import Prior, MeanFreePrior
 from src.utils.logging_utils import fig_to_image
 
 from .components.clipper import Clipper
 from .components.cnf import CNF
 from .components.distribution_distances import compute_distribution_distances
+from .components.ema import EMAWrapper
 from .components.lambda_weighter import BaseLambdaWeighter
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
@@ -26,8 +26,9 @@ from .components.scaling_wrapper import ScalingWrapper
 from .components.score_estimator import estimate_grad_Rt
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
-from .components.sdes import RegVEReverseSDE, VEReverseSDE
+from .components.sdes import PIS_SDE, VEReverseSDE
 
+from .components.mlp import TimeConder
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
     """Stratify loss by binning t."""
@@ -126,6 +127,10 @@ class DEMLitModule(LightningModule):
         partial_prior=None,
         clipper_gen: Optional[Clipper] = None,
         diffusion_scale=1.0,
+        cfm_loss_weight=1.0,
+        pis_scale=1.0,
+        use_ema=False,
+        debug_use_train_data=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -135,6 +140,8 @@ class DEMLitModule(LightningModule):
         :param buffer: Buffer of sampled objects
         """
         super().__init__()
+        # Seems to slow things down
+        # torch.set_float32_matmul_precision('high')
 
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
@@ -142,6 +149,9 @@ class DEMLitModule(LightningModule):
 
         self.net = net(energy_function=energy_function)
         self.cfm_net = net(energy_function=energy_function)
+        if use_ema:
+            self.net = EMAWrapper(self.net)
+            self.cfm_net = EMAWrapper(self.cfm_net)
         if input_scaling_factor is not None or output_scaling_factor is not None:
             self.net = ScalingWrapper(
                 self.net, input_scaling_factor, output_scaling_factor
@@ -177,6 +187,7 @@ class DEMLitModule(LightningModule):
         self.energy_function = energy_function
         self.noise_schedule = noise_schedule
         self.buffer = buffer
+        self.dim = self.energy_function.dimensionality
 
         self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
 
@@ -210,6 +221,17 @@ class DEMLitModule(LightningModule):
         self.test_dem_logz = MeanMetric()
         self.test_logz = MeanMetric()
 
+        self.val_buffer_nll_logdetjac = MeanMetric()
+        self.val_buffer_nll_log_p_1 = MeanMetric()
+        self.val_buffer_nll = MeanMetric()
+        self.val_buffer_nfe = MeanMetric()
+        self.val_buffer_logz = MeanMetric()
+        self.test_buffer_nll_logdetjac = MeanMetric()
+        self.test_buffer_nll_log_p_1 = MeanMetric()
+        self.test_buffer_nll = MeanMetric()
+        self.test_buffer_nfe = MeanMetric()
+        self.test_buffer_logz = MeanMetric()
+
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
@@ -228,6 +250,7 @@ class DEMLitModule(LightningModule):
         self.clipper_gen = clipper_gen
 
         self.diffusion_scale = diffusion_scale
+        self.pis_scale = pis_scale
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -286,45 +309,51 @@ class DEMLitModule(LightningModule):
 
         return self.lambda_weighter(times) * error_norms
 
-    def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        """Perform a single training step on a batch of data from the training set.
+    def training_step(self, batch, batch_idx):
+        loss = 0.0
+        if not self.hparams.debug_use_train_data:
+            iter_samples, _, _ = self.buffer.sample(
+                self.num_samples_to_sample_from_buffer
+            )
 
-        :param batch: A batch of data (a tuple) containing the input tensor of images and target
-            labels.
-        :param batch_idx: The index of the current batch.
-        :return: A tensor of losses between model predictions and targets.
-        """
+            times = torch.rand(
+                (self.num_samples_to_sample_from_buffer,), device=iter_samples.device
+            )
 
-        iter_samples, _, _ = self.buffer.sample(self.num_samples_to_sample_from_buffer)
+            noised_samples = iter_samples + (
+                torch.randn_like(iter_samples)
+                * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
+            )
 
-        times = torch.rand(
-            (self.num_samples_to_sample_from_buffer,), device=iter_samples.device
-        )
+            dem_loss = self.get_loss(times, noised_samples)
+            self.log_dict(
+                t_stratified_loss(
+                    times, dem_loss, loss_name="train/stratified/dem_loss"
+                )
+            )
+            dem_loss = dem_loss.mean()
+            loss = loss + dem_loss
 
-        noised_samples = iter_samples + (
-            torch.randn_like(iter_samples)
-            * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
-        )
-
-        loss = self.get_loss(times, noised_samples)
-        self.log_dict(
-            t_stratified_loss(times, loss, loss_name="train/stratified/dem_loss")
-        )
-        loss = loss.mean()
-
-        # update and log metrics
-        self.dem_train_loss(loss)
-        self.log(
-            "train/dem_loss", self.dem_train_loss, on_step=True, on_epoch=False, prog_bar=True
-        )
+            # update and log metrics
+            self.dem_train_loss(dem_loss)
+            self.log(
+                "train/dem_loss",
+                self.dem_train_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+            )
 
         if self.should_train_cfm(batch_idx):
-            cfm_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_sample_from_buffer,
-                prioritize=self.prioritize_cfm_training_samples,
-            )
+            if self.hparams.debug_use_train_data:
+                cfm_samples = self.energy_function.sample_train_set(
+                    self.num_samples_to_generate_per_epoch
+                )
+            else:
+                cfm_samples, _, _ = self.buffer.sample(
+                    self.num_samples_to_generate_per_epoch,
+                    prioritize=self.prioritize_cfm_training_samples,
+                )
 
             cfm_loss = self.get_cfm_loss(cfm_samples)
             self.log_dict(
@@ -338,10 +367,15 @@ class DEMLitModule(LightningModule):
                 "train/cfm_loss", self.cfm_train_loss, on_step=True, on_epoch=False, prog_bar=True
             )
 
-            loss = loss + cfm_loss
-
-        # return loss or backpropagation will fail
+            loss = loss + self.hparams.cfm_loss_weight * cfm_loss
         return loss
+
+    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_closure):
+        optimizer.step(closure=optimizer_closure)
+        if self.hparams.use_ema:
+            self.net.update_ema()
+            if self.should_train_cfm(batch_idx):
+                self.cfm_net.update_ema()
 
     def generate_samples(
         self,
@@ -429,7 +463,8 @@ class DEMLitModule(LightningModule):
         nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
             cnf, prior, samples
         )
-        logz = self.energy_function(samples) + nll
+        # Normalize, this seems super weird, but is the right thing to do -- AT
+        logz = self.energy_function(self.energy_function.normalize(samples)) + nll
         nfe_metric = getattr(self, f"{prefix}_{name}nfe")
         nll_metric = getattr(self, f"{prefix}_{name}nll")
         logdetjac_metric = getattr(self, f"{prefix}_{name}nll_logdetjac")
@@ -511,6 +546,12 @@ class DEMLitModule(LightningModule):
                 self.cfm_cnf, self.cfm_prior, batch, prefix, ""
             )
             to_log["gen_1_cfm"] = forwards_samples
+            iter_samples, _, _ = self.buffer.sample(
+                self.num_samples_to_generate_per_epoch
+            )
+            forwards_samples = self.compute_and_log_nll(
+                self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
+            )
 
         self.eval_step_outputs.append(to_log)
 
@@ -692,28 +733,28 @@ class PISLitModule(DEMLitModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        dim = self.energy_function.dimensionality
         aug_prior_samples = torch.zeros(
-            self.num_samples_to_generate_per_epoch, dim + 1, device=self.device
+            self.num_samples_to_generate_per_epoch, self.dim + 1, device=self.device
         )
 
         aug_output = self.integrate(
-            self.reg_reverse_sde,
+            self.pis_sde,
             aug_prior_samples,
             return_full_trajectory=True,
             no_grad=False,
+            reverse_time=False
         )[-1]
         x_1, quad_reg = aug_output[..., :-1], aug_output[..., -1]
-        prior_ll = self.prior.log_prob(x_1).mean() / dim
-        sample_ll = self.energy_function(x_1).mean() / dim
+        prior_ll = self.prior.log_prob(x_1).mean() / self.dim
+        sample_ll = self.energy_function(x_1).mean() / self.dim
         term_loss = prior_ll - sample_ll
-        quad_reg = (quad_reg).mean() / dim
+        quad_reg = (quad_reg).mean() / self.dim
         loss = term_loss + quad_reg
         self.log_dict(
             {
                 "train/reg_loss": quad_reg,
-                "train/prior_nll": prior_nll,
-                "train/sample_nll": sample_nll,
+                "train/prior_ll": prior_ll,
+                "train/sample_ll": sample_ll,
                 "train/term_loss": term_loss,
             }
         )
@@ -729,11 +770,37 @@ class PISLitModule(DEMLitModule):
         )
         return loss
 
-    def setup(self, stage: str) -> None:
-        super().setup(stage)
-        self.reg_reverse_sde = RegVEReverseSDE(self.net, self.noise_schedule)
-        self.pis_train_loss = MeanMetric()
+    def generate_samples(
+        self,
+        reverse_sde: VEReverseSDE = None,
+        num_samples: Optional[int] = None,
+        return_full_trajectory: bool = False,
+        diffusion_scale=1.0,
+    ) -> torch.Tensor:
+        num_samples = num_samples or self.num_samples_to_generate_per_epoch
+        samples = torch.zeros(
+            num_samples, self.dim + 1, device=self.device
+        )
 
+        return self.integrate(
+            reverse_sde=self.pis_sde,
+            samples=samples,
+            reverse_time=False,
+            return_full_trajectory=return_full_trajectory,
+            diffusion_scale=diffusion_scale,
+        )[..., :-1]
+
+    def setup(self, stage: str) -> None:
+        self.tcond = TimeConder(64, 1, 3)
+        self.prior = self.partial_prior(
+            device=self.device, scale=self.pis_scale
+        )
+        self.tcond = TimeConder(64, 1, 3).to(self.device)
+        self.pis_sde = PIS_SDE(self.net, self.tcond, self.pis_scale, self.energy_function).to(self.device)
+        self.pis_train_loss = MeanMetric()
+        # torch.nn.init.zeros_(self.net.joint_mlp[-1].weight.data)
+        # torch.nn.init.zeros_(self.net.joint_mlp[-1].bias.data)
+        super().setup(stage)
 
 if __name__ == "__main__":
     _ = DEMLitModule(

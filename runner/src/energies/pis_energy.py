@@ -25,10 +25,16 @@ class GMM(BaseEnergyFunction):
         plot_samples_epoch_period=5,
         should_unnormalize=False,
         data_normalization_factor=50,
-        train_set_size=100000,
     ):
         use_gpu = device != "cpu"
         torch.manual_seed(0)  # seed of 0 for GMM problem
+        mean = torch.tensor([
+            [-5., -5.], [-5., 0.], [-5., 5.],
+            [0., -5.], [0., 0.], [0., 5.],
+            [5., -5.], [5., 0.], [5., 5.],
+        ])
+        scale = torch.ones(9, 2) * 0.5477222
+
         self.gmm = gmm.GMM(
             dim=dimensionality,
             n_mixes=n_mixes,
@@ -36,6 +42,8 @@ class GMM(BaseEnergyFunction):
             log_var_scaling=log_var_scaling,
             use_gpu=use_gpu,
             true_expectation_estimation_n_samples=true_expectation_estimation_n_samples,
+            mean = mean,
+            scale = scale
         )
 
         self.curr_epoch = 0
@@ -54,10 +62,7 @@ class GMM(BaseEnergyFunction):
 
     def setup_test_set(self):
         return self.gmm.test_set
-    
-    def setup_train_set(self):
-        return self.gmm.sample((self.train_set_size,))
-    
+
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
             samples = self.unnormalize(samples)
@@ -124,7 +129,7 @@ class GMM(BaseEnergyFunction):
         self.curr_epoch += 1
 
     def get_dataset_fig(
-        self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40)
+        self, samples, gen_samples=None, plotting_bounds=(-8, 8)
     ):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 

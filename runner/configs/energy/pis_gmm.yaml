@@ -1,0 +1,13 @@
+  _target_: src.energies.pis_energy.GMM
+
+  dimensionality: 2
+  n_mixes: 9
+  loc_scaling: 5
+  log_var_scaling: 0.5477222
+
+  device: ${trainer.accelerator}
+
+  plot_samples_epoch_period: 1
+
+  should_unnormalize: true
+  data_normalization_factor: 50

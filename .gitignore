@@ -161,3 +161,7 @@ cython_debug/
 #
 *.sw?
 slurm*.out
+
+data/
+runner/run_gpu.sh
+runner/configs/launcher/mila_cluster.yaml
