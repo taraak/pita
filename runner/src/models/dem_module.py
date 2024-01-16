@@ -625,7 +625,7 @@ class DEMLitModule(LightningModule):
         unprioritized_buffer_samples, cfm_samples = None, None
         if self.nll_with_cfm:
             unprioritized_buffer_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_generate_per_epoch * 10,
+                self.num_samples_to_generate_per_epoch,
                 prioritize=self.prioritize_cfm_training_samples
             )
 
