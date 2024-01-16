@@ -111,6 +111,7 @@ class DEMLitModule(LightningModule):
         num_estimator_mc_samples: int,
         num_samples_to_generate_per_epoch: int,
         num_samples_to_sample_from_buffer: int,
+        eval_batch_size: int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
         nll_with_cfm: bool,
@@ -133,6 +134,7 @@ class DEMLitModule(LightningModule):
         use_ema=False,
         debug_use_train_data=False,
         init_from_prior=False,
+        compute_nll_on_train_data=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -176,6 +178,7 @@ class DEMLitModule(LightningModule):
         self.nll_with_cfm = nll_with_cfm
         self.nll_with_dem = nll_with_dem
         self.cfm_prior_std = cfm_prior_std
+        self.compute_nll_on_train_data = compute_nll_on_train_data
 
         flow_matcher = ConditionalFlowMatcher
         if use_otcfm:
@@ -232,11 +235,24 @@ class DEMLitModule(LightningModule):
         self.test_buffer_nfe = MeanMetric()
         self.test_buffer_logz = MeanMetric()
 
+
+        self.val_train_nll_logdetjac = MeanMetric()
+        self.val_train_nll_log_p_1 = MeanMetric()
+        self.val_train_nll = MeanMetric()
+        self.val_train_nfe = MeanMetric()
+        self.val_train_logz = MeanMetric()
+        self.test_train_nll_logdetjac = MeanMetric()
+        self.test_train_nll_log_p_1 = MeanMetric()
+        self.test_train_nll = MeanMetric()
+        self.test_train_nfe = MeanMetric()
+        self.test_train_logz = MeanMetric()
+
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
         self.num_samples_to_sample_from_buffer = num_samples_to_sample_from_buffer
         self.num_integration_steps = num_integration_steps
+        self.eval_batch_size = eval_batch_size
 
         self.prioritize_cfm_training_samples = prioritize_cfm_training_samples
         self.lambda_weighter = self.hparams.lambda_weighter(self.noise_schedule)
@@ -285,7 +301,7 @@ class DEMLitModule(LightningModule):
         return loss
 
     def should_train_cfm(self, batch_idx: int) -> bool:
-        return self.nll_with_cfm
+        return (self.nll_with_cfm or self.hparams.debug_use_train_data)
 
     def get_loss(self, times: torch.Tensor, samples: torch.Tensor) -> torch.Tensor:
         estimated_score = estimate_grad_Rt(
@@ -510,20 +526,20 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         batch = self.energy_function.sample_test_set(
-            self.num_samples_to_generate_per_epoch
+            self.eval_batch_size
         )
 
         # generate samples noise --> data if needed
         backwards_samples = self.last_samples
         if backwards_samples is None:
-            backwards_samples = self.generate_samples()
+            backwards_samples = self.generate_samples(num_samples=self.eval_batch_size)
 
         if batch is None:
             self.eval_step_outputs.append({"gen_0": backwards_samples})
             return
 
         times = torch.rand(
-            (self.num_samples_to_generate_per_epoch,), device=batch.device
+            (self.eval_batch_size,), device=batch.device
         )
 
         noised_batch = batch + (
@@ -555,11 +571,19 @@ class DEMLitModule(LightningModule):
             )
             to_log["gen_1_cfm"] = forwards_samples
             iter_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_generate_per_epoch
+                self.eval_batch_size
             )
             forwards_samples = self.compute_and_log_nll(
                 self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
             )
+
+            if self.compute_nll_on_train_data:
+                train_samples = self.energy_function.sample_train_set(
+                    self.eval_batch_size
+                )
+                forwards_samples = self.compute_and_log_nll(
+                    self.cfm_cnf, self.cfm_prior, train_samples, prefix, "train_"
+                )
 
         self.eval_step_outputs.append(to_log)
 
@@ -569,7 +593,7 @@ class DEMLitModule(LightningModule):
     def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         self.eval_step("test", batch, batch_idx)
 
-    def generate_cfm_samples(self):
+    def generate_cfm_samples(self, batch_size):
         def reverse_wrapper(model):
             def fxn(t, x, args=None):
                 if t.ndim == 0:
@@ -589,7 +613,7 @@ class DEMLitModule(LightningModule):
 
         with torch.no_grad():
             shape = (
-                self.num_samples_to_generate_per_epoch,
+                batch_size,
                 self.energy_function.dimensionality,
             )
 
@@ -633,11 +657,11 @@ class DEMLitModule(LightningModule):
         unprioritized_buffer_samples, cfm_samples = None, None
         if self.nll_with_cfm:
             unprioritized_buffer_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_generate_per_epoch,
+                self.eval_batch_size,
                 prioritize=self.prioritize_cfm_training_samples,
             )
 
-            cfm_samples = self.generate_cfm_samples()
+            cfm_samples = self.generate_cfm_samples(self.eval_batch_size)
 
         self.energy_function.log_on_epoch_end(
             self.last_samples,
