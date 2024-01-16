@@ -9,7 +9,7 @@ from torchcfm.conditional_flow_matching import (
     ConditionalFlowMatcher,
     ExactOptimalTransportConditionalFlowMatcher,
 )
-from torchdyn.core import NeuralODE
+from torchdiffeq import odeint
 from torchmetrics import MeanMetric
 
 from src.energies.base_energy_function import BaseEnergyFunction
@@ -594,14 +594,6 @@ class DEMLitModule(LightningModule):
 
             return fxn
 
-        node = NeuralODE(
-            reverse_wrapper(self.cfm_net),
-            solver="dopri5",
-            sensitivity="adjoint",
-            atol=1e-4,
-            rtol=1e-4,
-        )
-
         with torch.no_grad():
             shape = (
                 self.num_samples_to_generate_per_epoch,
@@ -609,9 +601,11 @@ class DEMLitModule(LightningModule):
             )
 
             noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
-            traj = node.trajectory(
+            traj = odeint(
+                reverse_wrapper,
                 noise,
                 t_span=torch.linspace(0, 1, 2, device=self.device),
+                method="dopri5",
             )
 
             return traj[-1]
