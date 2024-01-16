@@ -20,13 +20,14 @@ from .components.cnf import CNF
 from .components.distribution_distances import compute_distribution_distances
 from .components.ema import EMAWrapper
 from .components.lambda_weighter import BaseLambdaWeighter
+from .components.mlp import TimeConder
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.scaling_wrapper import ScalingWrapper
 from .components.score_estimator import estimate_grad_Rt
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
-from .components.sdes import VEReverseSDE
+from .components.sdes import PIS_SDE, VEReverseSDE
 
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
@@ -462,30 +463,41 @@ class DEMLitModule(LightningModule):
 
         self.buffer.add(self.last_samples, self.last_energies)
 
+    def compute_log_z(self, cnf, prior, samples, prefix, name):
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
+            cnf, prior, samples
+        )
+        logz = self.energy_function(samples) + nll
+        logz_metric = getattr(self, f"{prefix}_{name}logz")
+        logz_metric.update(logz)
+        self.log(
+            f"{prefix}/{name}logz",
+            logz_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
     def compute_and_log_nll(self, cnf, prior, samples, prefix, name):
         cnf.nfe = 0.0
         nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
             cnf, prior, samples
         )
-        # Normalize, this seems super weird, but is the right thing to do -- AT
-        logz = self.energy_function(self.energy_function.normalize(samples)) + nll
         nfe_metric = getattr(self, f"{prefix}_{name}nfe")
         nll_metric = getattr(self, f"{prefix}_{name}nll")
         logdetjac_metric = getattr(self, f"{prefix}_{name}nll_logdetjac")
         log_p_1_metric = getattr(self, f"{prefix}_{name}nll_log_p_1")
-        logz_metric = getattr(self, f"{prefix}_{name}logz")
         nfe_metric.update(cnf.nfe)
         nll_metric.update(nll)
         logdetjac_metric.update(logdetjac)
         log_p_1_metric.update(log_p_1)
-        logz_metric.update(logz)
 
         self.log_dict(
             {
                 f"{prefix}/{name}_nfe": nfe_metric,
                 f"{prefix}/{name}nll_logdetjac": logdetjac_metric,
                 f"{prefix}/{name}nll_log_p_1": log_p_1_metric,
-                f"{prefix}/{name}logz": logz_metric,
+                # f"{prefix}/{name}logz": logz_metric,
             },
             on_epoch=True,
         )
@@ -545,6 +557,9 @@ class DEMLitModule(LightningModule):
                 self.dem_cnf, self.prior, batch, prefix, "dem_"
             )
             to_log["gen_1_dem"] = forwards_samples
+            self.compute_log_z(
+                self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, "dem_"
+            )
         if self.nll_with_cfm:
             forwards_samples = self.compute_and_log_nll(
                 self.cfm_cnf, self.cfm_prior, batch, prefix, ""
@@ -555,6 +570,10 @@ class DEMLitModule(LightningModule):
             )
             forwards_samples = self.compute_and_log_nll(
                 self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
+            )
+
+            self.compute_log_z(
+                self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
             )
 
         self.eval_step_outputs.append(to_log)
@@ -727,6 +746,7 @@ class DEMLitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
+
 
 if __name__ == "__main__":
     _ = DEMLitModule(
