@@ -113,24 +113,10 @@ class ManyWell(BaseEnergyFunction):
         self.many_well.to("cpu")
         if n_rows > 1:
             for i in range(n_rows):
-                self._plot_dim(
-                    fig,
-                    axs[i],
-                    plotting_bounds,
-                    samples,
-                    gen_samples,
-                    i
-                )
+                self._plot_dim(fig, axs[i], plotting_bounds, samples, gen_samples, i)
 
         else:
-            self._plot_dim(
-                fig,
-                axs,
-                plotting_bounds,
-                samples,
-                gen_samples,
-                0
-            )
+            self._plot_dim(fig, axs, plotting_bounds, samples, gen_samples, 0)
 
         ax = axs[0] if n_rows > 1 else axs
         ax[0].set_title("Dataset")
@@ -141,15 +127,7 @@ class ManyWell(BaseEnergyFunction):
         self.many_well.to(self.device)
         return fig_to_image(fig)
 
-    def _plot_dim(
-        self,
-        fig,
-        ax,
-        plotting_bounds,
-        samples,
-        gen_samples,
-        i
-    ):
+    def _plot_dim(self, fig, ax, plotting_bounds, samples, gen_samples, i):
         plot_contours(
             self.many_well.log_prob_2D,
             bounds=plotting_bounds,

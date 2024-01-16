@@ -60,3 +60,5 @@ model:
 
   # this can be max 1000 cause test set is 1000
   num_samples_to_generate_per_epoch: 1000
+
+  init_from_prior: true

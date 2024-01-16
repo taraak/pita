@@ -1,4 +1,4 @@
-  _target_: src.energies.pis_energy.GMM
+  _target_: src.energies.nine_gm.GMM
 
   dimensionality: 2
   n_mixes: 9
@@ -9,5 +9,5 @@
 
   plot_samples_epoch_period: 1
 
-  should_unnormalize: true
+  should_unnormalize: false
   data_normalization_factor: 50

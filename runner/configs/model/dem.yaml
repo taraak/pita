@@ -57,3 +57,4 @@ compile: false
 cfm_loss_weight: 1.0
 use_ema: false
 debug_use_train_data: false
+init_from_prior: false

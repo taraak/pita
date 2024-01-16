@@ -36,7 +36,7 @@ class LennardJonesPotential(Energy):
         oscillator=True,
         oscillator_scale=1.0,
         two_event_dims=True,
-        energy_factor = 1.0,
+        energy_factor=1.0,
     ):
         """Energy for a Lennard-Jones cluster
 
@@ -70,7 +70,7 @@ class LennardJonesPotential(Energy):
         self.oscillator = oscillator
         self._oscillator_scale = oscillator_scale
 
-        # this is to match the eacf energy with the eq-fm energy 
+        # this is to match the eacf energy with the eq-fm energy
         # for lj13, to match the eacf set energy_factor=0.5
         self._energy_factor = energy_factor
 
@@ -83,7 +83,9 @@ class LennardJonesPotential(Energy):
         )
 
         lj_energies = lennard_jones_energy_torch(dists, self._eps, self._rm)
-        lj_energies = lj_energies.view(*batch_shape, -1).sum(dim=-1)  * self._energy_factor
+        lj_energies = (
+            lj_energies.view(*batch_shape, -1).sum(dim=-1) * self._energy_factor
+        )
 
         if self.oscillator:
             osc_energies = 0.5 * self._remove_mean(x).pow(2).sum(dim=(-2, -1)).view(
@@ -111,10 +113,13 @@ class LennardJonesEnergy(BaseEnergyFunction):
         dimensionality,
         n_particles,
         data_path,
+        data_path_train=None,
+        data_path_val=None,
         device="cpu",
         plot_samples_epoch_period=5,
         plotting_buffer_sample_size=512,
         data_normalization_factor=1.0,
+        energy_factor = 1.0,
     ):
         torch.manual_seed(0)  # seed of 0
         np.random.seed(0)
@@ -132,6 +137,9 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.data_normalization_factor = data_normalization_factor
 
         self.data_path = data_path
+        self.data_path_train = data_path_train
+        self.data_path_val = data_path_val
+
         self.device = device
 
         self.lennard_jones = LennardJonesPotential(
@@ -142,6 +150,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
             oscillator=True,
             oscillator_scale=1.0,
             two_event_dims=False,
+            energy_factor = energy_factor,
         )
 
         super().__init__(dimensionality=dimensionality)
@@ -150,55 +159,47 @@ class LennardJonesEnergy(BaseEnergyFunction):
         return self.lennard_jones._log_prob(samples).squeeze(-1)
 
     def setup_test_set(self):
-        all_data = np.load(self.data_path, allow_pickle=True)
-        
         # Following the Equivarinat FM paper for the partitions
         if self.n_particles == 13:
+            all_data = np.load(self.data_path, allow_pickle=True)
             test_data = all_data[len(all_data) // 2 :]
             test_data = remove_mean(
                 test_data, self.n_particles, self.n_spatial_dim
             )
             test_data = torch.tensor(test_data,
                                      device=self.device)
+            del all_data
 
         elif self.n_particles == 55:
-            idx = np.random.choice(
-                np.arange(len(all_data)), len(all_data), replace=False
-            )
-            test_set_size = 200000
-            test_data = all_data[idx[:test_set_size]]
+            test_data = np.load(self.data_path, allow_pickle=True)
             test_data = remove_mean(
                 test_data, self.n_particles, self.n_spatial_dim
             )
             test_data = torch.tensor(test_data,
                                      device=self.device)
-        del all_data
         return test_data
 
-    
     def setup_train_set(self):
+        if self.n_particles == 13:
             all_data = np.load(self.data_path, allow_pickle=True)
-            if self.n_particles == 13:
-                train_data = all_data[: len(all_data) // 2]
-                train_data = remove_mean(
-                    train_data, self.n_particles, self.n_spatial_dim
-                )
-                train_data = torch.tensor(train_data,
-                                        device=self.device)
-                
-            elif self.n_particles == 55:
-                trainset_size=200000
-                idx = np.random.choice(np.arange(len(all_data)),
-                                       len(all_data), replace=False)
-                train_data = all_data[idx[:trainset_size]]
-                train_data = remove_mean(
-                    train_data, self.n_particles, self.n_spatial_dim
-                )
-                train_data = torch.tensor(train_data,
-                                          device=self.device)
+            train_data = all_data[: len(all_data) // 2]
+            train_data = remove_mean(
+                train_data, self.n_particles, self.n_spatial_dim
+            )
+            train_data = torch.tensor(train_data,
+                                    device=self.device)
             del all_data
-            return train_data
-
+            
+        elif self.n_particles == 55:
+            if self.data_path_train is None:
+                raise ValueError("Data path for training data is not provided")
+            train_data = np.load(self.data_path_train, allow_pickle=True)
+            train_data = remove_mean(
+                train_data, self.n_particles, self.n_spatial_dim
+            )
+            train_data = torch.tensor(train_data,
+                                    device=self.device)
+        return train_data
 
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
@@ -278,15 +279,23 @@ class LennardJonesEnergy(BaseEnergyFunction):
         energy_samples = -self(samples).detach().detach().cpu()
         energy_test = -self(test_data_smaller).detach().detach().cpu()
 
-        min_energy = min(energy_test.min(), energy_samples.min()).item()
-        max_energy = max(energy_test.max(), energy_samples.max()).item()
+        # min_energy = min(energy_test.min(), energy_samples.min()).item()
+        # max_energy = max(energy_test.max(), energy_samples.max()).item()
+        if self.n_particles == 13:
+            min_energy = -60
+            max_energy = 0
+
+        elif self.n_particles == 55:
+            min_energy = -380
+            max_energy = -220
+        
 
         axs[1].hist(
             energy_test.cpu(),
             bins=100,
             density=True,
             alpha=0.4,
-            range=(-60, 0),
+            range=(min_energy, max_energy),
             color="g",
             histtype="step",
             linewidth=4,
@@ -297,7 +306,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
             bins=100,
             density=True,
             alpha=0.4,
-            range=(-60, 0),
+            range=(min_energy, max_energy),
             color="r",
             histtype="step",
             linewidth=4,
@@ -305,7 +314,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         )
         axs[1].set_xlabel("Energy")
         axs[1].legend()
-
 
         fig.canvas.draw()
         return PIL.Image.frombytes(

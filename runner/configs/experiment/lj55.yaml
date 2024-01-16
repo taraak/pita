@@ -62,4 +62,5 @@ model:
   num_init_samples: 1024
   num_samples_to_generate_per_epoch: 512
   num_samples_to_sample_from_buffer: 512
-  nll_with_cfm: false
+  nll_with_cfm: true
+  init_from_prior: true

@@ -6,9 +6,7 @@
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 defaults: 
-  - override /energy: pis_gmm
-  - override /model/net: pis_mlp
-
+  - override /energy: nine
 
 tags: ["PISGMM"]
 
@@ -20,27 +18,23 @@ logger:
     group: "pis_gmm"
 
 model:
-  noise_schedule:
-    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 4e-6
-    sigma_max: 0.4
-
   partial_prior:
     _target_: src.energies.base_prior.Prior
     _partial_: true
     dim: 2
 
+  # clipper:
+  #   _target_: src.models.components.clipper.Clipper
+  #   should_clip_scores: False
+  #   should_clip_log_rewards: False
+  #   max_score_norm: null
+  #   min_log_reward: null
   clipper:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
     should_clip_log_rewards: False
     max_score_norm: 50
     min_log_reward: null
-
-  lambda_weighter:
-    _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
-    _partial_: true
-    epsilon: 1e-3
 
   diffusion_scale: 1.0
 

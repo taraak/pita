@@ -13,6 +13,7 @@ from .base_energy_function import BaseEnergyFunction
 
 _LGCP_DIM = 1600
 
+
 # pylint: disable=invalid-name, too-many-instance-attributes
 def read_points(file_path):
     df = pd.read_csv(file_path)
@@ -151,7 +152,7 @@ class BaseSet(abc.ABC, Dataset):
 class Cox:
     def __init__(self, file_name, num_bins_per_dim, use_whitened):
         self.use_whitened = use_whitened
-        self._num_latents = num_bins_per_dim ** 2
+        self._num_latents = num_bins_per_dim**2
         self._num_grid_per_dim = num_bins_per_dim
         bin_counts = np.array(get_bin_counts(read_points(file_name), num_bins_per_dim))
 
@@ -189,7 +190,7 @@ class Cox:
 
     def whitened_posterior_log_density(self, white):
         # B, _ = white.shape
-        quadratic_term = -0.5 * torch.sum(white ** 2, dim=1)  # (B,)
+        quadratic_term = -0.5 * torch.sum(white**2, dim=1)  # (B,)
         prior_log_density = self._white_gaussian_log_normalizer + quadratic_term  # (B,)
         latent_function = get_latents_from_white(
             white, self._mu_zero, self._cholesky_gram
@@ -233,7 +234,7 @@ class LogGaussianCoxProcessEnergy(BaseEnergyFunction, CoxDist):
         self,
         dimensionality: int,
         data_normalization_factor: int,
-        data_path: str ='../data/df_pines.csv',
+        data_path: str = "../data/df_pines.csv",
     ):
         CoxDist.__init__(self, data_path, -1, _LGCP_DIM)
         BaseEnergyFunction.__init__(self, _LGCP_DIM)

@@ -15,7 +15,9 @@ class BaseEnergyFunction(ABC):
         normalization_max: Optional[float] = None,
     ):
         self._dimensionality = dimensionality
+
         self._test_set = self.setup_test_set()
+        self._val_set = self.setup_val_set()
         self._train_set = None
 
         self.normalization_min = normalization_min
@@ -23,15 +25,16 @@ class BaseEnergyFunction(ABC):
 
     def setup_test_set(self) -> Optional[torch.Tensor]:
         return None
-    
+
     def setup_train_set(self) -> Optional[torch.Tensor]:
+        return None
+    
+    def setup_val_set(self) -> Optional[torch.Tensor]:
         return None
 
     @property
     def _can_normalize(self) -> bool:
-        return (
-            self.normalization_min is not None and self.normalization_max is not None
-        )
+        return self.normalization_min is not None and self.normalization_max is not None
 
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
         if x is None or not self._can_normalize:
@@ -80,6 +83,19 @@ class BaseEnergyFunction(ABC):
             outs = self.normalize(outs)
 
         return outs
+    
+    def sample_val_set(
+        self, num_points: int, normalize: bool = False
+    ) -> Optional[torch.Tensor]:
+        if self.val_set is None:
+            return None
+
+        idxs = torch.randperm(len(self.val_set))[:num_points]
+        outs = self.val_set[idxs]
+        if normalize:
+            outs = self.normalize(outs)
+
+        return outs
 
     @property
     def dimensionality(self) -> int:
@@ -88,7 +104,7 @@ class BaseEnergyFunction(ABC):
     @property
     def test_set(self) -> Optional[torch.Tensor]:
         return self._test_set
-    
+
     @property
     def train_set(self) -> Optional[torch.Tensor]:
         return self._train_set
