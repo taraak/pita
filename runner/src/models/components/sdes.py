@@ -54,7 +54,7 @@ class PIS_SDE(torch.nn.Module):
             t = t * torch.ones(x.shape[0]).to(x.device)
 
         grad_log_energy = self.energy.score(x[..., :-1]).detach().to(x.device)
-        dx = torch.clip(self.score(t, x[..., :-1]), -100, 100) * self.noise_coeff + self.tcond(t[0]) * torch.clip(grad_log_energy, -100, 100)
+        dx = torch.clip(self.score(t, x[..., :-1]), -1e4, 1e4) * self.noise_coeff + self.tcond(t[0]) * torch.clip(grad_log_energy, -1e4, 1e4)
         quad_reg = 0.5 * dx.pow(2).sum(dim=-1, keepdim=True)
         return torch.cat([dx, quad_reg], dim=-1)
 
