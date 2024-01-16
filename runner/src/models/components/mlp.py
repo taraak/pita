@@ -5,6 +5,7 @@ from torch.nn.utils import spectral_norm
 from einops import rearrange
 import numpy as np
 
+
 class SinusoidalEmbedding(nn.Module):
     def __init__(self, size: int, scale: float = 1.0):
         super().__init__()
@@ -118,7 +119,15 @@ class Block(nn.Module):
 
 
 class FourierMLP(nn.Module):
-    def __init__(self, in_shape = 2, out_shape = 2, num_layers=2, channels=128, zero_init=True, energy_function=None):
+    def __init__(
+        self,
+        in_shape=2,
+        out_shape=2,
+        num_layers=2,
+        channels=128,
+        zero_init=True,
+        energy_function=None,
+    ):
         super().__init__()
 
         self.in_shape = (in_shape,)
@@ -179,7 +188,7 @@ class TimeConder(nn.Module):
                 for _ in range(num_layers - 1)
             ],
             nn.GELU(),
-            nn.Linear(channel, out_dim)
+            nn.Linear(channel, out_dim),
         )
 
         self.layers[-1].weight.data.fill_(0.0)

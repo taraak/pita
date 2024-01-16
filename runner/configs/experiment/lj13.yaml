@@ -55,3 +55,5 @@ model:
 
   # num_samples_to_sample_from_buffer: 5120
   diffusion_scale: 0.4
+  
+  init_from_prior: true

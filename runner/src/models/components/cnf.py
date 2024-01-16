@@ -22,6 +22,8 @@ class CNF(torch.nn.Module):
         self.nfe = 0.0
 
     def forward(self, t, x):
+        if self.nfe > 1000:
+            raise RuntimeError("Too many integration steps")
         x = x[..., :-1].clone().detach().requires_grad_(True)
 
         def vecfield(x):
@@ -43,5 +45,18 @@ class CNF(torch.nn.Module):
         time = torch.linspace(
             start_time, end_time, num_integration_steps + 1, device=x.device
         )
-
-        return odeint(self, x, t=time, method=method)
+        try:
+            return odeint(self, x, t=time, method=method)
+        
+        except RuntimeError:
+            print("Falling back on fixed-step integration")
+            time = torch.linspace(
+                start_time, end_time, 100 + 1, device=x.device
+            )
+            return odeint(self, x, t=time, method="euler")
+        
+        except AssertionError as e:
+            print(e)
+            print("Falling back on fixed-step integration")
+            time = torch.linspace(start_time, end_time, 100 + 1, device=x.device)
+            return odeint(self, x, t=time, method="euler")

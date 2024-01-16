@@ -54,10 +54,10 @@ class GMM(BaseEnergyFunction):
 
     def setup_test_set(self):
         return self.gmm.test_set
-    
+
     def setup_train_set(self):
         return self.gmm.sample((self.train_set_size,))
-    
+
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
             samples = self.unnormalize(samples)

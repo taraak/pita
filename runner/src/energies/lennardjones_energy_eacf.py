@@ -25,7 +25,7 @@ def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
     return lj
 
 
-class LennardJonesPotential():
+class LennardJonesPotential:
     def __init__(
         self,
         dim,
@@ -47,7 +47,6 @@ class LennardJonesPotential():
 
         self.event_shape = torch.Size([dim])
 
-        
     def _get_senders_and_receivers_fully_connected(self, n_nodes):
         receivers = []
         senders = []
@@ -60,19 +59,23 @@ class LennardJonesPotential():
     def _energy(self, x: torch.Tensor):
         if isinstance(self.rm, float):
             r = torch.ones(self._n_particles, device=self.device) * self.rm
-        senders, receivers = self._get_senders_and_receivers_fully_connected(self._n_particles)
+        senders, receivers = self._get_senders_and_receivers_fully_connected(
+            self._n_particles
+        )
         vectors = x[senders] - x[receivers]
         d = torch.linalg.norm(vectors, ord=2, dim=-1)
-        term_inside_sum = (r[receivers] / d)**12 - 2*(r[receivers] / d)**6
+        term_inside_sum = (r[receivers] / d) ** 12 - 2 * (r[receivers] / d) ** 6
         energy = self.eps / (2 * self.tau) * term_inside_sum.sum()
 
         centre_of_mass = x.mean(dim=0)
-        harmonic_potential = self.harmonic_potential_coef * (x - centre_of_mass).pow(2).sum()
+        harmonic_potential = (
+            self.harmonic_potential_coef * (x - centre_of_mass).pow(2).sum()
+        )
         return energy + harmonic_potential
 
     def _log_prob(self, x: torch.Tensor):
         x = x.reshape(-1, self._n_particles, self._n_dims)
-        return - torch.vmap(self._energy)(x)
+        return -torch.vmap(self._energy)(x)
 
 
 class LennardJonesEnergy(BaseEnergyFunction):
@@ -102,6 +105,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.data_normalization_factor = data_normalization_factor
 
         self.device = device
+
         self.data_path = data_path
         self.data_path_train = data_path_train
 
@@ -125,24 +129,31 @@ class LennardJonesEnergy(BaseEnergyFunction):
         # Following the EACF paper for the partitions
         # This test set is bad. It's a single MC Chain
         test_data = all_data[:1000]
-        test_data = remove_mean(
-            test_data, self.n_particles, self.n_spatial_dim
-        )
-        test_data = torch.tensor(test_data,
-                                 device=self.device)
+        test_data = remove_mean(test_data, self.n_particles, self.n_spatial_dim)
+        test_data = torch.tensor(test_data, device=self.device)
         del all_data
         return test_data
     
+    def setup_val_set(self):
+        all_data = np.load(self.data_path, allow_pickle=True)
+        # Following the EACF paper for the partitions
+        # This test set is bad. It's a single MC Chain
+        val_data = all_data[1000:2000]
+        val_data = remove_mean(
+            val_data, self.n_particles, self.n_spatial_dim
+        )
+        val_data = torch.tensor(val_data,
+                                 device=self.device)
+        del all_data
+        return val_data
+    
     def setup_train_set(self):
-            if self.data_path_train is None:
-                raise ValueError("No train data path provided")
-            train_data = np.load(self.data_path_train, allow_pickle=True)
-            train_data = remove_mean(
-                train_data, self.n_particles, self.n_spatial_dim
-            )
-            train_data = torch.tensor(train_data,
-                                      device=self.device)
-            return train_data
+        if self.data_path_train is None:
+            raise ValueError("No train data path provided")
+        train_data = np.load(self.data_path_train, allow_pickle=True)
+        train_data = remove_mean(train_data, self.n_particles, self.n_spatial_dim)
+        train_data = torch.tensor(train_data, device=self.device)
+        return train_data
 
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
@@ -193,7 +204,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.curr_epoch += 1
 
     def get_dataset_fig(self, samples):
-        test_data_smaller = sample_from_array(self.test_data, 10000)
+        test_data_smaller = self.sample_test_set(1000)
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 

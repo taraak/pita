@@ -27,7 +27,7 @@ model:
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
     sigma_min: 0.01 #0.3
-    sigma_max: 10 #1.2
+    sigma_max: 5 #1.2
 
 
   partial_prior:
@@ -44,7 +44,7 @@ model:
   #   min_log_reward: null
 
   lambda_weighter:
-    _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
+    _target_: src.models.components.lambda_weighter.NoLambdaWeighter
     _partial_: true
 
   clipper:
@@ -55,8 +55,10 @@ model:
     min_log_reward: null
 
   # num_samples_to_sample_from_buffer: 5120
-  diffusion_scale: 0.4
+  diffusion_scale: 0.7
 
 
   # this can be max 1000 cause test set is 1000
   num_samples_to_generate_per_epoch: 1000
+
+  init_from_prior: true

@@ -37,6 +37,7 @@ class RegVEReverseSDE(VEReverseSDE):
             [torch.full_like(x[..., :-1], g), torch.zeros_like(x[..., -1:])], dim=-1
         )
 
+
 class PIS_SDE(torch.nn.Module):
     noise_type = "diagonal"
     sde_type = "ito"
@@ -60,5 +61,9 @@ class PIS_SDE(torch.nn.Module):
 
     def g(self, t, x):
         return torch.cat(
-            [torch.ones_like(x[..., :-1]) * self.noise_coeff, torch.zeros_like(x[..., -1:])], dim=-1
+            [
+                torch.ones_like(x[..., :-1]) * self.noise_coeff,
+                torch.zeros_like(x[..., -1:]),
+            ],
+            dim=-1,
         )
