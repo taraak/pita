@@ -693,7 +693,7 @@ class DEMLitModule(LightningModule):
         if self.init_from_prior:
             init_states = self.prior.sample(self.num_init_samples)
         else:
-            self.generate_samples(
+            init_states = self.generate_samples(
                 reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale
             )
         init_energies = self.energy_function(init_states)
