@@ -1,0 +1,15 @@
+# @package _global_
+
+hydra:
+  launcher:
+    ray: 
+      remote:
+        num_gpus: 0.5
+        runtime_env:
+          env_vars:
+              WANDB_API_KEY: ${oc.env:WANDB_API_KEY}
+
+paths:
+  data_dir: /mnt/user_storage/dem/data/ 
+  log_dir: /mnt/user_storage/dem/logs/ 
+  root_dir: ~/jarrid_dev/active_inference
