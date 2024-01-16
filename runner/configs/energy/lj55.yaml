@@ -2,7 +2,7 @@
 
   dimensionality: 165 
   n_particles: 55
-  data_path: "../data/all_data_LJ55.npy"
+  data_path: "../data/all_data_LJ55-1000-part1.npy"
 
   device: ${trainer.accelerator}
 
