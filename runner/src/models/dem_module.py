@@ -128,6 +128,7 @@ class DEMLitModule(LightningModule):
         cfm_loss_weight=1.0,
         pis_scale=1.0,
         use_ema=False,
+        use_exact_likelihood=False,
         debug_use_train_data=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
@@ -166,8 +167,8 @@ class DEMLitModule(LightningModule):
             self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
             self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
 
-        self.dem_cnf = CNF(self.net, is_diffusion=True)
-        self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False)
+        self.dem_cnf = CNF(self.net, is_diffusion=True, use_exact_likelihood=use_exact_likelihood)
+        self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False, use_exact_likelihood=use_exact_likelihood)
 
         self.nll_with_cfm = nll_with_cfm
         self.nll_with_dem = nll_with_dem

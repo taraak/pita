@@ -3,7 +3,7 @@ from torch.func import jacrev
 from torchdiffeq import odeint
 
 
-def div_fn(u):
+def exact_div_fn(u):
     """Accepts a function u:R^D -> R^D."""
     J = jacrev(u)
 
@@ -13,12 +13,24 @@ def div_fn(u):
     return div
 
 
+def hutch_div_fn(u):
+    """Create the divergence function of `fn` using the Hutchinson-Skilling trace estimator."""
+
+    def div_fn(x):
+        epsilon = torch.randn_like(x)
+        fn_eps = torch.sum(u(x) * epsilon)
+        grad_fn_eps = torch.autograd.grad(fn_eps, x)[0]
+        return torch.sum(grad_fn_eps * epsilon, dim=tuple(range(1, len(x.shape))))
+    return div_fn
+
+
 class CNF(torch.nn.Module):
-    def __init__(self, vf, is_diffusion):
+    def __init__(self, vf, is_diffusion, use_exact_likelihood=True):
         super().__init__()
 
         self.vf = vf
         self.is_diffusion = is_diffusion
+        self.use_exact_likelihood = use_exact_likelihood
         self.nfe = 0.0
 
     def forward(self, t, x):
@@ -32,6 +44,8 @@ class CNF(torch.nn.Module):
             return self.vf(shaped_t, x) / (2.0 if self.is_diffusion else 1.0)
 
         dx = vecfield(x)
+        div_fn = exact_div_fn if self.use_exact_likelihood else hutch_div_fn
+
         div = torch.vmap(div_fn(vecfield), randomness="different")(x)
         self.nfe += 1
         return torch.cat([dx, div[:, None]], dim=-1)
