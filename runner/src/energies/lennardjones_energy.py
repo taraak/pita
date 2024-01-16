@@ -36,7 +36,7 @@ class LennardJonesPotential(Energy):
         oscillator=True,
         oscillator_scale=1.0,
         two_event_dims=True,
-        energy_factor = 1.0,
+        energy_factor=1.0,
     ):
         """Energy for a Lennard-Jones cluster
 
@@ -70,7 +70,7 @@ class LennardJonesPotential(Energy):
         self.oscillator = oscillator
         self._oscillator_scale = oscillator_scale
 
-        # this is to match the eacf energy with the eq-fm energy 
+        # this is to match the eacf energy with the eq-fm energy
         # for lj13, to match the eacf set energy_factor=0.5
         self._energy_factor = energy_factor
 
@@ -83,7 +83,9 @@ class LennardJonesPotential(Energy):
         )
 
         lj_energies = lennard_jones_energy_torch(dists, self._eps, self._rm)
-        lj_energies = lj_energies.view(*batch_shape, -1).sum(dim=-1)  * self._energy_factor
+        lj_energies = (
+            lj_energies.view(*batch_shape, -1).sum(dim=-1) * self._energy_factor
+        )
 
         if self.oscillator:
             osc_energies = 0.5 * self._remove_mean(x).pow(2).sum(dim=(-2, -1)).view(
@@ -177,29 +179,27 @@ class LennardJonesEnergy(BaseEnergyFunction):
                                      device=self.device)
         return test_data
 
-    
     def setup_train_set(self):
-            if self.n_particles == 13:
-                all_data = np.load(self.data_path, allow_pickle=True)
-                train_data = all_data[: len(all_data) // 2]
-                train_data = remove_mean(
-                    train_data, self.n_particles, self.n_spatial_dim
-                )
-                train_data = torch.tensor(train_data,
-                                        device=self.device)
-                del all_data
-                
-            elif self.n_particles == 55:
-                if self.data_path_train is None:
-                    raise ValueError("Data path for training data is not provided")
-                train_data = np.load(self.data_path_train, allow_pickle=True)
-                train_data = remove_mean(
-                    train_data, self.n_particles, self.n_spatial_dim
-                )
-                train_data = torch.tensor(train_data,
-                                        device=self.device)
-            return train_data
-
+        if self.n_particles == 13:
+            all_data = np.load(self.data_path, allow_pickle=True)
+            train_data = all_data[: len(all_data) // 2]
+            train_data = remove_mean(
+                train_data, self.n_particles, self.n_spatial_dim
+            )
+            train_data = torch.tensor(train_data,
+                                    device=self.device)
+            del all_data
+            
+        elif self.n_particles == 55:
+            if self.data_path_train is None:
+                raise ValueError("Data path for training data is not provided")
+            train_data = np.load(self.data_path_train, allow_pickle=True)
+            train_data = remove_mean(
+                train_data, self.n_particles, self.n_spatial_dim
+            )
+            train_data = torch.tensor(train_data,
+                                    device=self.device)
+        return train_data
 
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
@@ -314,7 +314,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         )
         axs[1].set_xlabel("Energy")
         axs[1].legend()
-
 
         fig.canvas.draw()
         return PIL.Image.frombytes(

@@ -37,6 +37,7 @@ class RegVEReverseSDE(VEReverseSDE):
             [torch.full_like(x[..., :-1], g), torch.zeros_like(x[..., -1:])], dim=-1
         )
 
+
 class PIS_SDE(torch.nn.Module):
     noise_type = "diagonal"
     sde_type = "ito"
@@ -54,11 +55,17 @@ class PIS_SDE(torch.nn.Module):
             t = t * torch.ones(x.shape[0]).to(x.device)
 
         grad_log_energy = self.energy.score(x[..., :-1]).detach().to(x.device)
-        dx = torch.clip(self.score(t, x[..., :-1]), -100, 100) * self.noise_coeff + self.tcond(t[0]) * torch.clip(grad_log_energy, -100, 100)
+        dx = torch.clip(
+            self.score(t, x[..., :-1]), -100, 100
+        ) * self.noise_coeff + self.tcond(t[0]) * torch.clip(grad_log_energy, -100, 100)
         quad_reg = 0.5 * dx.pow(2).sum(dim=-1, keepdim=True)
         return torch.cat([dx, quad_reg], dim=-1)
 
     def g(self, t, x):
         return torch.cat(
-            [torch.ones_like(x[..., :-1]) * self.noise_coeff, torch.zeros_like(x[..., -1:])], dim=-1
+            [
+                torch.ones_like(x[..., :-1]) * self.noise_coeff,
+                torch.zeros_like(x[..., -1:]),
+            ],
+            dim=-1,
         )

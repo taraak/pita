@@ -28,11 +28,19 @@ class GMM(BaseEnergyFunction):
     ):
         use_gpu = device != "cpu"
         torch.manual_seed(0)  # seed of 0 for GMM problem
-        mean = torch.tensor([
-            [-5., -5.], [-5., 0.], [-5., 5.],
-            [0., -5.], [0., 0.], [0., 5.],
-            [5., -5.], [5., 0.], [5., 5.],
-        ])
+        mean = torch.tensor(
+            [
+                [-5.0, -5.0],
+                [-5.0, 0.0],
+                [-5.0, 5.0],
+                [0.0, -5.0],
+                [0.0, 0.0],
+                [0.0, 5.0],
+                [5.0, -5.0],
+                [5.0, 0.0],
+                [5.0, 5.0],
+            ]
+        )
         scale = torch.ones(9, 2) * 0.5477222
 
         self.gmm = gmm.GMM(
@@ -42,8 +50,8 @@ class GMM(BaseEnergyFunction):
             log_var_scaling=log_var_scaling,
             use_gpu=use_gpu,
             true_expectation_estimation_n_samples=true_expectation_estimation_n_samples,
-            mean = mean,
-            scale = scale
+            mean=mean,
+            scale=scale,
         )
 
         self.curr_epoch = 0
@@ -128,9 +136,7 @@ class GMM(BaseEnergyFunction):
 
         self.curr_epoch += 1
 
-    def get_dataset_fig(
-        self, samples, gen_samples=None, plotting_bounds=(-8, 8)
-    ):
+    def get_dataset_fig(self, samples, gen_samples=None, plotting_bounds=(-8, 8)):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
         self.gmm.to("cpu")
