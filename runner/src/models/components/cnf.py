@@ -48,7 +48,5 @@ class CNF(torch.nn.Module):
         except AssertionError as e:
             print(e)
             print("Falling back on fixed-step integration")
-            time = torch.linspace(
-            start_time, end_time, 100 + 1, device=x.device
-            )
+            time = torch.linspace(start_time, end_time, 100 + 1, device=x.device)
             return odeint(self, x, t=time, method="euler")

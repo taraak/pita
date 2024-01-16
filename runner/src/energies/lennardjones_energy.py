@@ -36,7 +36,7 @@ class LennardJonesPotential(Energy):
         oscillator=True,
         oscillator_scale=1.0,
         two_event_dims=True,
-        energy_factor = 1.0,
+        energy_factor=1.0,
     ):
         """Energy for a Lennard-Jones cluster
 
@@ -70,7 +70,7 @@ class LennardJonesPotential(Energy):
         self.oscillator = oscillator
         self._oscillator_scale = oscillator_scale
 
-        # this is to match the eacf energy with the eq-fm energy 
+        # this is to match the eacf energy with the eq-fm energy
         # for lj13, to match the eacf set energy_factor=0.5
         self._energy_factor = energy_factor
 
@@ -83,7 +83,9 @@ class LennardJonesPotential(Energy):
         )
 
         lj_energies = lennard_jones_energy_torch(dists, self._eps, self._rm)
-        lj_energies = lj_energies.view(*batch_shape, -1).sum(dim=-1)  * self._energy_factor
+        lj_energies = (
+            lj_energies.view(*batch_shape, -1).sum(dim=-1) * self._energy_factor
+        )
 
         if self.oscillator:
             osc_energies = 0.5 * self._remove_mean(x).pow(2).sum(dim=(-2, -1)).view(
@@ -151,15 +153,12 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
     def setup_test_set(self):
         all_data = np.load(self.data_path, allow_pickle=True)
-        
+
         # Following the Equivarinat FM paper for the partitions
         if self.n_particles == 13:
             test_data = all_data[len(all_data) // 2 :]
-            test_data = remove_mean(
-                test_data, self.n_particles, self.n_spatial_dim
-            )
-            test_data = torch.tensor(test_data,
-                                     device=self.device)
+            test_data = remove_mean(test_data, self.n_particles, self.n_spatial_dim)
+            test_data = torch.tensor(test_data, device=self.device)
 
         elif self.n_particles == 55:
             idx = np.random.choice(
@@ -167,38 +166,28 @@ class LennardJonesEnergy(BaseEnergyFunction):
             )
             test_set_size = 200000
             test_data = all_data[idx[:test_set_size]]
-            test_data = remove_mean(
-                test_data, self.n_particles, self.n_spatial_dim
-            )
-            test_data = torch.tensor(test_data,
-                                     device=self.device)
+            test_data = remove_mean(test_data, self.n_particles, self.n_spatial_dim)
+            test_data = torch.tensor(test_data, device=self.device)
         del all_data
         return test_data
 
-    
     def setup_train_set(self):
-            all_data = np.load(self.data_path, allow_pickle=True)
-            if self.n_particles == 13:
-                train_data = all_data[: len(all_data) // 2]
-                train_data = remove_mean(
-                    train_data, self.n_particles, self.n_spatial_dim
-                )
-                train_data = torch.tensor(train_data,
-                                        device=self.device)
-                
-            elif self.n_particles == 55:
-                trainset_size=200000
-                idx = np.random.choice(np.arange(len(all_data)),
-                                       len(all_data), replace=False)
-                train_data = all_data[idx[:trainset_size]]
-                train_data = remove_mean(
-                    train_data, self.n_particles, self.n_spatial_dim
-                )
-                train_data = torch.tensor(train_data,
-                                          device=self.device)
-            del all_data
-            return train_data
+        all_data = np.load(self.data_path, allow_pickle=True)
+        if self.n_particles == 13:
+            train_data = all_data[: len(all_data) // 2]
+            train_data = remove_mean(train_data, self.n_particles, self.n_spatial_dim)
+            train_data = torch.tensor(train_data, device=self.device)
 
+        elif self.n_particles == 55:
+            trainset_size = 200000
+            idx = np.random.choice(
+                np.arange(len(all_data)), len(all_data), replace=False
+            )
+            train_data = all_data[idx[:trainset_size]]
+            train_data = remove_mean(train_data, self.n_particles, self.n_spatial_dim)
+            train_data = torch.tensor(train_data, device=self.device)
+        del all_data
+        return train_data
 
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
@@ -305,7 +294,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         )
         axs[1].set_xlabel("Energy")
         axs[1].legend()
-
 
         fig.canvas.draw()
         return PIL.Image.frombytes(

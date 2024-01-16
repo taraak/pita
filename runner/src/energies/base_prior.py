@@ -10,7 +10,7 @@ class Prior:
         self.scale = scale
         self.dist = torch.distributions.MultivariateNormal(
             torch.zeros(dim, device=device),
-            torch.eye(dim, device=device) * (scale ** 2)
+            torch.eye(dim, device=device) * (scale**2),
         )
 
     def log_prob(self, x):
@@ -18,6 +18,7 @@ class Prior:
 
     def sample(self, n_samples):
         return self.dist.sample((n_samples,))
+
 
 class MeanFreePrior(torch.distributions.Distribution):
     arg_constraints: Dict[str, constraints.Constraint] = {}

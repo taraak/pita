@@ -30,6 +30,7 @@ from .components.sdes import PIS_SDE, VEReverseSDE
 
 from .components.mlp import TimeConder
 
+
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
     """Stratify loss by binning t."""
     flat_losses = batch_loss.flatten().detach().cpu().numpy()
@@ -179,9 +180,7 @@ class DEMLitModule(LightningModule):
         if use_otcfm:
             flow_matcher = ExactOptimalTransportConditionalFlowMatcher
 
-        self.conditional_flow_matcher = flow_matcher(
-            sigma=cfm_sigma
-        )
+        self.conditional_flow_matcher = flow_matcher(sigma=cfm_sigma)
         # self.conditional_flow_matcher = ConditionalFlowMatcher(sigma=cfm_sigma)
 
         self.energy_function = energy_function
@@ -278,7 +277,7 @@ class DEMLitModule(LightningModule):
         vt = self.cfm_net(t, xt)
         loss = (vt - ut).pow(2).mean(dim=-1)
 
-        #if self.energy_function.normalization_max is not None:
+        # if self.energy_function.normalization_max is not None:
         #    loss = loss / (self.energy_function.normalization_max ** 2)
 
         return loss
@@ -350,8 +349,7 @@ class DEMLitModule(LightningModule):
                     self.num_samples_to_sample_from_buffer
                 )
                 times = torch.rand(
-                    (self.num_samples_to_sample_from_buffer,),
-                    device=cfm_samples.device
+                    (self.num_samples_to_sample_from_buffer,), device=cfm_samples.device
                 )
             else:
                 cfm_samples, _, _ = self.buffer.sample(
@@ -368,7 +366,11 @@ class DEMLitModule(LightningModule):
             cfm_loss = cfm_loss.mean()
             self.cfm_train_loss(cfm_loss)
             self.log(
-                "train/cfm_loss", self.cfm_train_loss, on_step=True, on_epoch=False, prog_bar=True
+                "train/cfm_loss",
+                self.cfm_train_loss,
+                on_step=True,
+                on_epoch=False,
+                prog_bar=True,
             )
 
             loss = loss + self.hparams.cfm_loss_weight * cfm_loss
@@ -630,7 +632,7 @@ class DEMLitModule(LightningModule):
         if self.nll_with_cfm:
             unprioritized_buffer_samples, _, _ = self.buffer.sample(
                 self.num_samples_to_generate_per_epoch,
-                prioritize=self.prioritize_cfm_training_samples
+                prioritize=self.prioritize_cfm_training_samples,
             )
 
             cfm_samples = self.generate_cfm_samples()
@@ -746,7 +748,7 @@ class PISLitModule(DEMLitModule):
             aug_prior_samples,
             return_full_trajectory=True,
             no_grad=False,
-            reverse_time=False
+            reverse_time=False,
         )[-1]
         x_1, quad_reg = aug_output[..., :-1], aug_output[..., -1]
         prior_ll = self.prior.log_prob(x_1).mean() / self.dim
@@ -782,9 +784,7 @@ class PISLitModule(DEMLitModule):
         diffusion_scale=1.0,
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_samples_to_generate_per_epoch
-        samples = torch.zeros(
-            num_samples, self.dim + 1, device=self.device
-        )
+        samples = torch.zeros(num_samples, self.dim + 1, device=self.device)
 
         return self.integrate(
             reverse_sde=self.pis_sde,
@@ -796,15 +796,16 @@ class PISLitModule(DEMLitModule):
 
     def setup(self, stage: str) -> None:
         self.tcond = TimeConder(64, 1, 3)
-        self.prior = self.partial_prior(
-            device=self.device, scale=self.pis_scale
-        )
+        self.prior = self.partial_prior(device=self.device, scale=self.pis_scale)
         self.tcond = TimeConder(64, 1, 3).to(self.device)
-        self.pis_sde = PIS_SDE(self.net, self.tcond, self.pis_scale, self.energy_function).to(self.device)
+        self.pis_sde = PIS_SDE(
+            self.net, self.tcond, self.pis_scale, self.energy_function
+        ).to(self.device)
         self.pis_train_loss = MeanMetric()
         # torch.nn.init.zeros_(self.net.joint_mlp[-1].weight.data)
         # torch.nn.init.zeros_(self.net.joint_mlp[-1].bias.data)
         super().setup(stage)
+
 
 if __name__ == "__main__":
     _ = DEMLitModule(

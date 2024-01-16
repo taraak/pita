@@ -23,15 +23,13 @@ class BaseEnergyFunction(ABC):
 
     def setup_test_set(self) -> Optional[torch.Tensor]:
         return None
-    
+
     def setup_train_set(self) -> Optional[torch.Tensor]:
         return None
 
     @property
     def _can_normalize(self) -> bool:
-        return (
-            self.normalization_min is not None and self.normalization_max is not None
-        )
+        return self.normalization_min is not None and self.normalization_max is not None
 
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
         if x is None or not self._can_normalize:
@@ -88,7 +86,7 @@ class BaseEnergyFunction(ABC):
     @property
     def test_set(self) -> Optional[torch.Tensor]:
         return self._test_set
-    
+
     @property
     def train_set(self) -> Optional[torch.Tensor]:
         return self._train_set
