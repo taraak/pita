@@ -129,6 +129,7 @@ class DEMLitModule(LightningModule):
         pis_scale=1.0,
         use_ema=False,
         debug_use_train_data=False,
+        init_from_prior=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -244,6 +245,7 @@ class DEMLitModule(LightningModule):
 
         self.diffusion_scale = diffusion_scale
         self.pis_scale = pis_scale
+        self.init_from_prior = init_from_prior
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -675,10 +677,12 @@ class DEMLitModule(LightningModule):
             device=self.device, scale=self.noise_schedule.h(1) ** 0.5
         )
 
-        init_states = self.prior.sample(self.num_init_samples)
-        # self.generate_samples(
-        #     reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale
-        # )vim 
+        if self.init_from_prior:
+            init_states = self.prior.sample(self.num_init_samples)
+        else:
+            self.generate_samples(
+                reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale
+            )
         init_energies = self.energy_function(init_states)
 
         self.buffer.add(init_states, init_energies)
