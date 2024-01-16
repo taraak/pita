@@ -243,7 +243,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.curr_epoch += 1
 
     def get_dataset_fig(self, samples):
-        test_data_smaller = sample_from_array(self.test_data, 10000)
+        test_data_smaller = self.sample_test_set(1000)
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 

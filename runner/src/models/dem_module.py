@@ -349,6 +349,10 @@ class DEMLitModule(LightningModule):
                 cfm_samples = self.energy_function.sample_train_set(
                     self.num_samples_to_sample_from_buffer
                 )
+                times = torch.rand(
+                    (self.num_samples_to_sample_from_buffer,),
+                    device=cfm_samples.device
+                )
             else:
                 cfm_samples, _, _ = self.buffer.sample(
                     self.num_samples_to_sample_from_buffer,
