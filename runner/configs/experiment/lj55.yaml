@@ -24,14 +24,14 @@ model:
     n_particles: 55
     n_layers: 5
 
-  noise_schedule:
-    _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-    beta: 1.5
-
   # noise_schedule:
-  #   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-  #   sigma_min: 0.3
-  #   sigma_max: 1.2
+  #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
+  #   beta: 1.5
+
+  noise_schedule:
+    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+    sigma_min: 0.01
+    sigma_max: 5
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -57,7 +57,7 @@ model:
     max_score_norm: 50
     min_log_reward: null
 
-  diffusion_scale: 0.1
+  diffusion_scale: 0.7
 
   num_init_samples: 1024
   num_samples_to_generate_per_epoch: 512
