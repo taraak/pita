@@ -36,6 +36,7 @@ class LennardJonesPotential(Energy):
         oscillator=True,
         oscillator_scale=1.0,
         two_event_dims=True,
+        energy_factor = 1.0,
     ):
         """Energy for a Lennard-Jones cluster
 
@@ -69,6 +70,10 @@ class LennardJonesPotential(Energy):
         self.oscillator = oscillator
         self._oscillator_scale = oscillator_scale
 
+        # this is to match the eacf energy with the eq-fm energy 
+        # for lj13, to match the eacf set energy_factor=0.5
+        self._energy_factor = energy_factor
+
     def _energy(self, x):
         batch_shape = x.shape[: -len(self.event_shape)]
         x = x.view(*batch_shape, self._n_particles, self._n_dims)
@@ -78,7 +83,7 @@ class LennardJonesPotential(Energy):
         )
 
         lj_energies = lennard_jones_energy_torch(dists, self._eps, self._rm)
-        lj_energies = lj_energies.view(*batch_shape, -1).sum(dim=-1)  # / 2
+        lj_energies = lj_energies.view(*batch_shape, -1).sum(dim=-1)  * self._energy_factor
 
         if self.oscillator:
             osc_energies = 0.5 * self._remove_mean(x).pow(2).sum(dim=(-2, -1)).view(
@@ -112,6 +117,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         data_normalization_factor=1.0,
     ):
         torch.manual_seed(0)  # seed of 0
+        np.random.seed(0)
 
         self.n_particles = n_particles
         self.n_spatial_dim = dimensionality // n_particles
@@ -159,8 +165,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
             idx = np.random.choice(
                 np.arange(len(all_data)), len(all_data), replace=False
             )
-            holdout_start = 200000
-            test_data = all_data[idx[holdout_start:]]
+            test_set_size = 200000
+            test_data = all_data[idx[:test_set_size]]
             test_data = remove_mean(
                 test_data, self.n_particles, self.n_spatial_dim
             )
@@ -181,7 +187,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
                                         device=self.device)
                 
             elif self.n_particles == 55:
-                trainset_size=100000
+                trainset_size=200000
                 idx = np.random.choice(np.arange(len(all_data)),
                                        len(all_data), replace=False)
                 train_data = all_data[idx[:trainset_size]]
