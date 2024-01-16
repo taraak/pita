@@ -19,6 +19,11 @@ defaults:
   - override /energy: lj55
   - override /model/net: egnn
 
+
+data:
+  n_val_batches_per_epoch: 5
+
+
 model:
   net:
     n_particles: 55
