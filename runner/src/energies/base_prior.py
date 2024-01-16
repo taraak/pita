@@ -9,7 +9,8 @@ class Prior:
         self.dim = dim
         self.scale = scale
         self.dist = torch.distributions.MultivariateNormal(
-            torch.zeros(dim).to(device), torch.eye(2).to(device) * scale**2
+            torch.zeros(dim, device=device),
+            torch.eye(dim, device=device) * (scale ** 2)
         )
 
     def log_prob(self, x):

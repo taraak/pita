@@ -45,7 +45,7 @@ class ManyWell(BaseEnergyFunction):
 
     def setup_test_set(self):
         return self.many_well.sample((self.test_set_size,))
-        
+
     def setup_train_set(self):
         return self.many_well.sample((self.train_set_size,))
 
@@ -111,49 +111,80 @@ class ManyWell(BaseEnergyFunction):
         )
 
         self.many_well.to("cpu")
-        for i in range(n_rows):
-            plot_contours(
-                self.many_well.log_prob_2D,
-                bounds=plotting_bounds,
-                ax=axs[i, 0],
-                n_contour_levels=40,
-            )
-
-            # plot buffer samples
-            plot_marginal_pair(
-                samples,
-                ax=axs[i, 0],
-                bounds=plotting_bounds,
-                marginal_dims=(i * 2, i * 2 + 1),
-            )
-
-            axs[i, 0].set_xlabel(f"dim {i*2}")
-            axs[i, 0].set_ylabel(f"dim {i*2 + 1}")
-
-            if gen_samples is not None:
-                plot_contours(
-                    self.many_well.log_prob_2D,
-                    bounds=plotting_bounds,
-                    ax=axs[i, 1],
-                    n_contour_levels=40,
-                )
-
-                # plot generated samples
-                plot_marginal_pair(
+        if n_rows > 1:
+            for i in range(n_rows):
+                self._plot_dim(
+                    fig,
+                    axs[i],
+                    plotting_bounds,
+                    samples,
                     gen_samples,
-                    ax=axs[i, 1],
-                    bounds=plotting_bounds,
-                    marginal_dims=(i * 2, i * 2 + 1),
+                    i
                 )
 
-                axs[i, 1].set_xlabel(f"dim {i*2}")
-                axs[i, 1].set_ylabel(f"dim {i*2 + 1}")
-            else:
-                fig.delaxes(axs[i, 1])
+        else:
+            self._plot_dim(
+                fig,
+                axs,
+                plotting_bounds,
+                samples,
+                gen_samples,
+                0
+            )
 
-        axs[0, 0].set_title("Dataset")
-        axs[0, 1].set_title("Generated samples")
+        ax = axs[0] if n_rows > 1 else axs
+        ax[0].set_title("Dataset")
+        ax[1].set_title("Generated samples")
+
         plt.tight_layout()
 
         self.many_well.to(self.device)
         return fig_to_image(fig)
+
+    def _plot_dim(
+        self,
+        fig,
+        ax,
+        plotting_bounds,
+        samples,
+        gen_samples,
+        i
+    ):
+        plot_contours(
+            self.many_well.log_prob_2D,
+            bounds=plotting_bounds,
+            ax=ax[0],
+            n_contour_levels=40,
+        )
+
+        # plot buffer samples
+        plot_marginal_pair(
+            samples,
+            ax=ax[0],
+            bounds=plotting_bounds,
+            marginal_dims=(i * 2, i * 2 + 1),
+        )
+
+        ax[0].set_xlabel(f"dim {i*2}")
+        ax[0].set_ylabel(f"dim {i*2 + 1}")
+
+        if gen_samples is not None:
+            plot_contours(
+                self.many_well.log_prob_2D,
+                bounds=plotting_bounds,
+                ax=ax[1],
+                n_contour_levels=40,
+            )
+
+            # plot generated samples
+            plot_marginal_pair(
+                gen_samples,
+                ax=ax[1],
+                bounds=plotting_bounds,
+                marginal_dims=(i * 2, i * 2 + 1),
+            )
+
+            ax[1].set_xlabel(f"dim {i*2}")
+            ax[1].set_ylabel(f"dim {i*2 + 1}")
+        else:
+            fig.delaxes(ax[1])
