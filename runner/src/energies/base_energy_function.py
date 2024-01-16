@@ -15,7 +15,9 @@ class BaseEnergyFunction(ABC):
         normalization_max: Optional[float] = None,
     ):
         self._dimensionality = dimensionality
+
         self._test_set = self.setup_test_set()
+        self._val_set = self.setup_val_set()
         self._train_set = None
 
         self._normalization_min = normalization_min
@@ -25,6 +27,9 @@ class BaseEnergyFunction(ABC):
         return None
     
     def setup_train_set(self) -> Optional[torch.Tensor]:
+        return None
+    
+    def setup_val_set(self) -> Optional[torch.Tensor]:
         return None
 
     @property
@@ -76,6 +81,19 @@ class BaseEnergyFunction(ABC):
 
         idxs = torch.randperm(len(self.train_set))[:num_points]
         outs = self.train_set[idxs]
+        if normalize:
+            outs = self.normalize(outs)
+
+        return outs
+    
+    def sample_val_set(
+        self, num_points: int, normalize: bool = False
+    ) -> Optional[torch.Tensor]:
+        if self.val_set is None:
+            return None
+
+        idxs = torch.randperm(len(self.val_set))[:num_points]
+        outs = self.val_set[idxs]
         if normalize:
             outs = self.normalize(outs)
 

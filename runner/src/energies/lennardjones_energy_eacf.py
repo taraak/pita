@@ -102,6 +102,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.data_normalization_factor = data_normalization_factor
 
         self.device = device
+
         self.data_path = data_path
         self.data_path_train = data_path_train
 
@@ -132,6 +133,19 @@ class LennardJonesEnergy(BaseEnergyFunction):
                                  device=self.device)
         del all_data
         return test_data
+    
+    def setup_val_set(self):
+        all_data = np.load(self.data_path, allow_pickle=True)
+        # Following the EACF paper for the partitions
+        # This test set is bad. It's a single MC Chain
+        val_data = all_data[1000:2000]
+        val_data = remove_mean(
+            val_data, self.n_particles, self.n_spatial_dim
+        )
+        val_data = torch.tensor(val_data,
+                                 device=self.device)
+        del all_data
+        return val_data
     
     def setup_train_set(self):
             if self.data_path_train is None:

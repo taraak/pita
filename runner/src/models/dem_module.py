@@ -675,9 +675,10 @@ class DEMLitModule(LightningModule):
             device=self.device, scale=self.noise_schedule.h(1) ** 0.5
         )
 
-        init_states = self.generate_samples(
-            reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale
-        )
+        init_states = self.prior.sample(self.num_init_samples)
+        # self.generate_samples(
+        #     reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale
+        # )vim 
         init_energies = self.energy_function(init_states)
 
         self.buffer.add(init_states, init_energies)
