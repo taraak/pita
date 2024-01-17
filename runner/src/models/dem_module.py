@@ -625,9 +625,9 @@ class DEMLitModule(LightningModule):
 
             noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
             traj = odeint(
-                reverse_wrapper,
+                reverse_wrapper(self.cfm_net),
                 noise,
-                t_span=torch.linspace(0, 1, 2, device=self.device),
+                t=torch.linspace(0, 1, 2, device=self.device),
                 method="dopri5",
             )
 
