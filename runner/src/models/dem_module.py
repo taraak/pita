@@ -534,20 +534,22 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         batch = self.energy_function.sample_test_set(
-            self.eval_batch_size
+            self.num_samples_to_generate_per_epoch
         )
 
         # generate samples noise --> data if needed
         backwards_samples = self.last_samples
         if backwards_samples is None:
-            backwards_samples = self.generate_samples(num_samples=self.eval_batch_size)
+            backwards_samples = self.generate_samples(
+                num_samples=self.num_samples_to_generate_per_epoch
+            )
 
         if batch is None:
             self.eval_step_outputs.append({"gen_0": backwards_samples})
             return
 
         times = torch.rand(
-            (self.eval_batch_size,), device=batch.device
+            (self.num_samples_to_generate_per_epoch,), device=batch.device
         )
 
         noised_batch = batch + (
@@ -568,6 +570,10 @@ class DEMLitModule(LightningModule):
             "data_0": batch,
             "gen_0": backwards_samples,
         }
+
+        batch = self.energy_function.sample_test_set(
+            self.eval_batch_size
+        )
         if self.nll_with_dem:
             forwards_samples = self.compute_and_log_nll(
                 self.dem_cnf, self.prior, batch, prefix, "dem_"
