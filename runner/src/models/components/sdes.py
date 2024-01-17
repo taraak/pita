@@ -54,17 +54,16 @@ class PIS_SDE(torch.nn.Module):
             # repeat the same time for all points if we have a scalar time
             t = t * torch.ones(x.shape[0]).to(x.device)
 
-        grad_log_energy = self.energy.score(x[..., :-2]).detach().to(x.device)
-        dx = torch.clip(self.score(t, x[..., :-2]), -1e4, 1e4) * self.noise_coeff + self.tcond(t[0]) * torch.clip(grad_log_energy, -1e4, 1e4)
+        grad_log_energy = self.energy.score(x[..., :-1]).detach().to(x.device)
+        dx = torch.clip(self.score(t, x[..., :-1]), -1e4, 1e4) * self.noise_coeff + self.tcond(t[0]) * torch.clip(grad_log_energy, -1e4, 1e4)
         quad_reg = 0.5 * dx.pow(2).sum(dim=-1, keepdim=True)
-        uw = (dx * torch.randn_like(dx)).sum(dim=-1, keepdim=True) / self.noise_coeff
-        return torch.cat([dx, uw, quad_reg], dim=-1)
+        return torch.cat([dx, quad_reg], dim=-1)
 
     def g(self, t, x):
         return torch.cat(
             [
-                torch.ones_like(x[..., :-2]) * self.noise_coeff,
-                torch.zeros_like(x[..., -2:]),
+                torch.ones_like(x[..., :-1]) * self.noise_coeff,
+                torch.zeros_like(x[..., -1:]),
             ],
             dim=-1,
         )

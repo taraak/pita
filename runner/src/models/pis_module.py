@@ -250,6 +250,51 @@ class PISLitModule(LightningModule):
         """
         return self.net(t, x)
 
+    def pis_log_Z(self):
+        start_time = 0.
+        end_time = self.time_range
+        dt = self.time_range / self.num_integration_steps
+
+        state = torch.zeros(
+            self.eval_batch_size, self.dim + 1, device=self.device
+        )
+        uw = torch.zeros(self.eval_batch_size, 1, device=self.device)
+
+        times = torch.linspace(
+            start_time, end_time, self.num_integration_steps + 1, device=self.device
+        )[:-1]
+
+        with torch.no_grad():
+            for t in times:
+                noise = torch.randn_like(state) * np.sqrt(dt)
+                dx = self.pis_sde.f(t, state)
+                noise[:, -1:] = 0.
+
+                state = state + dx * dt + noise * self.pis_scale
+                uw += (dx[..., :-1] * noise[..., :-1]).sum(dim=-1, keepdim=True) / self.pis_scale
+
+            loss = state[..., -1] + uw
+            loss += self.prior.log_prob(state[..., :-1])
+            loss -= self.energy_function(state[..., :-1])
+
+            log_weight = -loss + loss.mean()
+            unnormal_weight = torch.exp(log_weight)
+            weight = unnormal_weight / unnormal_weight.sum()
+            half_unnormal_weight = torch.exp(log_weight / 2)
+            half_weigh = half_unnormal_weight / half_unnormal_weight.sum()
+
+            self.log_dict(
+                {
+                    "logz/loss_lower_bound": -loss.mean(),
+                    "logz/loss_upper_bound": torch.sum(-weight * loss),
+                    "logz/loss_half_bound": torch.sum(-half_weigh * loss),
+                    "logz/loss_unbiased": torch.log(torch.mean(torch.exp(log_weight))) - loss.mean(),
+                },
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+            )
+
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
         x0 = (
             torch.randn(
@@ -273,7 +318,7 @@ class PISLitModule(LightningModule):
 
     def get_loss(self):
         aug_prior_samples = torch.zeros(
-            self.num_samples_to_sample_from_buffer, self.dim + 2, device=self.device
+            self.num_samples_to_sample_from_buffer, self.dim + 1, device=self.device
         )
 
         aug_output = self.integrate(
@@ -284,51 +329,13 @@ class PISLitModule(LightningModule):
             reverse_time=False,
             time_range=self.time_range
         )[-1]
-        x_1, quad_reg = aug_output[..., :-2], aug_output[..., -1]
+        x_1, quad_reg = aug_output[..., :-1], aug_output[..., -1]
         prior_ll = self.prior.log_prob(x_1).mean() / (self.dim + 1)
         sample_ll = self.energy_function(x_1).mean() / (self.dim + 1)
         term_loss = prior_ll - sample_ll
         quad_reg = (quad_reg).mean() / (self.dim + 1)
         pis_loss = term_loss + quad_reg
         return prior_ll, sample_ll, quad_reg, term_loss, pis_loss
-
-    def pis_log_Z(self):
-        aug_prior_samples = torch.zeros(
-            self.eval_batch_size, self.dim + 2, device=self.device
-        )
-
-        aug_output = self.integrate(
-            self.pis_sde,
-            aug_prior_samples,
-            return_full_trajectory=True,
-            no_grad=False,
-            reverse_time=False,
-            time_range=self.time_range
-        )[-1]
-
-        aug_output[..., -2] /= np.sqrt(self.time_range / self.num_integration_steps)
-
-        loss = aug_output[..., -1] + aug_output[..., -2]
-        loss += self.prior.log_prob(aug_output[..., :-2])
-        loss -= self.energy_function(aug_output[..., :-2])
-
-        log_weight = -loss + loss.mean()
-        unnormal_weight = torch.exp(log_weight)
-        weight = unnormal_weight / unnormal_weight.sum()
-        half_unnormal_weight = torch.exp(log_weight / 2)
-        half_weigh = half_unnormal_weight / half_unnormal_weight.sum()
-
-        self.log_dict(
-            {
-                "logz/loss_lower_bound": -loss.mean(),
-                "logz/loss_upper_bound": torch.sum(-weight * loss),
-                "logz/loss_half_bound": torch.sum(-half_weigh * loss),
-                "logz/loss_unbiased": torch.log(torch.mean(torch.exp(log_weight))) - loss.mean(),
-            },
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
 
     def training_step(self, batch, batch_idx):
         loss = 0.0
@@ -403,7 +410,7 @@ class PISLitModule(LightningModule):
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_samples_to_generate_per_epoch
         samples = torch.zeros(
-            num_samples, self.dim + 2, device=self.device
+            num_samples, self.dim + 1, device=self.device
         )
 
         return self.integrate(
@@ -413,7 +420,7 @@ class PISLitModule(LightningModule):
             return_full_trajectory=return_full_trajectory,
             diffusion_scale=diffusion_scale,
             time_range=self.time_range
-        )[..., :-2]
+        )[..., :-1]
 
     def integrate(
         self,
