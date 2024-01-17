@@ -582,12 +582,16 @@ class DEMLitModule(LightningModule):
                 self.cfm_cnf, self.cfm_prior, batch, prefix, ""
             )
             to_log["gen_1_cfm"] = forwards_samples
+        
             iter_samples, _, _ = self.buffer.sample(
                 self.eval_batch_size
             )
-            forwards_samples = self.compute_and_log_nll(
-                self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
-            )
+
+            # compute nll on buffer if not training cfm only
+            if not self.hparams.debug_use_train_data:
+                forwards_samples = self.compute_and_log_nll(
+                    self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
+                )
 
             if self.compute_nll_on_train_data:
                 train_samples = self.energy_function.sample_train_set(
@@ -596,9 +600,9 @@ class DEMLitModule(LightningModule):
                 forwards_samples = self.compute_and_log_nll(
                     self.cfm_cnf, self.cfm_prior, train_samples, prefix, "train_"
                 )
-            self.compute_log_z(
-                self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
-            )
+            # self.compute_log_z(
+            #     self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
+            # )
 
         self.eval_step_outputs.append(to_log)
 
@@ -626,9 +630,9 @@ class DEMLitModule(LightningModule):
 
             noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
             traj = odeint(
-                reverse_wrapper,
+                reverse_wrapper(self.cfm_net),
                 noise,
-                t_span=torch.linspace(0, 1, 2, device=self.device),
+                t=torch.linspace(0, 1, 2, device=self.device),
                 method="dopri5",
             )
 
