@@ -81,7 +81,7 @@ class ManyWellEnergy(DoubleWellEnergy, TargetDistribution):
     def log_prob(self, x):
         log_prob = torch.sum(
             torch.stack(
-                [super(ManyWellEnergy, self).log_prob(x[:, i*2:i*2+2])
+                [super(ManyWellEnergy, self).log_prob(x[..., i*2:i*2+2])
                  for i in range(self.n_wells)]),
             dim=0)
         if self.normalised:

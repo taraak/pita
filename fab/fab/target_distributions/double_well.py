@@ -51,26 +51,26 @@ class DoubleWellEnergy(Energy, nn.Module):
         return 0.5 * x_2.pow(2)
 
     def _energy(self, x):
-        x_1 = x[:, 0]
-        x_2 = x[:, 1]
+        x_1 = x[..., 0]
+        x_2 = x[..., 1]
         e1 = self._energy_dim_1(x_1)
         e2 = self._energy_dim_2(x_2)
         return e1 + e2
-    
+
     # def convolve(self, x, h_t, dtau):
     #     convolved_E = np.zeros_like((x.shape[0], 1))
     #     for i, xi in enumerate(x):
     #     integral = np.zeros_like((x.shape[0], 1))
-    #     for tau in np.arange(-3, 3, dtau): 
+    #     for tau in np.arange(-3, 3, dtau):
     #         integral += self._energy(tau) * self.gaussian(xi - tau, h_t) * dtau
     #     convolved_E[i] = integral
     #     return convolved_E
 
-        
+
     # def convolve(self, x, h_t, dtau):
     #     convolved_E = np.zeros_like((x.shape[0], 1))
     #     integral = np.zeros_like((x.shape[0], 1))
-    #     for tau in np.arange(-3, 3, dtau): 
+    #     for tau in np.arange(-3, 3, dtau):
     #         integral += self._energy(tau) * self.gaussian(xi - tau, h_t) * dtau
     #     convolved_E[i] = integral
     #     return convolved_E
