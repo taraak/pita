@@ -27,6 +27,12 @@ from .components.score_estimator import estimate_grad_Rt
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
 from .components.sdes import PIS_SDE
+import math
+
+logtwopi = math.log(2 * math.pi)
+
+def logmeanexp(x, dim=0):
+    return x.logsumexp(dim) - math.log(x.shape[dim])
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
     """Stratify loss by binning t."""
@@ -294,6 +300,46 @@ class PISLitModule(LightningModule):
                 on_epoch=True,
                 prog_bar=True,
             )
+    
+    def get_elbo(self, data, num_evals=10):
+        bsz = data.shape[0]
+        data = data.view(bsz, 1, self.dim).repeat(1, num_evals, 1).view(bsz * num_evals, self.dim)
+        start_time = 0.
+        end_time = self.time_range
+        dt = self.time_range / self.num_integration_steps
+
+        times = torch.linspace(
+            end_time, start_time, self.num_integration_steps + 1, device=self.device
+        )[:-1]
+
+        log_pf = torch.zeros(data.shape[0], device=self.device)
+        log_pb = torch.zeros(data.shape[0], device=self.device)
+        state = data.clone().to(self.device)
+
+        with torch.no_grad():
+            for t in times:
+                if t > dt:
+                    back_mean = state - dt * state / t
+                    back_var = ((self.pis_scale ** 2) * dt * (t - dt)) / t
+                    state_ = back_mean + torch.sqrt(back_var) * torch.randn_like(state)
+                    noise_backward = (state_ - back_mean) / torch.sqrt(back_var)
+                    log_pb += -0.5 * (noise_backward ** 2 + logtwopi + torch.log(back_var)).sum(1)
+                else:
+                    state_ = torch.zeros_like(state, device=self.device)
+
+                aug_state = torch.cat([state_, torch.zeros_like(state[..., :1])], dim=-1)
+                forward_mean = self.pis_sde.f(t - dt, aug_state)[..., :-1]
+                forward_var = self.pis_sde.g(t - dt, aug_state)[..., :-1] ** 2
+    
+                noise = ((state - state_) - dt * forward_mean) / (np.sqrt(dt) * torch.sqrt(forward_var))
+                log_pf += -0.5 * (noise ** 2 + logtwopi + np.log(dt) + torch.log(forward_var)).sum(
+                    1)
+                
+                state = state_
+                
+            log_weight = (log_pf - log_pb).view(bsz, num_evals)
+            log_weight = logmeanexp(log_weight, dim=1).mean()
+            return log_weight
 
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
         x0 = (
@@ -574,6 +620,8 @@ class PISLitModule(LightningModule):
         }
 
         self.pis_log_Z()
+        gfn_style_elbo = self.get_elbo(batch)
+        self.log(f"{prefix}/gfn_style_elbo", gfn_style_elbo, on_step=False, on_epoch=True, prog_bar=True)
 
         if self.nll_with_cfm:
             forwards_samples = self.compute_and_log_nll(
