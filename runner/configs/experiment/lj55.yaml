@@ -21,13 +21,13 @@ defaults:
 
 
 data:
-  n_val_batches_per_epoch: 5
+  n_val_batches_per_epoch: 1
 
 
 model:
   net:
     n_particles: 55
-    n_layers: 5
+    n_layers: 1
     hidden_nf: 64
 
   # noise_schedule:
@@ -66,8 +66,8 @@ model:
   diffusion_scale: 0.7
 
   num_init_samples: 1024
-  num_samples_to_generate_per_epoch: 512
-  num_samples_to_sample_from_buffer: 512
-  eval_batch_size: 32
+  num_samples_to_generate_per_epoch: 16
+  num_samples_to_sample_from_buffer: 16
+  eval_batch_size: 16
   nll_with_cfm: true
   init_from_prior: true

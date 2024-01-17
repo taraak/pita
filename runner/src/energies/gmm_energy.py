@@ -46,6 +46,8 @@ class GMM(BaseEnergyFunction):
         self.should_unnormalize = should_unnormalize
         self.data_normalization_factor = data_normalization_factor
 
+        self.train_set_size = train_set_size
+
         super().__init__(
             dimensionality=dimensionality,
             normalization_min=-data_normalization_factor,
@@ -56,7 +58,8 @@ class GMM(BaseEnergyFunction):
         return self.gmm.test_set
 
     def setup_train_set(self):
-        return self.gmm.sample((self.train_set_size,))
+        train_samples = self.gmm.sample((self.train_set_size,))
+        return self.normalize(train_samples)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
