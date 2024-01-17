@@ -19,19 +19,25 @@ defaults:
   - override /energy: lj55
   - override /model/net: egnn
 
+
+data:
+  n_val_batches_per_epoch: 5
+
+
 model:
   net:
     n_particles: 55
     n_layers: 5
-
-  noise_schedule:
-    _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-    beta: 1.5
+    hidden_nf: 64
 
   # noise_schedule:
-  #   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-  #   sigma_min: 0.3
-  #   sigma_max: 1.2
+  #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
+  #   beta: 1.5
+
+  noise_schedule:
+    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+    sigma_min: 0.01
+    sigma_max: 5
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -57,9 +63,11 @@ model:
     max_score_norm: 50
     min_log_reward: null
 
-  diffusion_scale: 0.1
+  diffusion_scale: 0.7
 
   num_init_samples: 1024
   num_samples_to_generate_per_epoch: 512
   num_samples_to_sample_from_buffer: 512
-  nll_with_cfm: false
+  eval_batch_size: 32
+  nll_with_cfm: true
+  init_from_prior: true

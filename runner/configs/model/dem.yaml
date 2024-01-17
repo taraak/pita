@@ -34,13 +34,16 @@ num_init_samples: 1024
 num_estimator_mc_samples: 100
 num_samples_to_generate_per_epoch: 1024
 num_samples_to_sample_from_buffer: 512
+eval_batch_size: 1024
+
 num_integration_steps: 1000
 
-
+nll_integration_method: euler
 nll_with_cfm: true
 nll_with_dem: false
 cfm_sigma: 0.0
 cfm_prior_std: ${energy.data_normalization_factor}
+use_otcfm: false
 prioritize_cfm_training_samples: false
 
 
@@ -55,4 +58,13 @@ compile: false
 cfm_loss_weight: 1.0
 use_ema: false
 use_exact_likelihood: True
+
+# train cfm only on train data and not dem
 debug_use_train_data: false
+
+# initialize the buffer with samples from the prior
+init_from_prior: false
+
+# compute the nll on the train data
+# this is in addition to buffer and test
+compute_nll_on_train_data: false

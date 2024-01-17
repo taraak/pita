@@ -46,9 +46,10 @@ def integrate_sde(
     reverse_time: bool = True,
     diffusion_scale=1.0,
     no_grad=True,
+    time_range=1.0
 ):
-    start_time = 1.0 if reverse_time else 0.0
-    end_time = 1.0 - start_time
+    start_time = time_range if reverse_time else 0.0
+    end_time = time_range - start_time
 
     times = torch.linspace(
         start_time, end_time, num_integration_steps + 1, device=x0.device
@@ -60,13 +61,13 @@ def integrate_sde(
         with torch.no_grad():
             for t in times:
                 x, f = euler_maruyama_step(
-                    sde, t, x, 1 / num_integration_steps, diffusion_scale
+                    sde, t, x, time_range / num_integration_steps, diffusion_scale
                 )
                 samples.append(x)
     else:
         for t in times:
             x, f = euler_maruyama_step(
-                sde, t, x, 1 / num_integration_steps, diffusion_scale
+                sde, t, x, time_range / num_integration_steps, diffusion_scale
             )
             samples.append(x)
 

@@ -1,6 +1,6 @@
   _target_: src.energies.many_well_energy.ManyWell
 
-  dimensionality: 6
+  dimensionality: 32
 
   device: ${trainer.accelerator}
 

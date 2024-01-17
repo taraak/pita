@@ -1,0 +1,41 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+defaults: 
+  - override /energy: nine
+
+tags: ["PISGMM"]
+
+seed: 12345
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "pis_gmm"
+
+model:
+  partial_prior:
+    _target_: src.energies.base_prior.Prior
+    _partial_: true
+    dim: 2
+
+  # clipper:
+  #   _target_: src.models.components.clipper.Clipper
+  #   should_clip_scores: False
+  #   should_clip_log_rewards: False
+  #   max_score_norm: null
+  #   min_log_reward: null
+  clipper:
+    _target_: src.models.components.clipper.Clipper
+    should_clip_scores: True
+    should_clip_log_rewards: False
+    max_score_norm: 50
+    min_log_reward: null
+
+  diffusion_scale: 1.0
+
+  num_samples_to_generate_per_epoch: 1000
