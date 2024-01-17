@@ -43,6 +43,8 @@ num_init_samples: 1024
 num_estimator_mc_samples: 100
 num_samples_to_generate_per_epoch: 1024
 num_samples_to_sample_from_buffer: 512
+eval_batch_size: 1024
+
 num_integration_steps: 100
 
 
@@ -63,5 +65,5 @@ cfm_loss_weight: 1.0
 use_ema: false
 debug_use_train_data: false
 
-pis_scale: 0.4
+pis_scale: 1.
 time_range: 5.0

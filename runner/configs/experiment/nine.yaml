@@ -23,12 +23,16 @@ model:
     _partial_: true
     dim: 2
 
-  # clipper:
-  #   _target_: src.models.components.clipper.Clipper
-  #   should_clip_scores: False
-  #   should_clip_log_rewards: False
-  #   max_score_norm: null
-  #   min_log_reward: null
+  noise_schedule:
+    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+    sigma_min: 4e-6
+    sigma_max: 0.4
+
+  lambda_weighter:
+    _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
+    _partial_: true
+    epsilon: 1e-3
+
   clipper:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True

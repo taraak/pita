@@ -18,6 +18,8 @@ from .components.clipper import Clipper
 from .components.cnf import CNF
 from .components.distribution_distances import compute_distribution_distances
 from .components.ema import EMAWrapper
+from .components.noise_schedules import BaseNoiseSchedule
+from .components.lambda_weighter import BaseLambdaWeighter
 
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.scaling_wrapper import ScalingWrapper
@@ -100,10 +102,13 @@ class PISLitModule(LightningModule):
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         energy_function: BaseEnergyFunction,
+        noise_schedule: BaseNoiseSchedule,
+        lambda_weighter: BaseLambdaWeighter,
         buffer: PrioritisedReplayBuffer,
         num_init_samples: int,
         num_estimator_mc_samples: int,
         num_samples_to_generate_per_epoch: int,
+        eval_batch_size: int,
         num_samples_to_sample_from_buffer: int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
@@ -124,8 +129,6 @@ class PISLitModule(LightningModule):
         time_range=5.,
         use_ema=False,
         debug_use_train_data=False,
-        noise_schedule=None,
-        lambda_weighter=None
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -175,12 +178,12 @@ class PISLitModule(LightningModule):
                 self.cfm_net, input_scaling_factor, output_scaling_factor
             )
 
-        # self.score_scaler = None
-        # if score_scaler is not None:
-        #     self.score_scaler = self.hparams.score_scaler(noise_schedule)
+        self.score_scaler = None
+        if score_scaler is not None:
+            self.score_scaler = self.hparams.score_scaler(noise_schedule)
 
-        #     self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
-        #     self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
+            self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
+            self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
 
         self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False)
 
@@ -225,6 +228,7 @@ class PISLitModule(LightningModule):
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
+        self.eval_batch_size = eval_batch_size
         self.num_samples_to_sample_from_buffer = num_samples_to_sample_from_buffer
         self.num_integration_steps = num_integration_steps
 
@@ -269,7 +273,7 @@ class PISLitModule(LightningModule):
 
     def get_loss(self):
         aug_prior_samples = torch.zeros(
-            self.num_samples_to_sample_from_buffer, self.dim + 1, device=self.device
+            self.num_samples_to_sample_from_buffer, self.dim + 2, device=self.device
         )
 
         aug_output = self.integrate(
@@ -280,13 +284,51 @@ class PISLitModule(LightningModule):
             reverse_time=False,
             time_range=self.time_range
         )[-1]
-        x_1, quad_reg = aug_output[..., :-1], aug_output[..., -1]
+        x_1, quad_reg = aug_output[..., :-2], aug_output[..., -1]
         prior_ll = self.prior.log_prob(x_1).mean() / (self.dim + 1)
         sample_ll = self.energy_function(x_1).mean() / (self.dim + 1)
         term_loss = prior_ll - sample_ll
         quad_reg = (quad_reg).mean() / (self.dim + 1)
         pis_loss = term_loss + quad_reg
         return prior_ll, sample_ll, quad_reg, term_loss, pis_loss
+
+    def pis_log_Z(self):
+        aug_prior_samples = torch.zeros(
+            self.eval_batch_size, self.dim + 2, device=self.device
+        )
+
+        aug_output = self.integrate(
+            self.pis_sde,
+            aug_prior_samples,
+            return_full_trajectory=True,
+            no_grad=False,
+            reverse_time=False,
+            time_range=self.time_range
+        )[-1]
+
+        aug_output[..., -2] /= np.sqrt(self.time_range / self.num_integration_steps)
+
+        loss = aug_output[..., -1] + aug_output[..., -2]
+        loss += self.prior.log_prob(aug_output[..., :-2])
+        loss -= self.energy_function(aug_output[..., :-2])
+
+        log_weight = -loss + loss.mean()
+        unnormal_weight = torch.exp(log_weight)
+        weight = unnormal_weight / unnormal_weight.sum()
+        half_unnormal_weight = torch.exp(log_weight / 2)
+        half_weigh = half_unnormal_weight / half_unnormal_weight.sum()
+
+        self.log_dict(
+            {
+                "logz/loss_lower_bound": -loss.mean(),
+                "logz/loss_upper_bound": torch.sum(-weight * loss),
+                "logz/loss_half_bound": torch.sum(-half_weigh * loss),
+                "logz/loss_unbiased": torch.log(torch.mean(torch.exp(log_weight))) - loss.mean(),
+            },
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
 
     def training_step(self, batch, batch_idx):
         loss = 0.0
@@ -315,11 +357,11 @@ class PISLitModule(LightningModule):
         if self.should_train_cfm(batch_idx):
             if self.hparams.debug_use_train_data:
                 cfm_samples = self.energy_function.sample_train_set(
-                    self.num_samples_to_generate_per_epoch
+                    self.eval_batch_size
                 )
             else:
                 cfm_samples, _, _ = self.buffer.sample(
-                    self.num_samples_to_generate_per_epoch,
+                    self.eval_batch_size,
                     prioritize=self.prioritize_cfm_training_samples,
                 )
             times = torch.rand(
@@ -361,7 +403,7 @@ class PISLitModule(LightningModule):
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_samples_to_generate_per_epoch
         samples = torch.zeros(
-            num_samples, self.dim + 1, device=self.device
+            num_samples, self.dim + 2, device=self.device
         )
 
         return self.integrate(
@@ -371,7 +413,7 @@ class PISLitModule(LightningModule):
             return_full_trajectory=return_full_trajectory,
             diffusion_scale=diffusion_scale,
             time_range=self.time_range
-        )[..., :-1]
+        )[..., :-2]
 
     def integrate(
         self,
@@ -461,7 +503,7 @@ class PISLitModule(LightningModule):
                 f"{prefix}/{name}_nfe": nfe_metric,
                 f"{prefix}/{name}nll_logdetjac": logdetjac_metric,
                 f"{prefix}/{name}nll_log_p_1": log_p_1_metric,
-                f"{prefix}/{name}logz": logz_metric,
+                # f"{prefix}/{name}logz": logz_metric,
             },
             on_epoch=True,
         )
@@ -474,6 +516,21 @@ class PISLitModule(LightningModule):
         )
         return forwards_samples
 
+    def compute_log_z(self, cnf, prior, samples, prefix, name):
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
+            cnf, prior, samples
+        )
+        logz = self.energy_function(samples) + nll
+        logz_metric = getattr(self, f"{prefix}_{name}logz")
+        logz_metric.update(logz)
+        self.log(
+            f"{prefix}/{name}logz",
+            logz_metric,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
     def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
         """Perform a single eval step on a batch of data from the validation set.
 
@@ -482,11 +539,11 @@ class PISLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         times = torch.rand(
-            (self.num_samples_to_generate_per_epoch,), device=batch.device
+            (self.eval_batch_size,), device=batch.device
         )
 
         batch = self.energy_function.sample_test_set(
-            self.num_samples_to_generate_per_epoch
+            self.eval_batch_size
         )
 
         loss = self.get_loss()[-1]
@@ -508,16 +565,23 @@ class PISLitModule(LightningModule):
             "data_0": batch,
             "gen_0": backwards_samples,
         }
+
+        self.pis_log_Z()
+
         if self.nll_with_cfm:
             forwards_samples = self.compute_and_log_nll(
                 self.cfm_cnf, self.cfm_prior, batch, prefix, ""
             )
             to_log["gen_1_cfm"] = forwards_samples
             iter_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_generate_per_epoch
+                self.eval_batch_size
             )
             forwards_samples = self.compute_and_log_nll(
                 self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
+            )
+
+            self.compute_log_z(
+                self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
             )
 
         self.eval_step_outputs.append(to_log)
@@ -548,7 +612,7 @@ class PISLitModule(LightningModule):
 
         with torch.no_grad():
             shape = (
-                self.num_samples_to_generate_per_epoch,
+                self.eval_batch_size,
                 self.energy_function.dimensionality,
             )
 
@@ -590,7 +654,7 @@ class PISLitModule(LightningModule):
         unprioritized_buffer_samples, cfm_samples = None, None
         if self.nll_with_cfm:
             unprioritized_buffer_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_generate_per_epoch,
+                self.eval_batch_size,
                 prioritize=self.prioritize_cfm_training_samples,
             )
 
