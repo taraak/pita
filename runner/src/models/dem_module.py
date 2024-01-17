@@ -23,7 +23,6 @@ from .components.lambda_weighter import BaseLambdaWeighter
 from .components.mlp import TimeConder
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import (
-    NonBufferBuffer,
     PrioritisedReplayBuffer,
 )
 from .components.scaling_wrapper import ScalingWrapper
