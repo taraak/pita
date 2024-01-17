@@ -22,7 +22,9 @@ from .components.ema import EMAWrapper
 from .components.lambda_weighter import BaseLambdaWeighter
 from .components.mlp import TimeConder
 from .components.noise_schedules import BaseNoiseSchedule
-from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
+from .components.prioritised_replay_buffer import (
+    PrioritisedReplayBuffer,
+)
 from .components.scaling_wrapper import ScalingWrapper
 from .components.score_estimator import estimate_grad_Rt
 from .components.score_scaler import BaseScoreScaler
@@ -133,6 +135,7 @@ class DEMLitModule(LightningModule):
         debug_use_train_data=False,
         init_from_prior=False,
         compute_nll_on_train_data=False,
+        use_buffer=True,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -233,7 +236,6 @@ class DEMLitModule(LightningModule):
         self.test_buffer_nfe = MeanMetric()
         self.test_buffer_logz = MeanMetric()
 
-
         self.val_train_nll_logdetjac = MeanMetric()
         self.val_train_nll_log_p_1 = MeanMetric()
         self.val_train_nll = MeanMetric()
@@ -298,7 +300,7 @@ class DEMLitModule(LightningModule):
         return loss
 
     def should_train_cfm(self, batch_idx: int) -> bool:
-        return (self.nll_with_cfm or self.hparams.debug_use_train_data)
+        return self.nll_with_cfm or self.hparams.debug_use_train_data
 
     def get_loss(self, times: torch.Tensor, samples: torch.Tensor) -> torch.Tensor:
         estimated_score = estimate_grad_Rt(
@@ -326,9 +328,12 @@ class DEMLitModule(LightningModule):
     def training_step(self, batch, batch_idx):
         loss = 0.0
         if not self.hparams.debug_use_train_data:
-            iter_samples, _, _ = self.buffer.sample(
-                self.num_samples_to_sample_from_buffer
-            )
+            if self.hparams.use_buffer:
+                iter_samples, _, _ = self.buffer.sample(
+                    self.num_samples_to_sample_from_buffer
+                )
+            else:
+                iter_samples = self.prior.sample(self.num_samples_to_sample_from_buffer)
 
             times = torch.rand(
                 (self.num_samples_to_sample_from_buffer,), device=iter_samples.device
@@ -450,9 +455,16 @@ class DEMLitModule(LightningModule):
             [samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1
         )
 
+        # import time
+
+        # start = time.time()
         aug_output = cnf.integrate(aug_samples, num_integration_steps=1, method=method)[
             -1
         ]
+        # end = time.time()
+        #        print(
+        #            f"cnf integration took {end - start:0.2f} for batch_size {samples.shape[0]} for {cnf.nfe} steps"
+        #        )
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
         log_p_1 = prior.log_prob(x_1)
         log_p_0 = log_p_1 + logdetjac
@@ -587,12 +599,12 @@ class DEMLitModule(LightningModule):
                 self.cfm_cnf, self.cfm_prior, batch, prefix, ""
             )
             to_log["gen_1_cfm"] = forwards_samples
-            iter_samples, _, _ = self.buffer.sample(
-                self.eval_batch_size
-            )
-            forwards_samples = self.compute_and_log_nll(
-                self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
-            )
+            #            iter_samples, _, _ = self.buffer.sample(
+            #                self.eval_batch_size
+            #            )
+            #            forwards_samples = self.compute_and_log_nll(
+            #                self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
+            #            )
 
             if self.compute_nll_on_train_data:
                 train_samples = self.energy_function.sample_train_set(
@@ -601,9 +613,12 @@ class DEMLitModule(LightningModule):
                 forwards_samples = self.compute_and_log_nll(
                     self.cfm_cnf, self.cfm_prior, train_samples, prefix, "train_"
                 )
-            self.compute_log_z(
-                self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
-            )
+        #            backwards_samples = self.cfm_cnf.generate(
+        #                self.cfm_prior.sample(self.eval_batch_size), 1
+        #            )[-1]
+        #            self.compute_log_z(
+        #                self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
+        #            )
 
         self.eval_step_outputs.append(to_log)
 
@@ -630,14 +645,22 @@ class DEMLitModule(LightningModule):
             )
 
             noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
-            traj = odeint(
-                reverse_wrapper(self.cfm_net),
-                noise,
-                t=torch.linspace(0, 1, 2, device=self.device),
-                method="dopri5",
-            )
-
-            return traj[-1]
+            try:
+                traj = odeint(
+                    reverse_wrapper(self.cfm_net),
+                    noise,
+                    t=torch.linspace(0, 1, 2, device=self.device),
+                    method="dopri5",
+                )
+                return traj[-1]
+            except (RuntimeError, AssertionError) as e:
+                print(e)
+                print("Falling back on fixed-step integration")
+                self.nfe = 0.0
+                time = torch.linspace(0, 101, 2, device=self.device)
+                return odeint(
+                    reverse_wrapper(self.cfm_net), noise, t=time, method="euler"
+                )[-1]
 
     def scatter_prior(self, prefix, outputs):
         wandb_logger = get_wandb_logger(self.loggers)
@@ -677,14 +700,14 @@ class DEMLitModule(LightningModule):
 
             cfm_samples = self.generate_cfm_samples(self.eval_batch_size)
 
-        self.energy_function.log_on_epoch_end(
-            self.last_samples,
-            self.last_energies,
-            unprioritized_buffer_samples,
-            cfm_samples,
-            self.buffer,
-            wandb_logger,
-        )
+            self.energy_function.log_on_epoch_end(
+                self.last_samples,
+                self.last_energies,
+                unprioritized_buffer_samples,
+                cfm_samples,
+                self.buffer,
+                wandb_logger,
+            )
 
         if "data_0" in outputs:
             # pad with time dimension 1
@@ -727,7 +750,6 @@ class DEMLitModule(LightningModule):
         self.prior = self.partial_prior(
             device=self.device, scale=self.noise_schedule.h(1) ** 0.5
         )
-
         if self.init_from_prior:
             init_states = self.prior.sample(self.num_init_samples)
         else:
