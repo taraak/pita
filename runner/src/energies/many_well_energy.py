@@ -35,6 +35,7 @@ class ManyWell(BaseEnergyFunction):
 
         self.train_set_size = train_set_size
         self.test_set_size = test_set_size
+        self.train_set_size = train_set_size
 
         self.should_unnormalize = should_unnormalize
 

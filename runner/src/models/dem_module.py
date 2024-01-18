@@ -133,6 +133,7 @@ class DEMLitModule(LightningModule):
         diffusion_scale=1.0,
         cfm_loss_weight=1.0,
         use_ema=False,
+        use_exact_likelihood=False,
         debug_use_train_data=False,
         init_from_prior=False,
         compute_nll_on_train_data=False,
@@ -174,8 +175,8 @@ class DEMLitModule(LightningModule):
             self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
             self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
 
-        self.dem_cnf = CNF(self.net, is_diffusion=True)
-        self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False)
+        self.dem_cnf = CNF(self.net, is_diffusion=True, use_exact_likelihood=use_exact_likelihood, noise_schedule=noise_schedule)
+        self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False, use_exact_likelihood=use_exact_likelihood)
 
         self.nll_with_cfm = nll_with_cfm
         self.nll_with_dem = nll_with_dem
@@ -320,7 +321,15 @@ class DEMLitModule(LightningModule):
         )
 
         if self.clipper is not None and self.clipper.should_clip_scores:
+
+            if self.energy_function.is_molecule:
+                estimated_score = estimated_score.reshape(-1, self.energy_function.n_particles,
+                                                          self.energy_function.n_spatial_dim)
+                
             estimated_score = self.clipper.clip_scores(estimated_score)
+
+            if self.energy_function.is_molecule:
+                estimated_score = estimated_score.reshape(-1, self.energy_function.dimensionality)
 
         if self.score_scaler is not None:
             estimated_score = self.score_scaler.scale_target_score(
@@ -565,6 +574,7 @@ class DEMLitModule(LightningModule):
 
         # generate samples noise --> data if needed
         backwards_samples = self.last_samples
+
         if backwards_samples is None:
             backwards_samples = self.generate_samples(
                 num_samples=self.num_samples_to_generate_per_epoch
@@ -613,12 +623,17 @@ class DEMLitModule(LightningModule):
                 self.cfm_cnf, self.cfm_prior, batch, prefix, ""
             )
             to_log["gen_1_cfm"] = forwards_samples
-            #            iter_samples, _, _ = self.buffer.sample(
-            #                self.eval_batch_size
-            #            )
-            #            forwards_samples = self.compute_and_log_nll(
-            #                self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
-            #            )
+
+            iter_samples, _, _ = self.buffer.sample(
+                self.eval_batch_size
+            )
+
+            # compute nll on buffer if not training cfm only
+            if not self.hparams.debug_use_train_data:
+                forwards_samples = self.compute_and_log_nll(
+                    self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
+                )
+
 
             if self.compute_nll_on_train_data:
                 train_samples = self.energy_function.sample_train_set(
@@ -627,6 +642,7 @@ class DEMLitModule(LightningModule):
                 forwards_samples = self.compute_and_log_nll(
                     self.cfm_cnf, self.cfm_prior, train_samples, prefix, "train_"
                 )
+
         #            backwards_samples = self.cfm_cnf.generate(
         #                self.cfm_prior.sample(self.eval_batch_size), 1
         #            )[-1]
@@ -663,6 +679,7 @@ class DEMLitModule(LightningModule):
                 num_integration_steps = 2
 
             noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
+
             try:
                 traj = odeint(
                     reverse_wrapper(self.cfm_net),

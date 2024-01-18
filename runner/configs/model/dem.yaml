@@ -62,6 +62,7 @@ use_richardsons: false
 
 cfm_loss_weight: 1.0
 use_ema: false
+use_exact_likelihood: True
 
 # train cfm only on train data and not dem
 debug_use_train_data: false

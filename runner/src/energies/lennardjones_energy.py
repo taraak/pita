@@ -22,8 +22,15 @@ def sample_from_array(array, size):
 
 
 def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
+    p = 0.9
     lj = eps * ((rm / r) ** 12 - 2 * (rm / r) ** 6)
+    # filter = (r < p)
+
+    # lj = lj * ~filter + filter * (energy_slope(p) * (r-p) +  ((1 / p) ** 12 - 2 * (1 / p) ** 6))
     return lj
+
+def energy_slope(r):
+    return 12 * (r**6 - 1)/r**13
 
 
 class LennardJonesPotential(Energy):
@@ -83,6 +90,7 @@ class LennardJonesPotential(Energy):
         )
 
         lj_energies = lennard_jones_energy_torch(dists, self._eps, self._rm)
+        # lj_energies = torch.clip(lj_energies, -1e4, 1e4)
         lj_energies = (
             lj_energies.view(*batch_shape, -1).sum(dim=-1) * self._energy_factor
         )
@@ -120,6 +128,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         plotting_buffer_sample_size=512,
         data_normalization_factor=1.0,
         energy_factor = 1.0,
+        is_molecule = True,
     ):
         torch.manual_seed(0)  # seed of 0
         np.random.seed(0)
@@ -153,7 +162,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
             energy_factor = energy_factor,
         )
 
-        super().__init__(dimensionality=dimensionality)
+        super().__init__(dimensionality=dimensionality,
+                         is_molecule=is_molecule)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         return self.lennard_jones._log_prob(samples).squeeze(-1)
@@ -287,7 +297,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         elif self.n_particles == 55:
             min_energy = -380
-            max_energy = -220
+            max_energy = -180
         
 
         axs[1].hist(

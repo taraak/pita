@@ -36,7 +36,7 @@ class Clipper:
 
     def clip_log_rewards(self, log_rewards: torch.Tensor) -> torch.Tensor:
         return log_rewards.clamp(min=self.min_log_reward)
-
+    
     def wrap_grad_fxn(self, grad_fxn):
         def _run(*args, **kwargs):
             scores = grad_fxn(*args, **kwargs)

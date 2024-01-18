@@ -26,8 +26,8 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01 #0.3
-    sigma_max: 5 #1.2
+    sigma_min: 0.01 
+    sigma_max: 5 
 
 
   partial_prior:

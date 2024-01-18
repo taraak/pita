@@ -11,6 +11,7 @@ class BaseEnergyFunction(ABC):
     def __init__(
         self,
         dimensionality: int,
+        is_molecule: Optional[bool] = False,
         normalization_min: Optional[float] = None,
         normalization_max: Optional[float] = None,
     ):
@@ -22,6 +23,8 @@ class BaseEnergyFunction(ABC):
 
         self.normalization_min = normalization_min
         self.normalization_max = normalization_max
+
+        self._is_molecule = is_molecule
 
     def setup_test_set(self) -> Optional[torch.Tensor]:
         return None
@@ -100,6 +103,10 @@ class BaseEnergyFunction(ABC):
     @property
     def dimensionality(self) -> int:
         return self._dimensionality
+    
+    @property
+    def is_molecule(self) -> Optional[bool]:
+        return self._is_molecule
 
     @property
     def test_set(self) -> Optional[torch.Tensor]:
