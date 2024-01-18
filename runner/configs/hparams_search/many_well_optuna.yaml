@@ -27,7 +27,7 @@ hydra:
     study_name: null
 
     # number of parallel workers
-    n_jobs: 40
+    n_jobs: 20
 
     # 'minimize' or 'maximize' the objective
     direction: minimize
@@ -47,8 +47,10 @@ hydra:
     params:
       model.optimizer.lr: tag(log, interval(0.00001, 0.001))
 
+      model.cfm_prior_std: interval(1.0, 10.0)
+
       model.diffusion_scale: interval(0.1, 1.0)
-      model.noise_schedule.sigma_min: tag(log, interval(1e-4, 1.0))
       model.noise_schedule.sigma_max: tag(log, interval(1e-2, 20))
 
       model.clipper.max_score_norm: choice(10, 25, 50, 75, 100, 200)
+      model.buffer.prioritize: choice(false, true)

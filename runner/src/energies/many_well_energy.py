@@ -33,6 +33,7 @@ class ManyWell(BaseEnergyFunction):
         self.plotting_buffer_sample_size = plotting_buffer_sample_size
         self.plot_samples_epoch_period = plot_samples_epoch_period
 
+        self.train_set_size = train_set_size
         self.test_set_size = test_set_size
 
         self.should_unnormalize = should_unnormalize
