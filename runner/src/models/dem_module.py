@@ -171,7 +171,7 @@ class DEMLitModule(LightningModule):
             self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
             self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
 
-        self.dem_cnf = CNF(self.net, is_diffusion=True, use_exact_likelihood=use_exact_likelihood)
+        self.dem_cnf = CNF(self.net, is_diffusion=True, use_exact_likelihood=use_exact_likelihood, noise_schedule=noise_schedule)
         self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False, use_exact_likelihood=use_exact_likelihood)
 
         self.nll_with_cfm = nll_with_cfm
@@ -311,7 +311,14 @@ class DEMLitModule(LightningModule):
         )
 
         if self.clipper is not None and self.clipper.should_clip_scores:
+
+            if self.energy_function.is_molecule:
+                estimated_score = estimated_score.reshape(-1, self.energy_function.n_particles,
+                                                          self.energy_function.n_spatial_dim)
             estimated_score = self.clipper.clip_scores(estimated_score)
+
+            if self.energy_function.is_molecule:
+                estimated_score = estimated_score.reshape(-1, self.energy_function.dimensionality)
 
         if self.score_scaler is not None:
             estimated_score = self.score_scaler.scale_target_score(
@@ -540,7 +547,7 @@ class DEMLitModule(LightningModule):
 
         # generate samples noise --> data if needed
         backwards_samples = self.last_samples
-        if backwards_samples is None:
+        if backwards_samples is None or self.last_samples.shape[0] != self.eval_batch_size:
             backwards_samples = self.generate_samples(num_samples=self.eval_batch_size)
 
         if batch is None:

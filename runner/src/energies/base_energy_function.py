@@ -23,6 +23,9 @@ class BaseEnergyFunction(ABC):
         self.normalization_min = normalization_min
         self.normalization_max = normalization_max
 
+
+        self.is_molecule = False
+
     def setup_test_set(self) -> Optional[torch.Tensor]:
         return None
 
