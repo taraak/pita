@@ -291,7 +291,9 @@ class DEMLitModule(LightningModule):
             )
             * self.cfm_prior_std
         )
-        x1 = self.energy_function.unnormalize(samples)
+        x1 = samples
+        if not self.hparams.debug_use_train_data:
+            x1 = self.energy_function.unnormalize(x1)
 
         t, xt, ut = self.conditional_flow_matcher.sample_location_and_conditional_flow(
             x0, x1
