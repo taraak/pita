@@ -48,6 +48,7 @@ def log_hyperparameters(object_dict: Dict[str, Any]) -> None:
 
     hparams["callbacks"] = cfg.get("callbacks")
     hparams["extras"] = cfg.get("extras")
+    hparams["energy_function"] = cfg["energy"]
 
     hparams["task_name"] = cfg.get("task_name")
     hparams["tags"] = cfg.get("tags")
