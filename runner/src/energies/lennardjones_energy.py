@@ -22,8 +22,15 @@ def sample_from_array(array, size):
 
 
 def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
+    p = 0.9
     lj = eps * ((rm / r) ** 12 - 2 * (rm / r) ** 6)
+    # filter = (r < p)
+
+    # lj = lj * ~filter + filter * (energy_slope(p) * (r-p) +  ((1 / p) ** 12 - 2 * (1 / p) ** 6))
     return lj
+
+def energy_slope(r):
+    return 12 * (r**6 - 1)/r**13
 
 
 class LennardJonesPotential(Energy):
@@ -83,6 +90,7 @@ class LennardJonesPotential(Energy):
         )
 
         lj_energies = lennard_jones_energy_torch(dists, self._eps, self._rm)
+        # lj_energies = torch.clip(lj_energies, -1e4, 1e4)
         lj_energies = (
             lj_energies.view(*batch_shape, -1).sum(dim=-1) * self._energy_factor
         )
@@ -141,6 +149,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.data_path_val = data_path_val
 
         self.device = device
+
+        self.is_molecule = True
 
         self.lennard_jones = LennardJonesPotential(
             dim=dimensionality,
