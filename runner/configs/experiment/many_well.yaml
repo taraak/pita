@@ -7,7 +7,7 @@
 # this allows you to overwrite only specified parameters
 defaults: 
   - override /energy: many_well
-  - override /model/net: pis
+  - override /model/net: mlp
 
 
 tags: ["many_well"]
@@ -20,11 +20,6 @@ logger:
     group: "many_well"
 
 model:
-  noise_schedule:
-    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.001
-    sigma_max: 1.0
-
   partial_prior:
     _target_: src.energies.base_prior.Prior
     _partial_: true
@@ -38,9 +33,9 @@ model:
     min_log_reward: null
 
   lambda_weighter:
-    _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
+    _target_: src.models.components.lambda_weighter.NoLambdaWeighter
     _partial_: true
-    epsilon: 1e-3
+    #epsilon: 1e-3
 
   diffusion_scale: 1.0
 

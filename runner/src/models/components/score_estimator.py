@@ -5,6 +5,29 @@ from src.models.components.noise_schedules import BaseNoiseSchedule
 from src.models.components.clipper import Clipper
 
 
+def wrap_for_richardsons(score_estimator):
+    def _fxn(t, x, energy_function, noise_schedule, num_mc_samples):
+        bigger_samples = score_estimator(
+            t,
+            x,
+            energy_function,
+            noise_schedule,
+            num_mc_samples
+        )
+
+        smaller_samples = score_estimator(
+            t,
+            x,
+            energy_function,
+            noise_schedule,
+            int(num_mc_samples / 2)
+        )
+
+        return (2 * bigger_samples) - smaller_samples
+
+    return _fxn
+
+
 def log_expectation_reward(
     t: torch.Tensor,
     x: torch.Tensor,
