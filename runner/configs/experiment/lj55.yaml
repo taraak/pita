@@ -21,13 +21,13 @@ defaults:
 
 
 data:
-  n_val_batches_per_epoch: 1
+  n_val_batches_per_epoch: 4
 
 
 model:
   net:
     n_particles: 55
-    n_layers: 1
+    n_layers: 5
     hidden_nf: 64
 
   # noise_schedule:
@@ -60,14 +60,14 @@ model:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
     should_clip_log_rewards: False
-    max_score_norm: 50
+    max_score_norm: 20
     min_log_reward: null
 
   diffusion_scale: 0.7
 
   num_init_samples: 1024
-  num_samples_to_generate_per_epoch: 16
-  num_samples_to_sample_from_buffer: 16
-  eval_batch_size: 16
+  num_samples_to_generate_per_epoch: 256
+  num_samples_to_sample_from_buffer: 256
+  eval_batch_size: 32
   nll_with_cfm: true
   init_from_prior: true

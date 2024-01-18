@@ -128,6 +128,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         plotting_buffer_sample_size=512,
         data_normalization_factor=1.0,
         energy_factor = 1.0,
+        is_molecule = True,
     ):
         torch.manual_seed(0)  # seed of 0
         np.random.seed(0)
@@ -150,8 +151,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.device = device
 
-        self.is_molecule = True
-
         self.lennard_jones = LennardJonesPotential(
             dim=dimensionality,
             n_particles=n_particles,
@@ -163,7 +162,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
             energy_factor = energy_factor,
         )
 
-        super().__init__(dimensionality=dimensionality)
+        super().__init__(dimensionality=dimensionality,
+                         is_molecule=is_molecule)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         return self.lennard_jones._log_prob(samples).squeeze(-1)
@@ -297,7 +297,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         elif self.n_particles == 55:
             min_energy = -380
-            max_energy = -220
+            max_energy = -180
         
 
         axs[1].hist(
