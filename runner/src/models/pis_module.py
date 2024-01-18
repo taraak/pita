@@ -255,6 +255,76 @@ class PISLitModule(LightningModule):
         :return: A tensor of logits.
         """
         return self.net(t, x)
+    
+    def fwd_traj(self):
+        start_time = 0.
+        end_time = self.time_range
+        dt = self.time_range / self.num_integration_steps
+
+        times = torch.linspace(
+            start_time, end_time, self.num_integration_steps + 1, device=self.device
+        )[:-1]
+
+        state = torch.zeros(
+            self.eval_batch_size, self.dim + 1, device=self.device
+        )
+
+        logpf = torch.zeros(self.eval_batch_size, device=self.device)
+        logpb = torch.zeros(self.eval_batch_size, device=self.device)
+
+        for t in times:
+            noise = torch.randn_like(state, device=self.device)
+            dx = self.pis_sde.f(t, state)
+            std = self.pis_sde.g(t, state)
+
+            state_ = state + dt * dx + std * noise * np.sqrt(dt)
+            logpf += -0.5 * (noise[..., :-1] ** 2 + logtwopi + np.log(dt) + torch.log(std[..., :-1] ** 2)).sum(1)
+
+            if t > 0:
+                back_mean = state_[..., :-1] - dt * state_[..., :-1] / (t + dt)
+                back_var = (self.pis_scale ** 2) * dt * t / (t + dt)
+                noise_backward = (state[..., :-1] - back_mean) / torch.sqrt(back_var)
+                logpb += -0.5 * (noise_backward ** 2 + logtwopi + torch.log(back_var)).sum(1)
+
+            state = state_
+        
+        return state[..., :-1], logpf, logpb
+    
+    def bwd_traj(self, data):
+        start_time = 0.
+        end_time = self.time_range
+        dt = self.time_range / self.num_integration_steps
+
+        times = torch.linspace(
+            end_time, start_time, self.num_integration_steps + 1, device=self.device
+        )[:-1]
+
+        log_pf = torch.zeros(data.shape[0], device=self.device)
+        log_pb = torch.zeros(data.shape[0], device=self.device)
+        state = data.clone().to(self.device)
+
+        with torch.no_grad():
+            for t in times:
+                if t > dt:
+                    back_mean = state - dt * state / t
+                    back_var = ((self.pis_scale ** 2) * dt * (t - dt)) / t
+                    noise = torch.randn_like(state, device=self.device)
+                    state_ = back_mean + torch.sqrt(back_var) * noise
+                    log_pb += -0.5 * (noise ** 2 + logtwopi + torch.log(back_var)).sum(1)
+                else:
+                    state_ = torch.zeros_like(state, device=self.device)
+
+                aug_state = torch.cat([state_, torch.zeros_like(state_[..., :1])], dim=-1)
+                forward_mean = self.pis_sde.f(t - dt, aug_state)[..., :-1]
+                forward_var = self.pis_sde.g(t - dt, aug_state)[..., :-1] ** 2
+    
+                noise = ((state - state_) - dt * forward_mean) / (np.sqrt(dt) * torch.sqrt(forward_var))
+                log_pf += -0.5 * (noise ** 2 + logtwopi + np.log(dt) + torch.log(forward_var)).sum(
+                    1)
+                
+                state = state_
+        
+        return log_pf, log_pb
 
     def pis_log_Z(self):
         start_time = 0.
@@ -301,45 +371,22 @@ class PISLitModule(LightningModule):
                 prog_bar=True,
             )
     
+    def gfn_log_Z(self):
+        state, log_pf, log_pb = self.fwd_traj()
+        log_r = self.energy_function(state)
+        log_weight = log_r - log_pf + log_pb
+        log_Z = logmeanexp(log_weight)
+        log_Z_lb = log_weight.mean()
+
+        return state, log_Z, log_Z_lb
+
     def get_elbo(self, data, num_evals=10):
         bsz = data.shape[0]
         data = data.view(bsz, 1, self.dim).repeat(1, num_evals, 1).view(bsz * num_evals, self.dim)
-        start_time = 0.
-        end_time = self.time_range
-        dt = self.time_range / self.num_integration_steps
-
-        times = torch.linspace(
-            end_time, start_time, self.num_integration_steps + 1, device=self.device
-        )[:-1]
-
-        log_pf = torch.zeros(data.shape[0], device=self.device)
-        log_pb = torch.zeros(data.shape[0], device=self.device)
-        state = data.clone().to(self.device)
-
-        with torch.no_grad():
-            for t in times:
-                if t > dt:
-                    back_mean = state - dt * state / t
-                    back_var = ((self.pis_scale ** 2) * dt * (t - dt)) / t
-                    state_ = back_mean + torch.sqrt(back_var) * torch.randn_like(state)
-                    noise_backward = (state_ - back_mean) / torch.sqrt(back_var)
-                    log_pb += -0.5 * (noise_backward ** 2 + logtwopi + torch.log(back_var)).sum(1)
-                else:
-                    state_ = torch.zeros_like(state, device=self.device)
-
-                aug_state = torch.cat([state_, torch.zeros_like(state[..., :1])], dim=-1)
-                forward_mean = self.pis_sde.f(t - dt, aug_state)[..., :-1]
-                forward_var = self.pis_sde.g(t - dt, aug_state)[..., :-1] ** 2
-    
-                noise = ((state - state_) - dt * forward_mean) / (np.sqrt(dt) * torch.sqrt(forward_var))
-                log_pf += -0.5 * (noise ** 2 + logtwopi + np.log(dt) + torch.log(forward_var)).sum(
-                    1)
-                
-                state = state_
-                
-            log_weight = (log_pf - log_pb).view(bsz, num_evals)
-            log_weight = logmeanexp(log_weight, dim=1).mean()
-            return log_weight
+        log_pf, log_pb = self.bwd_traj(data) 
+        log_weight = (log_pf - log_pb).view(bsz, num_evals)
+        log_weight = logmeanexp(log_weight, dim=1).mean()
+        return log_weight
 
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
         x0 = (
@@ -621,7 +668,11 @@ class PISLitModule(LightningModule):
 
         self.pis_log_Z()
         gfn_style_elbo = self.get_elbo(batch)
+        state, gfn_style_log_Z, gfn_style_log_Z_lb = self.gfn_log_Z()
+
         self.log(f"{prefix}/gfn_style_elbo", gfn_style_elbo, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(f"{prefix}/gfn_style_log_Z", gfn_style_log_Z, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(f"{prefix}/gfn_style_log_Z_lb", gfn_style_log_Z_lb, on_step=False, on_epoch=True, prog_bar=True)
 
         if self.nll_with_cfm:
             forwards_samples = self.compute_and_log_nll(
@@ -696,6 +747,10 @@ class PISLitModule(LightningModule):
 
     def eval_epoch_end(self, prefix: str):
         wandb_logger = get_wandb_logger(self.loggers)
+        state, _, _ = self.gfn_log_Z()
+        figure = self.energy_function.get_single_dataset_fig(state, "gfn_style_images")
+        wandb_logger.log_image(f"{prefix}gfn_style_images", [figure])
+
         # convert to dict of tensors assumes [batch, ...]
         outputs = {
             k: torch.cat([dic[k] for dic in self.eval_step_outputs], dim=0)
