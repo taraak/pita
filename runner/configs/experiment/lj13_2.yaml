@@ -26,8 +26,8 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01 #0.3
-    sigma_max: 5 #1.2
+    sigma_min: 0.01 
+    sigma_max: 5 
 
 
   partial_prior:
@@ -60,5 +60,7 @@ model:
 
   # this can be max 1000 cause test set is 1000
   num_samples_to_generate_per_epoch: 1000
+  eval_batch_size: 1000
 
   init_from_prior: true
+  nll_with_dem: true

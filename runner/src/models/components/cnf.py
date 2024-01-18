@@ -52,13 +52,14 @@ def hutchinson_divergence(self, f, x, dist='gaussian', grad_outputs=None):
         return div
 
 class CNF(torch.nn.Module):
-    def __init__(self, vf, is_diffusion, use_exact_likelihood=True):
+    def __init__(self, vf, is_diffusion, use_exact_likelihood=True, noise_schedule=None):
         super().__init__()
 
         self.vf = vf
         self.is_diffusion = is_diffusion
         self.use_exact_likelihood = use_exact_likelihood
         self.nfe = 0.0
+        self.noise_schedule = noise_schedule
 
     def forward(self, t, x):
         if self.nfe > 1000:
@@ -70,8 +71,11 @@ class CNF(torch.nn.Module):
             # If we use VP (or a different noising SDE) we need the
             # forward drift too.
             shaped_t = torch.ones(x.shape[0], device=x.device) * t
-            return self.vf(shaped_t, x) / (2.0 if self.is_diffusion else 1.0)
-
+            if self.is_diffusion:
+                return 0.5 * self.vf(shaped_t, x) * self.noise_schedule.g(t) **2 
+            else:
+                return self.vf(shaped_t, x) 
+            
         if self.use_exact_likelihood:
             dx = vecfield(x)
             div_fn = exact_div_fn
