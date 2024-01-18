@@ -66,8 +66,10 @@ model:
   diffusion_scale: 0.7
 
   num_init_samples: 1024
+
   num_samples_to_generate_per_epoch: 256
   num_samples_to_sample_from_buffer: 256
   eval_batch_size: 32
+
   nll_with_cfm: true
   init_from_prior: true

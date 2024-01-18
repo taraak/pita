@@ -126,6 +126,27 @@ class GMM(BaseEnergyFunction):
 
         self.curr_epoch += 1
 
+    def get_single_dataset_fig(self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40)):
+        if self.should_unnormalize:
+            samples = self.unnormalize(samples)
+        fig, ax = plt.subplots(1, 1, figsize=(12, 4))
+
+        self.gmm.to("cpu")
+        plot_contours(
+            self.gmm.log_prob,
+            bounds=plotting_bounds,
+            ax=ax,
+            n_contour_levels=50,
+            grid_width_n_points=200,
+        )
+
+        plot_marginal_pair(samples, ax=ax, bounds=plotting_bounds)
+        ax.set_title(f"{name}")
+
+        self.gmm.to(self.device)
+
+        return fig_to_image(fig)
+    
     def get_dataset_fig(
         self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40)
     ):

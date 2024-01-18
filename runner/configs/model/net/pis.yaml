@@ -12,3 +12,5 @@ f_func:
   input_dim: ${energy.dimensionality}
 nn_clip: 1e4
 lgv_clip: 1e4
+f_format: "t_tnet_grad"
+energy_function: ${energy}

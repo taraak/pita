@@ -63,4 +63,3 @@ model:
   eval_batch_size: 1000
 
   init_from_prior: true
-  nll_with_dem: true

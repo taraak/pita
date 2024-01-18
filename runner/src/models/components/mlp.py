@@ -1,4 +1,5 @@
 import torch
+import copy
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm
@@ -195,6 +196,8 @@ class TimeConder(nn.Module):
         self.layers[-1].bias.data.fill_(0.01)
 
     def forward(self, t):
+        if t.ndim < self.timestep_coeff.ndim:
+            t = t.unsqueeze(-1)
         sin_cond = torch.sin((self.timestep_coeff * t.float()) + self.timestep_phase)
         cos_cond = torch.cos((self.timestep_coeff * t.float()) + self.timestep_phase)
         cond = rearrange([sin_cond, cos_cond], "d b w -> b (d w)")

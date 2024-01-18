@@ -68,3 +68,5 @@ init_from_prior: false
 # compute the nll on the train data
 # this is in addition to buffer and test
 compute_nll_on_train_data: false
+
+use_buffer: true
