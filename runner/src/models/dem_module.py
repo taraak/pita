@@ -315,6 +315,7 @@ class DEMLitModule(LightningModule):
             if self.energy_function.is_molecule:
                 estimated_score = estimated_score.reshape(-1, self.energy_function.n_particles,
                                                           self.energy_function.n_spatial_dim)
+                
             estimated_score = self.clipper.clip_scores(estimated_score)
 
             if self.energy_function.is_molecule:
