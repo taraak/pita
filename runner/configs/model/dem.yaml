@@ -55,6 +55,8 @@ output_scaling_factor: null
 # compile model for faster training with pytorch 2.0
 compile: false
 
+use_richardsons: false
+
 cfm_loss_weight: 1.0
 use_ema: false
 

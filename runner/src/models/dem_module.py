@@ -26,7 +26,7 @@ from .components.prioritised_replay_buffer import (
     PrioritisedReplayBuffer,
 )
 from .components.scaling_wrapper import ScalingWrapper
-from .components.score_estimator import estimate_grad_Rt
+from .components.score_estimator import estimate_grad_Rt, wrap_for_richardsons
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
 from .components.sdes import PIS_SDE, VEReverseSDE
@@ -121,6 +121,7 @@ class DEMLitModule(LightningModule):
         cfm_prior_std: float,
         use_otcfm: bool,
         nll_integration_method: str,
+        use_richardsons: bool,
         compile: bool,
         prioritize_cfm_training_samples: bool = False,
         input_scaling_factor: Optional[float] = None,
@@ -186,7 +187,8 @@ class DEMLitModule(LightningModule):
             flow_matcher = ExactOptimalTransportConditionalFlowMatcher
 
         self.conditional_flow_matcher = flow_matcher(sigma=cfm_sigma)
-        # self.conditional_flow_matcher = ConditionalFlowMatcher(sigma=cfm_sigma)
+
+        self.nll_integration_method = nll_integration_method
 
         self.energy_function = energy_function
         self.noise_schedule = noise_schedule
@@ -195,8 +197,12 @@ class DEMLitModule(LightningModule):
 
         self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
 
+        grad_fxn = estimate_grad_Rt
+        if use_richardsons:
+            grad_fxn = wrap_for_richardsons(grad_fxn)
+
         self.clipper = clipper
-        self.clipped_grad_fxn = self.clipper.wrap_grad_fxn(estimate_grad_Rt)
+        self.clipped_grad_fxn = self.clipper.wrap_grad_fxn(grad_fxn)
 
         self.dem_train_loss = MeanMetric()
         self.cfm_train_loss = MeanMetric()
@@ -458,9 +464,15 @@ class DEMLitModule(LightningModule):
         # import time
 
         # start = time.time()
-        aug_output = cnf.integrate(aug_samples, num_integration_steps=1, method=method)[
-            -1
-        ]
+        num_integration_steps = self.num_integration_steps
+        if self.nll_integration_method == 'dopri5':
+            num_integration_steps = 1
+
+        aug_output = cnf.integrate(
+            aug_samples,
+            num_integration_steps=num_integration_steps,
+            method=self.nll_integration_method
+        )[-1]
         # end = time.time()
         #        print(
         #            f"cnf integration took {end - start:0.2f} for batch_size {samples.shape[0]} for {cnf.nfe} steps"
@@ -644,13 +656,17 @@ class DEMLitModule(LightningModule):
                 self.energy_function.dimensionality,
             )
 
+            num_integration_steps = self.num_integration_steps
+            if self.nll_integration_method == 'dopri5':
+                num_integration_steps = 2
+
             noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
             try:
                 traj = odeint(
                     reverse_wrapper(self.cfm_net),
                     noise,
-                    t=torch.linspace(0, 1, 2, device=self.device),
-                    method="dopri5",
+                    t=torch.linspace(0, 1, num_integration_steps, device=self.device),
+                    method=self.nll_integration_method,
                 )
                 return traj[-1]
             except (RuntimeError, AssertionError) as e:
