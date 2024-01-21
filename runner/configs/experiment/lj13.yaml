@@ -20,14 +20,17 @@ defaults:
   - override /model/net: egnn
 
 model:
-  # noise_schedule:
-  #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-  #   beta: 1.5
+  net:
+    hidden_nf: 128
 
   noise_schedule:
-    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01 #0.3
-    sigma_max: 10 #1.2
+    _target_: src.models.components.noise_schedules.LinearNoiseSchedule
+    beta: 7
+
+  # noise_schedule:
+  #   _target_: src.modviels.components.noise_schedules.GeometricNoiseSchedule
+  #   sigma_min: 0.01 #0.3
+  #   sigma_max: 10 #1.2
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -43,18 +46,19 @@ model:
   #   min_log_reward: null
 
   lambda_weighter:
-    _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
+    _target_: src.models.components.lambda_weighter.NoLambdaWeighter
     _partial_: true
 
   clipper:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
     should_clip_log_rewards: False
-    max_score_norm: 50
+    max_score_norm: 20
     min_log_reward: null
 
   # num_samples_to_sample_from_buffer: 5120
-  diffusion_scale: 0.4
+  diffusion_scale: 0.6
   num_samples_to_generate_per_epoch: 1000
+  num_samples_to_sample_from_buffer: 512
   
   init_from_prior: true
