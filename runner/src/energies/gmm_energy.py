@@ -126,10 +126,23 @@ class GMM(BaseEnergyFunction):
 
         self.curr_epoch += 1
 
-    def get_single_dataset_fig(self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40)):
-        if self.should_unnormalize:
+    def log_samples(
+        self,
+        samples: torch.Tensor,
+        wandb_logger: WandbLogger,
+        name: str = "",
+        should_unnormalize: bool = False,
+    ) -> None:
+        if wandb_logger is None:
+            return
+
+        if self.should_unnormalize and should_unnormalize:
             samples = self.unnormalize(samples)
-        fig, ax = plt.subplots(1, 1, figsize=(12, 4))
+        samples_fig = self.get_single_dataset_fig(samples, name)
+        wandb_logger.log_image(f"{name}", [samples_fig])
+
+    def get_single_dataset_fig(self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40)):
+        fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 
         self.gmm.to("cpu")
         plot_contours(
