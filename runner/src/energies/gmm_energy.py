@@ -26,6 +26,7 @@ class GMM(BaseEnergyFunction):
         should_unnormalize=False,
         data_normalization_factor=50,
         train_set_size=100000,
+        test_set_size = 2000
     ):
         use_gpu = device != "cpu"
         torch.manual_seed(0)  # seed of 0 for GMM problem
@@ -47,6 +48,7 @@ class GMM(BaseEnergyFunction):
         self.data_normalization_factor = data_normalization_factor
 
         self.train_set_size = train_set_size
+        self.test_set_size = test_set_size
 
         super().__init__(
             dimensionality=dimensionality,
@@ -55,6 +57,8 @@ class GMM(BaseEnergyFunction):
         )
 
     def setup_test_set(self):
+        # test_sample = self.gmm.sample((self.test_set_size,))
+        # return test_sample
         return self.gmm.test_set
 
     def setup_train_set(self):
