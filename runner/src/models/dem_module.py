@@ -328,7 +328,7 @@ class DEMLitModule(LightningModule):
             if self.energy_function.is_molecule:
                 estimated_score = estimated_score.reshape(-1, self.energy_function.n_particles,
                                                           self.energy_function.n_spatial_dim)
-                
+
             estimated_score = self.clipper.clip_scores(estimated_score)
 
             if self.energy_function.is_molecule:
@@ -592,7 +592,10 @@ class DEMLitModule(LightningModule):
             backwards_samples = backwards_samples[indices]
 
         if batch is None:
-            self.eval_step_outputs.append({"gen_0": backwards_samples})
+            self.eval_step_outputs.append({
+                "gen_0": self.energy_function.unnormalize(backwards_samples)
+            })
+
             return
 
         times = torch.rand(
@@ -610,12 +613,12 @@ class DEMLitModule(LightningModule):
         loss_metric(loss)
 
         self.log(
-            f"{prefix}/loss", loss_metric, on_step=False, on_epoch=True, prog_bar=True
+            f"{prefix}/loss", loss_metric, on_step=True, on_epoch=True, prog_bar=True
         )
 
         to_log = {
             "data_0": batch,
-            "gen_0": backwards_samples,
+            "gen_0": self.energy_function.unnormalize(backwards_samples),
         }
 
         # batch = self.energy_function.sample_test_set(
