@@ -3,7 +3,7 @@ _target_: src.models.pis_module.PISLitModule
 optimizer:
   _target_: torch.optim.Adam
   _partial_: true
-  lr: 5e-3
+  lr: 1e-3
   weight_decay: 1e-7
 
 scheduler:
@@ -18,6 +18,8 @@ net:
   _partial_: true
   num_layers: 2
   channels: 64
+  in_shape: ${energy.dimensionality}
+  out_shape: ${energy.dimensionality}
 
 tnet:
   _target_: src.models.components.mlp.TimeConder
@@ -25,6 +27,10 @@ tnet:
   channel: 64
   out_dim: 1
   num_layers: 3
+
+defaults:
+  - noise_schedule:
+    - geometric
 
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
@@ -43,10 +49,9 @@ num_init_samples: 1024
 num_estimator_mc_samples: 100
 num_samples_to_generate_per_epoch: 1024
 num_samples_to_sample_from_buffer: 512
-eval_batch_size: 10000
+eval_batch_size: 1024
 
 num_integration_steps: 100
-
 
 nll_with_cfm: true
 cfm_sigma: 0.0
@@ -66,4 +71,4 @@ use_ema: false
 debug_use_train_data: false
 
 pis_scale: 1.
-time_range: 5.0
+time_range: 1.
