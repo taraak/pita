@@ -40,10 +40,14 @@ model:
     _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
     _partial_: true
     epsilon: 1e-3
+    # _target_: src.models.components.lambda_weighter.NoLambdaWeighter
+    # _partial_: true
 
   diffusion_scale: 1.0
 
   num_samples_to_generate_per_epoch: 1000
 
-  eval_batch_size: 1000 
+  # this has to be max 1000 since test_set is 1000
+  eval_batch_size: 1000
+
 

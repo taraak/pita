@@ -62,7 +62,7 @@ class CNF(torch.nn.Module):
         self.noise_schedule = noise_schedule
 
     def forward(self, t, x):
-        if self.nfe > 1000:
+        if self.nfe > 3000:
             raise RuntimeError("Too many integration steps")
         if (self.nfe > 50) & (self.nfe % 100 == 0):
             print(f"Large NFE: {self.nfe}")
@@ -114,6 +114,15 @@ class CNF(torch.nn.Module):
             return odeint(self, x, t=time, method="euler")
 
     def generate(self, x, num_integration_steps: int, method="euler"):
+        def reverse_wrapper(model):
+            def fxn(t, x, args=None):
+                if t.ndim == 0:
+                    t = t.unsqueeze(0)
+
+                return model(t.repeat(len(x)), x)
+
+            return fxn
+
         end_time = 1 - int(self.is_diffusion)
         start_time = 1.0 - end_time
 
@@ -122,11 +131,13 @@ class CNF(torch.nn.Module):
         )
 
         try:
-            return odeint(self.vf, x, t=time, method=method, atol=1e-5, rtol=1e-5)
+            return odeint(reverse_wrapper(self.vf), x, t=time, method=method, atol=1e-5, rtol=1e-5)
 
         except (RuntimeError, AssertionError) as e:
             print(e)
             print("Falling back on fixed-step integration")
             self.nfe = 0.0
-            time = torch.linspace(start_time, end_time, 100 + 1, device=x.device)
-            return odeint(self, x, t=time, method="euler")
+            time = torch.linspace(
+                start_time, end_time, 100 + 1, device=x.device
+            )
+            return odeint(reverse_wrapper(self.vf), x, t=time, method="euler")

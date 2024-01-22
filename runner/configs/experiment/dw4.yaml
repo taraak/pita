@@ -6,37 +6,39 @@
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["LJ13"]
+tags: ["DW4"]
 
 seed: 12345
 
 logger:
   wandb:
     tags: ${tags}
-    group: "lj13"
+    group: "dw4"
+
 
 defaults: 
-  - override /energy: lj13
+  - override /energy: dw4
   - override /model/net: egnn
 
 model:
   net:
+    n_particles: 4
+    n_layers: 3
     hidden_nf: 128
+    n_dimension: 2
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-    beta: 7
-
-  # noise_schedule:
-  #   _target_: src.modviels.components.noise_schedules.GeometricNoiseSchedule
-  #   sigma_min: 0.01 #0.3
-  #   sigma_max: 10 #1.2
+    beta: 3
+    # _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+    # sigma_min: 0.01
+    # sigma_max: 5
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
-    n_particles: 13
-    spatial_dim: 3
+    n_particles: 4
+    spatial_dim: 2
 
   # clipper_gen:
   #   _target_: src.models.components.clipper.Clipper
@@ -53,12 +55,11 @@ model:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
     should_clip_log_rewards: False
-    max_score_norm: 20
+    max_score_norm: 100
     min_log_reward: null
 
   # num_samples_to_sample_from_buffer: 5120
-  diffusion_scale: 0.6
+  diffusion_scale: 1
   num_samples_to_generate_per_epoch: 1000
-  num_samples_to_sample_from_buffer: 512
   
   init_from_prior: true
