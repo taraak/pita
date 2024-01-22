@@ -10,4 +10,4 @@
   plot_samples_epoch_period: 1
 
   should_unnormalize: false
-  data_normalization_factor: 50
+  data_normalization_factor: 10
