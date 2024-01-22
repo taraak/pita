@@ -98,14 +98,16 @@ class GMM(BaseEnergyFunction):
             prefix += "/"
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
-            buffer_samples, _, _ = replay_buffer.sample(
+            if replay_buffer is not None:
+                buffer_samples, _, _ = replay_buffer.sample(
                 self.plotting_buffer_sample_size
-            )
+                )
 
             if self.should_unnormalize:
                 # Don't unnormalize CFM samples since they're in the
                 # unnormalized space
-                buffer_samples = self.unnormalize(buffer_samples)
+                if replay_buffer is not None:
+                    buffer_samples = self.unnormalize(buffer_samples)
                 latest_samples = self.unnormalize(latest_samples)
 
                 if unprioritized_buffer_samples is not None:
@@ -113,9 +115,10 @@ class GMM(BaseEnergyFunction):
                         unprioritized_buffer_samples
                     )
 
-            samples_fig = self.get_dataset_fig(buffer_samples, latest_samples)
+            if latest_samples is not None:
+                samples_fig = self.get_single_dataset_fig(latest_samples, 'samples')
 
-            wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
+                wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 
             if unprioritized_buffer_samples is not None:
                 cfm_samples_fig = self.get_dataset_fig(

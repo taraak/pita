@@ -17,9 +17,6 @@ defaults:
   - net:
     - mlp
 
-  - noise_schedule:
-    - geometric
-
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
   dim: ${energy.dimensionality}
@@ -75,3 +72,5 @@ init_from_prior: false
 compute_nll_on_train_data: false
 
 use_buffer: true
+
+logz_with_cfm: false

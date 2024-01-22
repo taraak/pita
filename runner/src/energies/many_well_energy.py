@@ -102,6 +102,75 @@ class ManyWell(BaseEnergyFunction):
 
         self.curr_epoch += 1
 
+    def log_samples(
+        self,
+        samples: torch.Tensor,
+        wandb_logger: WandbLogger,
+        name: str = "",
+        should_unnormalize: bool = False,
+    ) -> None:
+        if wandb_logger is None:
+            return
+
+        if self.should_unnormalize and should_unnormalize:
+            samples = self.unnormalize(samples)
+        samples_fig = self.get_single_dataset_fig(samples, name)
+        wandb_logger.log_image(f"{name}", [samples_fig])
+
+    def get_single_dataset_fig(self, samples, name, plotting_bounds=(-3, 3)):
+        n_rows = self.dimensionality // 2
+        fig, axs = plt.subplots(
+            self.dimensionality // 2,
+            1,
+            sharex=True,
+            sharey=True,
+            figsize=(5, n_rows * 3),
+        )
+
+        self.many_well.to("cpu")
+        if n_rows > 1:
+            for i in range(n_rows):
+                plot_contours(
+                    self.many_well.log_prob_2D,
+                    bounds=plotting_bounds,
+                    ax=axs[i],
+                    n_contour_levels=40,
+                )
+
+                # plot buffer samples
+                plot_marginal_pair(
+                    samples,
+                    ax=axs[i],
+                    bounds=plotting_bounds,
+                    marginal_dims=(i * 2, i * 2 + 1),
+                )
+
+                axs[i].set_xlabel(f"dim {i*2}")
+                axs[i].set_ylabel(f"dim {i*2 + 1}")
+        else:
+            plot_contours(
+                self.many_well.log_prob_2D,
+                bounds=plotting_bounds,
+                ax=axs,
+                n_contour_levels=40,
+            )
+
+            # plot buffer samples
+            plot_marginal_pair(
+                samples,
+                ax=axs,
+                bounds=plotting_bounds,
+                marginal_dims=(i * 2, i * 2 + 1),
+            )
+
+            axs.set_xlabel(f"dim {i*2}")
+            axs.set_ylabel(f"dim {i*2 + 1}")
+
+        plt.tight_layout()
+
+        self.many_well.to(self.device)
+        return fig_to_image(fig)
+
     def get_dataset_fig(self, samples, gen_samples=None, plotting_bounds=(-3, 3)):
         n_rows = self.dimensionality // 2
         fig, axs = plt.subplots(

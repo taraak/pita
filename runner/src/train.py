@@ -85,7 +85,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "callbacks": callbacks,
         "logger": logger,
         "trainer": trainer,
-        "energy_function": energy_function,
+        "energy": energy_function,
     }
 
     if logger:
