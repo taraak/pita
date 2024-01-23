@@ -10,7 +10,7 @@ defaults:
   - override /model/net: pis
 
 
-tags: ["many_well"]
+tags: ["lgcp"]
 
 seed: 12345
 
@@ -19,11 +19,19 @@ logger:
     tags: ${tags}
     group: "lgcp"
 
+
+data:
+  n_val_batches_per_epoch: 4
+
 model:
+  # noise_schedule:
+  #   _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+  #   sigma_min: 0.01
+  #   sigma_max: 10.0
+
   noise_schedule:
-    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01
-    sigma_max: 10.0
+    _target_: src.models.components.noise_schedules.LinearNoiseSchedule
+    beta: 5.0
 
   partial_prior:
     _target_: src.energies.base_prior.Prior
@@ -44,4 +52,13 @@ model:
 
   diffusion_scale: 1.0
 
-  num_samples_to_generate_per_epoch: 1000
+  num_init_samples: 1024
+  num_samples_to_generate_per_epoch: 64
+  num_samples_to_sample_from_buffer: 64
+  eval_batch_size: 32
+
+  init_from_prior: true
+
+  nll_with_cfm: false
+  nll_with_dem: false
+  logz_with_cfm: true

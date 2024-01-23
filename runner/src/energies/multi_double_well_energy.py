@@ -61,7 +61,6 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         return - self.multi_double_well.energy(samples).squeeze(-1)
 
     def setup_test_set(self):
-        # Following the Equivarinat FM paper for the partitions
         all_data = np.load(self.data_path, allow_pickle=True)
         # idx = all_data[1]
         # test_data = all_data[0][idx[-500000:]]

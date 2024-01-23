@@ -287,14 +287,7 @@ class DEMLitModule(LightningModule):
         return self.net(t, x)
 
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
-        x0 = (
-            torch.randn(
-                self.num_samples_to_sample_from_buffer,
-                self.energy_function.dimensionality,
-                device=self.device,
-            )
-            * self.cfm_prior_std
-        )
+        x0 = self.cfm_prior.sample(self.num_samples_to_sample_from_buffer)
         x1 = samples
         if not self.hparams.debug_use_train_data:
             x1 = self.energy_function.unnormalize(x1)
@@ -470,7 +463,6 @@ class DEMLitModule(LightningModule):
         prior,
         samples: torch.Tensor,
         num_integration_steps=1,
-        method="dopri5",
     ):
         aug_samples = torch.cat(
             [samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1
@@ -655,10 +647,10 @@ class DEMLitModule(LightningModule):
                 )
                 
         if self.logz_with_cfm:
-            # backwards_samples = self.cfm_cnf.generate(
-            #     self.cfm_prior.sample(self.eval_batch_size), 1
-            # )[-1]
-            backwards_samples = self.generate_cfm_samples(self.eval_batch_size)
+            backwards_samples = self.cfm_cnf.generate(
+                self.cfm_prior.sample(self.eval_batch_size), 1
+            )[-1]
+            # backwards_samples = self.generate_cfm_samples(self.eval_batch_size)
             self.compute_log_z(
                 self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
             )
@@ -691,7 +683,6 @@ class DEMLitModule(LightningModule):
             if self.nll_integration_method == 'dopri5':
                 num_integration_steps = 2
 
-            # noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
             noise = self.cfm_prior.sample(batch_size)
 
             try:
@@ -706,7 +697,7 @@ class DEMLitModule(LightningModule):
                 print(e)
                 print("Falling back on fixed-step integration")
                 self.nfe = 0.0
-                time = torch.linspace(0, 101, 2, device=self.device)
+                time = torch.linspace(0, 1, 1000+1, device=self.device)
                 return odeint(
                     reverse_wrapper(self.cfm_net), noise, t=time, method="euler"
                 )[-1]

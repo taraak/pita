@@ -23,14 +23,14 @@ model:
   net:
     hidden_nf: 128
 
-  noise_schedule:
-    _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-    beta: 7
-
   # noise_schedule:
-  #   _target_: src.modviels.components.noise_schedules.GeometricNoiseSchedule
-  #   sigma_min: 0.01 #0.3
-  #   sigma_max: 10 #1.2
+  #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
+  #   beta: 3
+
+  noise_schedule:
+    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+    sigma_min: 0.01 #0.3
+    sigma_max: 1 #1.2
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -62,3 +62,5 @@ model:
   num_samples_to_sample_from_buffer: 512
   
   init_from_prior: true
+
+  cfm_prior_std: 2

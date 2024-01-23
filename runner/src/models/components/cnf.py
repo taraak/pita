@@ -138,6 +138,6 @@ class CNF(torch.nn.Module):
             print("Falling back on fixed-step integration")
             self.nfe = 0.0
             time = torch.linspace(
-                start_time, end_time, 100 + 1, device=x.device
+                start_time, end_time, 1000 + 1, device=x.device
             )
             return odeint(reverse_wrapper(self.vf), x, t=time, method="euler")
