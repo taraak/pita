@@ -287,14 +287,7 @@ class DEMLitModule(LightningModule):
         return self.net(t, x)
 
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
-        x0 = (
-            torch.randn(
-                self.num_samples_to_sample_from_buffer,
-                self.energy_function.dimensionality,
-                device=self.device,
-            )
-            * self.cfm_prior_std
-        )
+        x0 = self.cfm_prior.sample(self.num_samples_to_sample_from_buffer)
         x1 = samples
         if not self.hparams.debug_use_train_data:
             x1 = self.energy_function.unnormalize(x1)
