@@ -29,8 +29,16 @@ def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
     # lj = lj * ~filter + filter * (energy_slope(p) * (r-p) +  ((1 / p) ** 12 - 2 * (1 / p) ** 6))
     return lj
 
-def energy_slope(r):
-    return 12 * (r**6 - 1)/r**13
+# def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
+#     p = 0.9
+#     lj = eps * ((rm / r) ** 12 - 2 * (rm / r) ** 6)
+#     filter = (r < p)
+
+#     lj = lj * ~filter + filter * (energy_slope(p) * (r-p) +  ((1 / p) ** 12 - 2 * (1 / p) ** 6))
+#     return lj
+
+# def energy_slope(r):
+#     return 12 * (r**6 - 1)/r**13
 
 
 class LennardJonesPotential(Energy):
@@ -258,6 +266,18 @@ class LennardJonesEnergy(BaseEnergyFunction):
                 )
 
         self.curr_epoch += 1
+
+    def log_samples(
+        self,
+        samples: torch.Tensor,
+        wandb_logger: WandbLogger,
+        name: str = "",
+    ) -> None:
+        if wandb_logger is None:
+            return
+
+        samples_fig = self.get_dataset_fig(samples)
+        wandb_logger.log_image(f"{name}", [samples_fig])
 
     def get_dataset_fig(self, samples):
         test_data_smaller = self.sample_test_set(1000)

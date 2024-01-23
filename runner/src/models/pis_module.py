@@ -5,7 +5,10 @@ import numpy as np
 import torch
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
+from torchdiffeq import odeint
+
 from torchcfm.conditional_flow_matching import (
+    ConditionalFlowMatcher,
     ExactOptimalTransportConditionalFlowMatcher,
 )
 from torchdyn.core import NeuralODE
@@ -121,6 +124,11 @@ class PISLitModule(LightningModule):
         cfm_sigma: float,
         cfm_prior_std: float,
         compile: bool,
+        nll_integration_method: str,
+        use_richardsons: bool,
+        logz_with_cfm: bool,
+        use_exact_likelihood=False,
+        use_buffer=True,
         prioritize_cfm_training_samples: bool = False,
         input_scaling_factor: Optional[float] = None,
         output_scaling_factor: Optional[float] = None,
@@ -136,6 +144,7 @@ class PISLitModule(LightningModule):
         debug_use_train_data=False,
         init_from_prior=False,
         compute_nll_on_train_data=False,
+        use_otcfm=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -154,9 +163,13 @@ class PISLitModule(LightningModule):
 
         self.nll_with_cfm = nll_with_cfm
         self.cfm_prior_std = cfm_prior_std
-        self.conditional_flow_matcher = ExactOptimalTransportConditionalFlowMatcher(
-            sigma=cfm_sigma
-        )
+        self.nll_integration_method = nll_integration_method
+
+        flow_matcher = ConditionalFlowMatcher
+        if use_otcfm:
+            flow_matcher = ExactOptimalTransportConditionalFlowMatcher
+
+        self.conditional_flow_matcher = flow_matcher(sigma=cfm_sigma)
 
         self.energy_function = energy_function
         self.buffer = buffer
@@ -171,7 +184,7 @@ class PISLitModule(LightningModule):
         self.tcond = tnet()
         self.net = net(energy_function=energy_function)
 
-        self.cfm_net = net(in_shape=self.dim, out_shape=self.dim, energy_function=energy_function)
+        self.cfm_net = net(energy_function=energy_function)
         if use_ema:
             self.net = EMAWrapper(self.net)
             self.cfm_net = EMAWrapper(self.cfm_net)
@@ -191,7 +204,7 @@ class PISLitModule(LightningModule):
             self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
             self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
 
-        self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False)
+        self.cfm_cnf = CNF(self.cfm_net, is_diffusion=False, use_exact_likelihood=use_exact_likelihood)
 
         self.num_init_samples = num_init_samples
         self.num_estimator_mc_samples = num_estimator_mc_samples
@@ -251,6 +264,7 @@ class PISLitModule(LightningModule):
             copy_x.requires_grad = True
             with torch.enable_grad():
                 # TODO: should it be _gt_disc or _disc
+                energy_output = self.energy_function(copy_x).sum()
                 self.energy_function(copy_x).sum().backward()
                 lgv_data = copy_x.grad.data
             return lgv_data
@@ -260,7 +274,7 @@ class PISLitModule(LightningModule):
         state = torch.nan_to_num(state)
         grad = torch.clip(self.score(state), -1e4, 1e4)
         f = torch.clip(self.net(t, state), -1e4, 1e4)
-        dx = f + self.tcond(t) * grad
+        dx = torch.nan_to_num(f + self.tcond(t) * grad)
         norm = 0.5 * (dx ** 2).sum(dim=1, keepdim=True)
         return torch.cat([dx * self.pis_scale, norm], dim=-1)
 
@@ -348,14 +362,15 @@ class PISLitModule(LightningModule):
         return new_state, uw_term
 
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
-        x0 = (
-            torch.randn(
-                self.num_samples_to_sample_from_buffer,
-                self.energy_function.dimensionality,
-                device=self.device,
-            )
-            * self.cfm_prior_std
-        )
+        x0 = self.cfm_prior.sample(self.num_samples_to_sample_from_buffer)
+        # x0 = (
+        #     torch.randn(
+        #         self.num_samples_to_sample_from_buffer,
+        #         self.energy_function.dimensionality,
+        #         device=self.device,
+        #     )
+        #     * self.cfm_prior_std
+        # )
         x1 = samples
 
         t, xt, ut = self.conditional_flow_matcher.sample_location_and_conditional_flow(
@@ -447,9 +462,15 @@ class PISLitModule(LightningModule):
             [samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1
         )
 
-        aug_output = cnf.integrate(aug_samples, num_integration_steps=1, method=method)[
-            -1
-        ]
+        num_integration_steps = self.num_integration_steps
+        if self.nll_integration_method == 'dopri5':
+            num_integration_steps = 1
+
+        aug_output = cnf.integrate(
+            aug_samples,
+            num_integration_steps=num_integration_steps,
+            method=self.nll_integration_method
+        )[-1]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
         log_p_1 = prior.log_prob(x_1)
         log_p_0 = log_p_1 + logdetjac
@@ -470,11 +491,11 @@ class PISLitModule(LightningModule):
         if self.should_train_cfm(batch_idx):
             if self.hparams.debug_use_train_data:
                 cfm_samples = self.energy_function.sample_train_set(
-                    self.num_samples_to_generate_per_epoch
+                    self.num_samples_to_sample_from_buffer
                 )
             else:
                 cfm_samples, _, _ = self.buffer.sample(
-                    self.num_samples_to_generate_per_epoch,
+                    self.num_samples_to_sample_from_buffer,
                     prioritize=self.prioritize_cfm_training_samples,
                 )
             times = torch.rand(
@@ -695,7 +716,8 @@ class PISLitModule(LightningModule):
             if self.nll_integration_method == 'dopri5':
                 num_integration_steps = 2
 
-            noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
+            # noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
+            noise = self.cfm_prior.sample(batch_size)
 
             try:
                 traj = odeint(
@@ -709,7 +731,7 @@ class PISLitModule(LightningModule):
                 print(e)
                 print("Falling back on fixed-step integration")
                 self.nfe = 0.0
-                time = torch.linspace(0, 101, 2, device=self.device)
+                time = torch.linspace(0, 1, 1000+1, device=self.device)
                 return odeint(
                     reverse_wrapper(self.cfm_net), noise, t=time, method="euler"
                 )[-1]
@@ -752,9 +774,7 @@ class PISLitModule(LightningModule):
         if self.nll_with_cfm:
             # Generate data from the CFM
             # Calculate logZ based on that data
-            cfm_samples = self.cfm_cnf.generate(
-                self.cfm_prior.sample(self.eval_batch_size), 1
-            )[-1]
+            cfm_samples = self.generate_cfm_samples(self.eval_batch_size)
             self.compute_log_z(
                 self.cfm_cnf, self.cfm_prior, cfm_samples, prefix, ""
             )

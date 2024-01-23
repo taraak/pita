@@ -109,6 +109,19 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         dist = torch.linalg.norm(distances, dim=-1)
         return dist
 
+    def log_samples(
+        self,
+        samples: torch.Tensor,
+        wandb_logger: WandbLogger,
+        name: str = "",
+    ) -> None:
+        if wandb_logger is None:
+            return
+
+        samples = self.unnormalize(samples)
+        samples_fig = self.get_dataset_fig(samples)
+        wandb_logger.log_image(f"{name}", [samples_fig])
+
     def log_on_epoch_end(
         self,
         latest_samples: torch.Tensor,

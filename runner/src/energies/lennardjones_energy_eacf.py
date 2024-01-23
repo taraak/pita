@@ -205,6 +205,18 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.curr_epoch += 1
 
+    def log_samples(
+        self,
+        samples: torch.Tensor,
+        wandb_logger: WandbLogger,
+        name: str = "",
+    ) -> None:
+        if wandb_logger is None:
+            return
+
+        samples_fig = self.get_dataset_fig(samples)
+        wandb_logger.log_image(f"{name}", [samples_fig])
+
     def get_dataset_fig(self, samples):
         test_data_smaller = self.sample_test_set(1000)
 
