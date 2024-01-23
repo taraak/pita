@@ -444,7 +444,7 @@ class DEMLitModule(LightningModule):
         diffusion_scale=1.0,
         no_grad=True,
     ) -> torch.Tensor:
-        
+
         trajectory = integrate_sde(
             reverse_sde or self.reverse_sde,
             samples,
@@ -481,10 +481,7 @@ class DEMLitModule(LightningModule):
             num_integration_steps=num_integration_steps,
             method=self.nll_integration_method
         )[-1]
-        # end = time.time()
-        #        print(
-        #            f"cnf integration took {end - start:0.2f} for batch_size {samples.shape[0]} for {cnf.nfe} steps"
-        #        )
+
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
         log_p_1 = prior.log_prob(x_1)
         log_p_0 = log_p_1 + logdetjac
@@ -515,7 +512,7 @@ class DEMLitModule(LightningModule):
         nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
             cnf, prior, samples
         )
-        # this is stupid we should fix the normalization in the energy function 
+        # this is stupid we should fix the normalization in the energy function
         logz = self.energy_function(self.energy_function.normalize(samples)) + nll
         logz_metric = getattr(self, f"{prefix}_{name}logz")
         logz_metric.update(logz)
@@ -586,7 +583,7 @@ class DEMLitModule(LightningModule):
 
         if batch is None:
             self.eval_step_outputs.append({
-                "gen_0": self.energy_function.unnormalize(backwards_samples)
+                "gen_0": backwards_samples
             })
 
             return
@@ -611,7 +608,7 @@ class DEMLitModule(LightningModule):
 
         to_log = {
             "data_0": batch,
-            "gen_0": self.energy_function.unnormalize(backwards_samples),
+            "gen_0": backwards_samples,
         }
 
         # batch = self.energy_function.sample_test_set(
@@ -649,7 +646,7 @@ class DEMLitModule(LightningModule):
                 forwards_samples = self.compute_and_log_nll(
                     self.cfm_cnf, self.cfm_prior, train_samples, prefix, "train_"
                 )
-                
+
         if self.logz_with_cfm:
             # backwards_samples = self.cfm_cnf.generate(
             #     self.cfm_prior.sample(self.eval_batch_size), 1

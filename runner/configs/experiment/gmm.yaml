@@ -21,8 +21,11 @@ logger:
 model:
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 4e-6
+    sigma_min: 0.000004
     sigma_max: 0.4
+
+  buffer:
+    prioritize: false
 
   partial_prior:
     _target_: src.energies.base_prior.Prior
@@ -43,6 +46,9 @@ model:
     # _target_: src.models.components.lambda_weighter.NoLambdaWeighter
     # _partial_: true
 
+  optimizer:
+    lr: 1e-3
+
   diffusion_scale: 1.0
 
   num_samples_to_generate_per_epoch: 1000
@@ -50,4 +56,5 @@ model:
   # this has to be max 1000 since test_set is 1000
   eval_batch_size: 1000
 
-
+trainer:
+  check_val_every_n_epoch: 5
