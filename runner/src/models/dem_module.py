@@ -606,6 +606,10 @@ class DEMLitModule(LightningModule):
             torch.randn_like(batch) * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
         )
 
+        if self.energy_function.is_molecule:
+            noised_batch = remove_mean(noised_batch, self.energy_function.n_particles,
+                                       self.energy_function.n_spatial_dim)
+
         loss = self.get_loss(times, noised_batch).mean(-1)
 
         # update and log metrics
@@ -657,10 +661,11 @@ class DEMLitModule(LightningModule):
                 )
                 
         if self.logz_with_cfm:
-            backwards_samples = self.cfm_cnf.generate(
-                self.cfm_prior.sample(self.eval_batch_size), 1
-            )[-1]
-            # backwards_samples = self.generate_cfm_samples(self.eval_batch_size)
+            # backwards_samples = self.cfm_cnf.generate(
+            #     self.cfm_prior.sample(self.eval_batch_size), 1000,
+            #     method=self.nll_integration_method
+            # )[-1]
+            backwards_samples = self.generate_cfm_samples(self.eval_batch_size)
             self.compute_log_z(
                 self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
             )
@@ -690,8 +695,8 @@ class DEMLitModule(LightningModule):
             )
 
             num_integration_steps = self.num_integration_steps
-            if self.nll_integration_method == 'dopri5':
-                num_integration_steps = 2
+            # if self.nll_integration_method == 'dopri5':
+            #     num_integration_steps = 2
 
             noise = self.cfm_prior.sample(batch_size)
 
@@ -699,7 +704,7 @@ class DEMLitModule(LightningModule):
                 traj = odeint(
                     reverse_wrapper(self.cfm_net),
                     noise,
-                    t=torch.linspace(0, 1, num_integration_steps, device=self.device),
+                    t=torch.linspace(0, 1, num_integration_steps+1, device=self.device),
                     method=self.nll_integration_method,
                 )
                 return traj[-1]
