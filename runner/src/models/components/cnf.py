@@ -103,14 +103,13 @@ class CNF(torch.nn.Module):
             start_time, end_time, num_integration_steps + 1, device=x.device
         )
         try:
-
             return odeint(self, x, t=time, method=method, atol=1e-5, rtol=1e-5)
 
         except (RuntimeError, AssertionError) as e:
             print(e)
             print("Falling back on fixed-step integration")
             self.nfe = 0.0
-            time = torch.linspace(start_time, end_time, 100 + 1, device=x.device)
+            time = torch.linspace(start_time, end_time, 1000 + 1, device=x.device)
             return odeint(self, x, t=time, method="euler")
 
     def generate(self, x, num_integration_steps: int, method="euler"):
