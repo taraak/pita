@@ -169,47 +169,36 @@ class LennardJonesEnergy(BaseEnergyFunction):
         return self.lennard_jones._log_prob(samples).squeeze(-1)
 
     def setup_test_set(self):
-        # Following the Equivarinat FM paper for the partitions
-        if self.n_particles == 13:
-            all_data = np.load(self.data_path, allow_pickle=True)
-            test_data = all_data[len(all_data) // 2 :]
-            test_data = remove_mean(
-                test_data, self.n_particles, self.n_spatial_dim
-            )
-            test_data = torch.tensor(test_data,
-                                     device=self.device)
-            del all_data
+        data = np.load(self.data_path_val, allow_pickle=True)
+        data = remove_mean(
+            data, self.n_particles, self.n_spatial_dim
+        )
+        data = torch.tensor(data,
+                            device=self.device)
+        return data
 
-        elif self.n_particles == 55:
-            test_data = np.load(self.data_path, allow_pickle=True)
-            test_data = remove_mean(
-                test_data, self.n_particles, self.n_spatial_dim
-            )
-            test_data = torch.tensor(test_data,
-                                     device=self.device)
-        return test_data
+
+    def setup_val_set(self):
+        if self.data_path_val is None:
+            raise ValueError("Data path for validation data is not provided")
+        data = np.load(self.data_path_val, allow_pickle=True)
+        data = remove_mean(
+            data, self.n_particles, self.n_spatial_dim
+        )
+        data = torch.tensor(data,
+                            device=self.device)
+        return data
 
     def setup_train_set(self):
-        if self.n_particles == 13:
-            all_data = np.load(self.data_path, allow_pickle=True)
-            train_data = all_data[: len(all_data) // 2]
-            train_data = remove_mean(
-                train_data, self.n_particles, self.n_spatial_dim
-            )
-            train_data = torch.tensor(train_data,
-                                    device=self.device)
-            del all_data
-            
-        elif self.n_particles == 55:
-            if self.data_path_train is None:
-                raise ValueError("Data path for training data is not provided")
-            train_data = np.load(self.data_path_train, allow_pickle=True)
-            train_data = remove_mean(
-                train_data, self.n_particles, self.n_spatial_dim
-            )
-            train_data = torch.tensor(train_data,
-                                    device=self.device)
-        return train_data
+        if self.data_path_train is None:
+            raise ValueError("Data path for training data is not provided")
+        data = np.load(self.data_path_val, allow_pickle=True)
+        data = remove_mean(
+            data, self.n_particles, self.n_spatial_dim
+        )
+        data = torch.tensor(data,
+                            device=self.device)
+        return data
 
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
