@@ -1,3 +1,5 @@
+from operator import is_
+from os import remove
 from typing import Any, Dict, Optional, Tuple
 
 import matplotlib.pyplot as plt
@@ -30,6 +32,8 @@ from .components.score_estimator import estimate_grad_Rt, wrap_for_richardsons
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
 from .components.sdes import VEReverseSDE
+
+from src.utils.data_utils import remove_mean
 
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
@@ -289,12 +293,14 @@ class DEMLitModule(LightningModule):
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
         x0 = self.cfm_prior.sample(self.num_samples_to_sample_from_buffer)
         x1 = samples
-        if not self.hparams.debug_use_train_data:
-            x1 = self.energy_function.unnormalize(x1)
+        x1 = self.energy_function.unnormalize(x1)
 
         t, xt, ut = self.conditional_flow_matcher.sample_location_and_conditional_flow(
             x0, x1
         )
+
+        if self.energy_function.is_molecule:
+            xt = remove_mean(xt, self.energy_function.n_particles, self.energy_function.n_spatial_dim)
 
         vt = self.cfm_net(t, xt)
         loss = (vt - ut).pow(2).mean(dim=-1)
@@ -356,6 +362,10 @@ class DEMLitModule(LightningModule):
                 torch.randn_like(iter_samples)
                 * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
             )
+
+            if self.energy_function.is_molecule:
+                noised_samples = remove_mean(noised_samples, self.energy_function.n_particles,
+                                            self.energy_function.n_spatial_dim)
 
             dem_loss = self.get_loss(times, noised_samples)
             self.log_dict(
@@ -449,12 +459,14 @@ class DEMLitModule(LightningModule):
             reverse_sde or self.reverse_sde,
             samples,
             self.num_integration_steps + 1,
+            self.energy_function,
             diffusion_scale=diffusion_scale,
             reverse_time=reverse_time,
             no_grad=no_grad,
         )
         if return_full_trajectory:
             return trajectory
+        
         return trajectory[-1]
 
     def compute_nll(
@@ -469,7 +481,6 @@ class DEMLitModule(LightningModule):
         )
 
         # import time
-
         # start = time.time()
         num_integration_steps = self.num_integration_steps
         if self.nll_integration_method == 'dopri5':
@@ -636,7 +647,6 @@ class DEMLitModule(LightningModule):
                 forwards_samples = self.compute_and_log_nll(
                     self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
                 )
-
 
             if self.compute_nll_on_train_data:
                 train_samples = self.energy_function.sample_train_set(
