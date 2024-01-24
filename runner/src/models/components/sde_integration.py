@@ -68,13 +68,13 @@ def integrate_sde(
                 )
                 if energy_function.is_molecule:
                     x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
-                    samples.append(x)
+                samples.append(x)
     else:
         for t in times:
             x, f = euler_maruyama_step(
                 sde, t, x, time_range / num_integration_steps, diffusion_scale
             )
-            if is_molecule:
+            if energy_function.is_molecule:
                 x = remove_mean(x)
             samples.append(x)
 
