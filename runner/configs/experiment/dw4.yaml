@@ -15,7 +15,6 @@ logger:
     tags: ${tags}
     group: "dw4"
 
-
 defaults: 
   - override /energy: dw4
   - override /model/net: egnn
@@ -28,24 +27,18 @@ model:
     n_dimension: 2
 
   noise_schedule:
-    _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-    beta: 3
-    # _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    # sigma_min: 0.01
-    # sigma_max: 5
+    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+    sigma_min: 0.01
+    sigma_max: 5
+  # noise_schedule:
+  #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
+  #   beta: 3
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
     n_particles: 4
     spatial_dim: 2
-
-  # clipper_gen:
-  #   _target_: src.models.components.clipper.Clipper
-  #   should_clip_scores: True
-  #   should_clip_log_rewards: False
-  #   max_score_norm: 100
-  #   min_log_reward: null
 
   lambda_weighter:
     _target_: src.models.components.lambda_weighter.NoLambdaWeighter
@@ -55,7 +48,7 @@ model:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
     should_clip_log_rewards: False
-    max_score_norm: 100
+    max_score_norm: 30
     min_log_reward: null
 
   # num_samples_to_sample_from_buffer: 5120
@@ -63,3 +56,11 @@ model:
   num_samples_to_generate_per_epoch: 1000
   
   init_from_prior: true
+
+  eval_batch_size: 1000
+
+  nll_integration_method: dopri5
+  cfm_prior_std: 2.
+  logz_with_cfm: true
+
+  num_estimator_mc_samples: 1000

@@ -1,3 +1,5 @@
+from operator import is_
+from os import remove
 from typing import Any, Dict, Optional, Tuple
 
 import matplotlib.pyplot as plt
@@ -30,6 +32,8 @@ from .components.score_estimator import estimate_grad_Rt, wrap_for_richardsons
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
 from .components.sdes import VEReverseSDE
+
+from src.utils.data_utils import remove_mean
 
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
@@ -117,6 +121,7 @@ class DEMLitModule(LightningModule):
         lr_scheduler_update_frequency: int,
         nll_with_cfm: bool,
         nll_with_dem: bool,
+        nll_on_buffer: bool,
         logz_with_cfm: bool,
         cfm_sigma: float,
         cfm_prior_std: float,
@@ -182,6 +187,7 @@ class DEMLitModule(LightningModule):
 
         self.nll_with_cfm = nll_with_cfm
         self.nll_with_dem = nll_with_dem
+        self.nll_on_buffer = nll_on_buffer
         self.logz_with_cfm = logz_with_cfm
         self.cfm_prior_std = cfm_prior_std
         self.compute_nll_on_train_data = compute_nll_on_train_data
@@ -190,6 +196,7 @@ class DEMLitModule(LightningModule):
         if use_otcfm:
             flow_matcher = ExactOptimalTransportConditionalFlowMatcher
 
+        self.cfm_sigma = cfm_sigma
         self.conditional_flow_matcher = flow_matcher(sigma=cfm_sigma)
 
         self.nll_integration_method = nll_integration_method
@@ -289,13 +296,15 @@ class DEMLitModule(LightningModule):
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
         x0 = self.cfm_prior.sample(self.num_samples_to_sample_from_buffer)
         x1 = samples
-        if not self.hparams.debug_use_train_data:
-            x1 = self.energy_function.unnormalize(x1)
+        x1 = self.energy_function.unnormalize(x1)
 
         t, xt, ut = self.conditional_flow_matcher.sample_location_and_conditional_flow(
             x0, x1
         )
 
+        if self.energy_function.is_molecule and self.cfm_sigma!=0:
+            xt = remove_mean(xt, self.energy_function.n_particles, self.energy_function.n_spatial_dim)
+            
         vt = self.cfm_net(t, xt)
         loss = (vt - ut).pow(2).mean(dim=-1)
 
@@ -356,6 +365,10 @@ class DEMLitModule(LightningModule):
                 torch.randn_like(iter_samples)
                 * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
             )
+
+            if self.energy_function.is_molecule:
+                noised_samples = remove_mean(noised_samples, self.energy_function.n_particles,
+                                            self.energy_function.n_spatial_dim)
 
             dem_loss = self.get_loss(times, noised_samples)
             self.log_dict(
@@ -448,13 +461,15 @@ class DEMLitModule(LightningModule):
         trajectory = integrate_sde(
             reverse_sde or self.reverse_sde,
             samples,
-            self.num_integration_steps + 1,
+            self.num_integration_steps,
+            self.energy_function,
             diffusion_scale=diffusion_scale,
             reverse_time=reverse_time,
             no_grad=no_grad,
         )
         if return_full_trajectory:
             return trajectory
+        
         return trajectory[-1]
 
     def compute_nll(
@@ -463,14 +478,12 @@ class DEMLitModule(LightningModule):
         prior,
         samples: torch.Tensor,
         num_integration_steps=1,
-        method="dopri5",
     ):
         aug_samples = torch.cat(
             [samples, torch.zeros(samples.shape[0], 1, device=samples.device)], dim=-1
         )
 
         # import time
-
         # start = time.time()
         num_integration_steps = self.num_integration_steps
         if self.nll_integration_method == 'dopri5':
@@ -563,9 +576,14 @@ class DEMLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        batch = self.energy_function.sample_test_set(
-            self.eval_batch_size
-        )
+        if prefix == "test":
+            batch = self.energy_function.sample_test_set(
+                self.eval_batch_size
+            )
+        elif prefix == "val":
+            batch = self.energy_function.sample_test_set(
+                self.eval_batch_size
+            )
 
         backwards_samples = self.last_samples
 
@@ -596,6 +614,10 @@ class DEMLitModule(LightningModule):
             torch.randn_like(batch) * self.noise_schedule.h(times).sqrt().unsqueeze(-1)
         )
 
+        if self.energy_function.is_molecule:
+            noised_batch = remove_mean(noised_batch, self.energy_function.n_particles,
+                                       self.energy_function.n_spatial_dim)
+
         loss = self.get_loss(times, noised_batch).mean(-1)
 
         # update and log metrics
@@ -620,7 +642,7 @@ class DEMLitModule(LightningModule):
             )
             to_log["gen_1_dem"] = forwards_samples
             self.compute_log_z(
-                self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, "dem_"
+                self.cfm_cnf, self.prior, backwards_samples, prefix, "dem_"
             )
         if self.nll_with_cfm:
             forwards_samples = self.compute_and_log_nll(
@@ -633,11 +655,10 @@ class DEMLitModule(LightningModule):
             )
 
             # compute nll on buffer if not training cfm only
-            if not self.hparams.debug_use_train_data:
+            if not self.hparams.debug_use_train_data and self.nll_on_buffer:
                 forwards_samples = self.compute_and_log_nll(
                     self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
                 )
-
 
             if self.compute_nll_on_train_data:
                 train_samples = self.energy_function.sample_train_set(
@@ -648,10 +669,12 @@ class DEMLitModule(LightningModule):
                 )
 
         if self.logz_with_cfm:
-            # backwards_samples = self.cfm_cnf.generate(
-            #     self.cfm_prior.sample(self.eval_batch_size), 1
-            # )[-1]
-            backwards_samples = self.generate_cfm_samples(self.eval_batch_size)
+            backwards_samples = self.cfm_cnf.generate(
+                self.cfm_prior.sample(self.eval_batch_size),
+                self.num_integration_steps,
+                method=self.nll_integration_method
+            )[-1]
+            # backwards_samples = self.generate_cfm_samples(self.eval_batch_size)
             self.compute_log_z(
                 self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
             )
@@ -682,16 +705,15 @@ class DEMLitModule(LightningModule):
 
             num_integration_steps = self.num_integration_steps
             if self.nll_integration_method == 'dopri5':
-                num_integration_steps = 2
+                num_integration_steps = 1
 
-            # noise = torch.randn(shape, device=self.device) * self.cfm_prior_std
             noise = self.cfm_prior.sample(batch_size)
 
             try:
                 traj = odeint(
                     reverse_wrapper(self.cfm_net),
                     noise,
-                    t=torch.linspace(0, 1, num_integration_steps, device=self.device),
+                    t=torch.linspace(0, 1, num_integration_steps+1, device=self.device),
                     method=self.nll_integration_method,
                 )
                 return traj[-1]
@@ -699,7 +721,7 @@ class DEMLitModule(LightningModule):
                 print(e)
                 print("Falling back on fixed-step integration")
                 self.nfe = 0.0
-                time = torch.linspace(0, 101, 2, device=self.device)
+                time = torch.linspace(0, 1, 1000+1, device=self.device)
                 return odeint(
                     reverse_wrapper(self.cfm_net), noise, t=time, method="euler"
                 )[-1]
@@ -740,7 +762,12 @@ class DEMLitModule(LightningModule):
                 prioritize=self.prioritize_cfm_training_samples,
             )
 
-            cfm_samples = self.generate_cfm_samples(self.eval_batch_size)
+            # cfm_samples = self.generate_cfm_samples(self.eval_batch_size)
+            cfm_samples = self.cfm_cnf.generate(
+                self.cfm_prior.sample(self.eval_batch_size),
+                self.num_integration_steps,
+                method=self.nll_integration_method
+            )[-1]
 
             self.energy_function.log_on_epoch_end(
                 self.last_samples,
@@ -767,7 +794,7 @@ class DEMLitModule(LightningModule):
         self.eval_epoch_end("val")
 
     def on_test_epoch_end(self) -> None:
-        self.eval_epoch_end("test")
+        self("test")
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

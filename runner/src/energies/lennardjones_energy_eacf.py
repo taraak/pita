@@ -180,7 +180,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         wandb_logger: WandbLogger,
         prefix: str = "",
     ) -> None:
-        return
 
         if latest_samples is None:
             return

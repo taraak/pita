@@ -33,7 +33,7 @@ hydra:
     direction: minimize
 
     # total number of runs that will be executed
-    n_trials: 200
+    n_trials: 400
 
     # choose Optuna hyperparameter sampler
     # you can choose bayesian sampler (tpe), random search (without optimization), grid sampler, and others
@@ -45,6 +45,9 @@ hydra:
 
     # define hyperparameter search space
     params:
-      model.diffusion_scale: choice(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)
-      model.noise_schedule.sigma_min: choice(1e-3, 1e-3, 1e-2, 1e-1, 0.5, 1) 
-      model.noise_schedule.sigma_max: choice(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+      model.clipper.max_score_norm: choice(20, 30, 40, 50, 60, 70, 80, 90, 100)
+      #model.cfm_prior_std: choice(1, 2, 3) #choice(1, 2, 3, 4, 5)    
+      model.diffusion_scale: choice(0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)
+      #model.noise_schedule.beta: choice(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+      model.noise_schedule.sigma_min: choice(1e-5, 1e-4, 1e-3, 1e-2, 1e-1) 
+      model.noise_schedule.sigma_max: choice(1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5)

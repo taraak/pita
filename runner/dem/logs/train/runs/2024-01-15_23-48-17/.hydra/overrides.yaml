@@ -1,0 +1,3 @@
+- experiment=lj55
+- trainer=gpu
+- logger=csv

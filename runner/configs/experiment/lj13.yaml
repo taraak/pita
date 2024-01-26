@@ -21,16 +21,17 @@ defaults:
 
 model:
   net:
+    n_layers: 5
     hidden_nf: 128
 
-  noise_schedule:
-    _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-    beta: 7
-
   # noise_schedule:
-  #   _target_: src.modviels.components.noise_schedules.GeometricNoiseSchedule
-  #   sigma_min: 0.01 #0.3
-  #   sigma_max: 10 #1.2
+  #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
+  #   beta: 3
+
+  noise_schedule:
+    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+    sigma_min: 0.01 #0.3
+    sigma_max: 2 #1.2
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -57,8 +58,15 @@ model:
     min_log_reward: null
 
   # num_samples_to_sample_from_buffer: 5120
-  diffusion_scale: 0.6
+  diffusion_scale: 0.9
   num_samples_to_generate_per_epoch: 1000
   num_samples_to_sample_from_buffer: 512
   
   init_from_prior: true
+
+  cfm_prior_std: 2
+  nll_integration_method: dopri5
+  logz_with_cfm: true
+
+  num_estimator_mc_samples: 1000
+

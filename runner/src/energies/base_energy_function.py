@@ -111,6 +111,10 @@ class BaseEnergyFunction(ABC):
     @property
     def test_set(self) -> Optional[torch.Tensor]:
         return self._test_set
+    
+    @property
+    def val_set(self) -> Optional[torch.Tensor]:
+        return self._val_set
 
     @property
     def train_set(self) -> Optional[torch.Tensor]:

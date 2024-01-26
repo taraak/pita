@@ -2,6 +2,8 @@ import numpy as np
 import torch
 
 from src.models.components.sdes import VEReverseSDE
+from src.utils.data_utils import remove_mean
+from src.energies.base_energy_function import BaseEnergyFunction
 
 
 def euler_maruyama_step(
@@ -43,10 +45,11 @@ def integrate_sde(
     sde: VEReverseSDE,
     x0: torch.Tensor,
     num_integration_steps: int,
+    energy_function: BaseEnergyFunction,
     reverse_time: bool = True,
     diffusion_scale=1.0,
     no_grad=True,
-    time_range=1.0
+    time_range=1.0,
 ):
     start_time = time_range if reverse_time else 0.0
     end_time = time_range - start_time
@@ -63,12 +66,16 @@ def integrate_sde(
                 x, f = euler_maruyama_step(
                     sde, t, x, time_range / num_integration_steps, diffusion_scale
                 )
+                if energy_function.is_molecule:
+                    x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
                 samples.append(x)
     else:
         for t in times:
             x, f = euler_maruyama_step(
                 sde, t, x, time_range / num_integration_steps, diffusion_scale
             )
+            if energy_function.is_molecule:
+                x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
             samples.append(x)
 
     return torch.stack(samples)
