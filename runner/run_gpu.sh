@@ -12,8 +12,8 @@ export seed=62;
 
 
 
-#python src/train.py experiment=lj55 trainer=gpu model.debug_use_train_data=True
-python src/train.py experiment=dw4 trainer=gpu model.debug_use_train_data=True
-#python src/train.py experiment=lj13 trainer=gpu model.cfm_prior_std=3 model.use_otcfm=True
+#python src/train.py experiment=lj55 trainer=gpu #model.debug_use_train_data=True
+#python src/train.py experiment=dw4 trainer=gpu #model.debug_use_train_data=True 
+python src/train.py experiment=lj13 trainer=gpu #model.debug_use_train_data=True #model.cfm_prior_std=3 model.use_otcfm=True
 #python src/train.py experiment=gmm trainer=gpu model.logz_with_cfm=True
 
