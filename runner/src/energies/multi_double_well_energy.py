@@ -19,6 +19,9 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         dimensionality,
         n_particles,
         data_path,
+        data_path_train=None,
+        data_path_val=None,
+        data_from_efm=True, #if False, data from EFM
         device="cpu",
         plot_samples_epoch_period=5,
         plotting_buffer_sample_size=512,
@@ -37,7 +40,17 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
+        self.data_from_efm = data_from_efm
+
+        if self.data_from_efm:
+            if data_path_train is None:
+                raise ValueError("DW4 is from EFM. No train data path provided")
+            if data_path_val is None:
+                raise ValueError("DW4 is from EFM. No val data path provided")
+
         self.data_path = data_path
+        self.data_path_train = data_path_train
+        self.data_path_val = data_path_val
 
         self.device = device
 
@@ -61,37 +74,48 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         return - self.multi_double_well.energy(samples).squeeze(-1)
 
     def setup_test_set(self):
-        all_data = np.load(self.data_path, allow_pickle=True)
-        # idx = all_data[1]
-        # test_data = all_data[0][idx[-500000:]]
-        test_data = all_data[0][-self.test_set_size:]
-        test_data = remove_mean(
-            test_data, self.n_particles, self.n_spatial_dim
-        ).to(self.device)
-        del all_data
-        return test_data
+        if self.data_from_efm:
+            data = np.load(self.data_path, allow_pickle=True)
+
+        else:
+            all_data = np.load(self.data_path, allow_pickle=True)
+            data = all_data[0][-self.test_set_size:]
+            del all_data
+        
+        data = remove_mean(
+            torch.tensor(data), self.n_particles, self.n_spatial_dim
+            ).to(self.device)
+        
+        return data
 
     def setup_train_set(self):
-        all_data = np.load(self.data_path, allow_pickle=True)
-        # idx = all_data[1]
-        # train_data = all_data[0][idx[:100000]]
-        train_data = all_data[0][:self.train_set_size]        
-        train_data = remove_mean(
-            train_data, self.n_particles, self.n_spatial_dim
+        if self.data_from_efm:
+            data = np.load(self.data_path_train, allow_pickle=True)
+
+        else:
+            all_data = np.load(self.data_path, allow_pickle=True)
+            data = all_data[0][:self.train_set_size]        
+            del all_data
+
+        data = remove_mean(
+            torch.tensor(data), self.n_particles, self.n_spatial_dim
         ).to(self.device)
-        del all_data
-        return train_data
+
+        return data
     
     def setup_val_set(self):
-        all_data = np.load(self.data_path, allow_pickle=True)
-        # idx = all_data[1]
-        # val_data = all_data[0][idx[100000:500000]]
-        val_data = all_data[0][-self.test_set_size - self.val_set_size : -self.test_set_size]
-        val_data = remove_mean(
-            val_data, self.n_particles, self.n_spatial_dim
+        if self.data_from_efm:
+            data = np.load(self.data_path_val, allow_pickle=True)
+
+        else:
+            all_data = np.load(self.data_path, allow_pickle=True)
+            data = all_data[0][-self.test_set_size - self.val_set_size : -self.test_set_size]
+            del all_data
+
+        data = remove_mean(
+            torch.tensor(data), self.n_particles, self.n_spatial_dim
         ).to(self.device)
-        del all_data
-        return val_data
+        return data
 
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.multi_double_well.event_shape)]

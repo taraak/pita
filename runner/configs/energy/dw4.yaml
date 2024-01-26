@@ -2,7 +2,14 @@
 
   dimensionality: 8
   n_particles: 4
-  data_path: "../data/dw4-dataidx.npy"
+
+  data_path: "../data/test_split_DW4.npy"
+  data_path_train: "../data/train_split_DW4.npy"
+  data_path_val: "../data/val_split_DW4.npy"
+
+  # Uncomment these if data from EACF
+  # data_from_efm: false
+  # data_path: "../data/dw4-dataidx.npy"
 
   device: ${trainer.accelerator}
 
