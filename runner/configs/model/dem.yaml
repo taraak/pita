@@ -41,6 +41,7 @@ num_integration_steps: 1000
 nll_integration_method: euler
 nll_with_cfm: true
 nll_with_dem: false
+nll_on_buffer: false
 cfm_sigma: 0.0
 cfm_prior_std: ${energy.data_normalization_factor}
 use_otcfm: false
@@ -73,3 +74,4 @@ compute_nll_on_train_data: false
 use_buffer: true
 
 logz_with_cfm: false
+
