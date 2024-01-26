@@ -581,7 +581,7 @@ class DEMLitModule(LightningModule):
                 self.eval_batch_size
             )
         elif prefix == "val":
-            batch = self.energy_function.sample_test_set(
+            batch = self.energy_function.sample_val_set(
                 self.eval_batch_size
             )
 
