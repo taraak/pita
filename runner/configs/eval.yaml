@@ -2,13 +2,17 @@
 
 defaults:
   - _self_
-  - data: mnist # choose datamodule with `test_dataloader()` for evaluation
-  - model: mnist
-  - logger: null
+  - data: dummy # choose datamodule with `test_dataloader()` for evaluation
+  - energy: gmm
+  - model: dem
+  - launcher: null
+  - logger: wandb
   - trainer: default
   - paths: default
   - extras: default
   - hydra: default
+
+  - experiment: gmm
 
 task_name: "eval"
 

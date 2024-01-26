@@ -50,8 +50,11 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
 
+    log.info(f"Instantiating energy function <{cfg.energy._target_}>")
+    energy_function = hydra.utils.instantiate(cfg.energy)
+
     log.info(f"Instantiating model <{cfg.model._target_}>")
-    model: LightningModule = hydra.utils.instantiate(cfg.model)
+    model: LightningModule = hydra.utils.instantiate(cfg.model, energy_function=energy_function)
 
     log.info("Instantiating loggers...")
     logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
@@ -65,6 +68,7 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "model": model,
         "logger": logger,
         "trainer": trainer,
+        "energy": energy_function,
     }
 
     if logger:
