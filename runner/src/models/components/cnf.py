@@ -62,7 +62,7 @@ class CNF(torch.nn.Module):
         self.noise_schedule = noise_schedule
 
     def forward(self, t, x):
-        if self.nfe > 3000:
+        if self.nfe > 1000:
             raise RuntimeError("Too many integration steps")
         if (self.nfe > 50) & (self.nfe % 100 == 0):
             print(f"Large NFE: {self.nfe}")
@@ -119,8 +119,10 @@ class CNF(torch.nn.Module):
                     t = t.unsqueeze(0)
 
                 return model(t.repeat(len(x)), x)
-
             return fxn
+        
+        if method == 'dopri5':
+            num_integration_steps = 1
 
         end_time = 1 - int(self.is_diffusion)
         start_time = 1.0 - end_time

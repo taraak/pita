@@ -121,6 +121,7 @@ class DEMLitModule(LightningModule):
         lr_scheduler_update_frequency: int,
         nll_with_cfm: bool,
         nll_with_dem: bool,
+        nll_on_buffer: bool,
         logz_with_cfm: bool,
         cfm_sigma: float,
         cfm_prior_std: float,
@@ -186,6 +187,7 @@ class DEMLitModule(LightningModule):
 
         self.nll_with_cfm = nll_with_cfm
         self.nll_with_dem = nll_with_dem
+        self.nll_on_buffer = nll_on_buffer
         self.logz_with_cfm = logz_with_cfm
         self.cfm_prior_std = cfm_prior_std
         self.compute_nll_on_train_data = compute_nll_on_train_data
@@ -640,7 +642,7 @@ class DEMLitModule(LightningModule):
             )
             to_log["gen_1_dem"] = forwards_samples
             self.compute_log_z(
-                self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, "dem_"
+                self.cfm_cnf, self.prior, backwards_samples, prefix, "dem_"
             )
         if self.nll_with_cfm:
             forwards_samples = self.compute_and_log_nll(
@@ -653,7 +655,7 @@ class DEMLitModule(LightningModule):
             )
 
             # compute nll on buffer if not training cfm only
-            if not self.hparams.debug_use_train_data:
+            if not self.hparams.debug_use_train_data and self.nll_on_buffer:
                 forwards_samples = self.compute_and_log_nll(
                     self.cfm_cnf, self.cfm_prior, iter_samples, prefix, "buffer_"
                 )
@@ -667,11 +669,12 @@ class DEMLitModule(LightningModule):
                 )
                 
         if self.logz_with_cfm:
-            # backwards_samples = self.cfm_cnf.generate(
-            #     self.cfm_prior.sample(self.eval_batch_size), 1000,
-            #     method=self.nll_integration_method
-            # )[-1]
-            backwards_samples = self.generate_cfm_samples(self.eval_batch_size)
+            backwards_samples = self.cfm_cnf.generate(
+                self.cfm_prior.sample(self.eval_batch_size),
+                self.num_integration_steps,
+                method=self.nll_integration_method
+            )[-1]
+            # backwards_samples = self.generate_cfm_samples(self.eval_batch_size)
             self.compute_log_z(
                 self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
             )
@@ -759,7 +762,12 @@ class DEMLitModule(LightningModule):
                 prioritize=self.prioritize_cfm_training_samples,
             )
 
-            cfm_samples = self.generate_cfm_samples(self.eval_batch_size)
+            # cfm_samples = self.generate_cfm_samples(self.eval_batch_size)
+            cfm_samples = self.cfm_cnf.generate(
+                self.cfm_prior.sample(self.eval_batch_size),
+                self.num_integration_steps,
+                method=self.nll_integration_method
+            )[-1]
 
             self.energy_function.log_on_epoch_end(
                 self.last_samples,
