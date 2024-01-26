@@ -75,7 +75,7 @@ def integrate_sde(
                 sde, t, x, time_range / num_integration_steps, diffusion_scale
             )
             if energy_function.is_molecule:
-                x = remove_mean(x)
+                x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
             samples.append(x)
 
     return torch.stack(samples)

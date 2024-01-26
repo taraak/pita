@@ -35,8 +35,8 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01
-    sigma_max: 5
+    sigma_min: 0.5
+    sigma_max: 4
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -62,12 +62,13 @@ model:
     max_score_norm: 20
     min_log_reward: null
 
-  diffusion_scale: 0.7
+  diffusion_scale: 0.5
 
   num_init_samples: 1024
-  num_samples_to_generate_per_epoch: 128
-  num_samples_to_sample_from_buffer: 128
-  eval_batch_size: 16
+  num_samples_to_generate_per_epoch: 256
+  num_samples_to_sample_from_buffer: 256
+  eval_batch_size: 32
 
   nll_with_cfm: true
   init_from_prior: true
+  logz_with_cfm: true

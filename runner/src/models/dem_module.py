@@ -194,6 +194,7 @@ class DEMLitModule(LightningModule):
         if use_otcfm:
             flow_matcher = ExactOptimalTransportConditionalFlowMatcher
 
+        self.cfm_sigma = cfm_sigma
         self.conditional_flow_matcher = flow_matcher(sigma=cfm_sigma)
 
         self.nll_integration_method = nll_integration_method
@@ -299,9 +300,9 @@ class DEMLitModule(LightningModule):
             x0, x1
         )
 
-        if self.energy_function.is_molecule:
+        if self.energy_function.is_molecule and self.cfm_sigma!=0:
             xt = remove_mean(xt, self.energy_function.n_particles, self.energy_function.n_spatial_dim)
-
+            
         vt = self.cfm_net(t, xt)
         loss = (vt - ut).pow(2).mean(dim=-1)
 
@@ -458,7 +459,7 @@ class DEMLitModule(LightningModule):
         trajectory = integrate_sde(
             reverse_sde or self.reverse_sde,
             samples,
-            self.num_integration_steps + 1,
+            self.num_integration_steps,
             self.energy_function,
             diffusion_scale=diffusion_scale,
             reverse_time=reverse_time,
@@ -576,9 +577,14 @@ class DEMLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        batch = self.energy_function.sample_test_set(
-            self.eval_batch_size
-        )
+        if prefix == "test":
+            batch = self.energy_function.sample_test_set(
+                self.eval_batch_size
+            )
+        elif prefix == "val":
+            batch = self.energy_function.sample_test_set(
+                self.eval_batch_size
+            )
 
         backwards_samples = self.last_samples
 
@@ -695,8 +701,8 @@ class DEMLitModule(LightningModule):
             )
 
             num_integration_steps = self.num_integration_steps
-            # if self.nll_integration_method == 'dopri5':
-            #     num_integration_steps = 2
+            if self.nll_integration_method == 'dopri5':
+                num_integration_steps = 1
 
             noise = self.cfm_prior.sample(batch_size)
 
@@ -780,7 +786,7 @@ class DEMLitModule(LightningModule):
         self.eval_epoch_end("val")
 
     def on_test_epoch_end(self) -> None:
-        self.eval_epoch_end("test")
+        self("test")
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

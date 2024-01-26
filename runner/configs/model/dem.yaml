@@ -46,7 +46,6 @@ cfm_prior_std: ${energy.data_normalization_factor}
 use_otcfm: false
 prioritize_cfm_training_samples: false
 
-
 lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
 
 input_scaling_factor: null
