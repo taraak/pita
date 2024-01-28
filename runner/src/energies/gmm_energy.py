@@ -1,14 +1,13 @@
-import torch
-import matplotlib.pyplot as plt
-
 from typing import Optional
 
-from lightning.pytorch.loggers import WandbLogger
+import matplotlib.pyplot as plt
+import torch
 from fab.target_distributions import gmm
 from fab.utils.plotting import plot_contours, plot_marginal_pair
+from lightning.pytorch.loggers import WandbLogger
 
-from src.models.components.replay_buffer import ReplayBuffer
 from src.energies.base_energy_function import BaseEnergyFunction
+from src.models.components.replay_buffer import ReplayBuffer
 from src.utils.logging_utils import fig_to_image
 
 
@@ -26,7 +25,8 @@ class GMM(BaseEnergyFunction):
         should_unnormalize=False,
         data_normalization_factor=50,
         train_set_size=100000,
-        test_set_size = 2000
+        test_set_size=2000,
+        val_set_size=2000,
     ):
         use_gpu = device != "cpu"
         torch.manual_seed(0)  # seed of 0 for GMM problem
@@ -49,6 +49,7 @@ class GMM(BaseEnergyFunction):
 
         self.train_set_size = train_set_size
         self.test_set_size = test_set_size
+        self.val_set_size = val_set_size
 
         super().__init__(
             dimensionality=dimensionality,
@@ -64,6 +65,10 @@ class GMM(BaseEnergyFunction):
     def setup_train_set(self):
         train_samples = self.gmm.sample((self.train_set_size,))
         return self.normalize(train_samples)
+
+    def setup_val_set(self):
+        val_samples = self.gmm.sample((self.val_set_size,))
+        return val_samples
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
@@ -145,7 +150,9 @@ class GMM(BaseEnergyFunction):
         samples_fig = self.get_single_dataset_fig(samples, name)
         wandb_logger.log_image(f"{name}", [samples_fig])
 
-    def get_single_dataset_fig(self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40)):
+    def get_single_dataset_fig(
+        self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40)
+    ):
         fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 
         self.gmm.to("cpu")
@@ -163,7 +170,7 @@ class GMM(BaseEnergyFunction):
         self.gmm.to(self.device)
 
         return fig_to_image(fig)
-    
+
     def get_dataset_fig(
         self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40)
     ):

@@ -77,3 +77,4 @@ use_buffer: true
 
 logz_with_cfm: false
 
+tol: 1e-5

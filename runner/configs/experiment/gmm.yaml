@@ -55,6 +55,8 @@ model:
 
   # this has to be max 1000 since test_set is 1000
   eval_batch_size: 1000
+  scheduler: null
 
 trainer:
   check_val_every_n_epoch: 5
+
