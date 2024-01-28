@@ -30,8 +30,8 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01 #0.3
-    sigma_max: 2 #1.2
+    sigma_min: 0.01
+    sigma_max: 2 
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -69,4 +69,3 @@ model:
   logz_with_cfm: true
 
   num_estimator_mc_samples: 1000
-

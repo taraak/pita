@@ -6,18 +6,22 @@
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["DW4"]
+tags: ["DW4-EFM"]
 
 seed: 12345
 
 logger:
   wandb:
     tags: ${tags}
-    group: "dw4"
+    group: "dw4_efm"
 
 defaults: 
   - override /energy: dw4
   - override /model/net: egnn
+
+
+optimizer:
+  lr: 5e-4
 
 model:
   net:
@@ -28,8 +32,8 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01
-    sigma_max: 5
+    sigma_min: 0.00001 #0.01
+    sigma_max: 3       #5
   # noise_schedule:
   #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
   #   beta: 3
@@ -48,7 +52,7 @@ model:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
     should_clip_log_rewards: False
-    max_score_norm: 30
+    max_score_norm: 20 #30
     min_log_reward: null
 
   # num_samples_to_sample_from_buffer: 5120

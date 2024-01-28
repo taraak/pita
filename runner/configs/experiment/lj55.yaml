@@ -19,9 +19,12 @@ defaults:
   - override /energy: lj55
   - override /model/net: egnn
 
-
 data:
   n_val_batches_per_epoch: 4
+
+trainer:
+  check_val_every_n_epoch: 50
+  max_epochs: 2000
 
 model:
   net:
@@ -65,10 +68,14 @@ model:
   diffusion_scale: 0.5
 
   num_init_samples: 1024
-  num_samples_to_generate_per_epoch: 256
-  num_samples_to_sample_from_buffer: 256
-  eval_batch_size: 32
+  num_samples_to_generate_per_epoch: 128
+  num_samples_to_sample_from_buffer: 128
+  eval_batch_size: 16
 
   nll_with_cfm: true
   init_from_prior: true
   logz_with_cfm: true
+
+  nll_integration_method: dopri5
+
+  
