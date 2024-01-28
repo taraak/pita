@@ -508,7 +508,15 @@ class DEMLitModule(LightningModule):
         )
         aug_output = cnf.integrate(aug_samples)[-1]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
-        log_p_1 = prior.log_prob(x_1)
+
+        if self.nll_with_dem:
+            x1 = self.energy_function.unnormalize(x_1)
+            unscaled_prior = self.partial_prior(
+            device=self.device, scale=self.noise_schedule.h(1) ** 0.5 * 50 **2
+            )
+            log_p_1 = unscaled_prior.log_prob(x1)
+        else:
+            log_p_1 = prior.log_prob(x_1)
         log_p_0 = log_p_1 + logdetjac
         nll = -log_p_0
         return nll, x_1, logdetjac, log_p_1
@@ -647,6 +655,7 @@ class DEMLitModule(LightningModule):
         #     self.eval_batch_size
         # )
         if self.nll_with_dem:
+            batch = self.energy_function.normalize(batch)
             forwards_samples = self.compute_and_log_nll(
                 self.dem_cnf, self.prior, batch, prefix, "dem_"
             )
@@ -769,7 +778,7 @@ class DEMLitModule(LightningModule):
             diffusion_scale=self.diffusion_scale
             ))
         final_samples = torch.cat(final_samples, dim=0)
-        self.energy_function.save_samples(final_samples)
+        self.energy_function.save_samples(final_samples, self.energy_function.name)
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
