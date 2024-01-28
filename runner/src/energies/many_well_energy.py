@@ -39,6 +39,8 @@ class ManyWell(BaseEnergyFunction):
 
         self.should_unnormalize = should_unnormalize
 
+        self.name="many_well"
+
         super().__init__(
             dimensionality=dimensionality,
             normalization_min=-data_normalization_factor,

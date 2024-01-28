@@ -109,6 +109,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.data_path = data_path
         self.data_path_train = data_path_train
 
+        self.name="LJ13_eacf"
+
         self.lennard_jones = LennardJonesPotential(
             dim=dimensionality,
             n_particles=n_particles,

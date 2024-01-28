@@ -116,6 +116,7 @@ class DEMLitModule(LightningModule):
         num_estimator_mc_samples: int,
         num_samples_to_generate_per_epoch: int,
         num_samples_to_sample_from_buffer: int,
+        num_samples_to_save: int,
         eval_batch_size: int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
@@ -269,6 +270,7 @@ class DEMLitModule(LightningModule):
         self.num_samples_to_generate_per_epoch = num_samples_to_generate_per_epoch
         self.num_samples_to_sample_from_buffer = num_samples_to_sample_from_buffer
         self.num_integration_steps = num_integration_steps
+        self.num_samples_to_save = num_samples_to_save
         self.eval_batch_size = eval_batch_size
 
         self.prioritize_cfm_training_samples = prioritize_cfm_training_samples
@@ -590,7 +592,8 @@ class DEMLitModule(LightningModule):
         # generate samples noise --> data if needed
         if backwards_samples is None or self.eval_batch_size > len(backwards_samples):
             backwards_samples = self.generate_samples(
-                num_samples=self.eval_batch_size
+                num_samples=self.eval_batch_size,
+                diffusion_scale=self.diffusion_scale
             )
 
         # sample eval_batch_size from generated samples from dem to match dimenstions
@@ -603,8 +606,6 @@ class DEMLitModule(LightningModule):
             self.eval_step_outputs.append({
                 "gen_0": backwards_samples
             })
-
-            return
 
         times = torch.rand(
             (self.eval_batch_size,), device=batch.device
@@ -686,6 +687,7 @@ class DEMLitModule(LightningModule):
 
     def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         self.eval_step("test", batch, batch_idx)
+
 
     def generate_cfm_samples(self, batch_size):
         def reverse_wrapper(model):
@@ -794,7 +796,17 @@ class DEMLitModule(LightningModule):
         self.eval_epoch_end("val")
 
     def on_test_epoch_end(self) -> None:
-        self("test")
+        self.eval_epoch_end("test")
+        batch_size = 256
+        final_samples = []
+        n_batches = self.num_samples_to_save // batch_size
+        for i in range(n_batches):
+            final_samples.append(self.generate_samples(
+            num_samples=batch_size,
+            diffusion_scale=self.diffusion_scale
+            ))
+        final_samples = torch.cat(final_samples, dim=0)
+        self.energy_function.save_samples(final_samples)
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
@@ -824,7 +836,9 @@ class DEMLitModule(LightningModule):
             init_states = self.prior.sample(self.num_init_samples)
         else:
             init_states = self.generate_samples(
-                reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale
+                reverse_sde,
+                self.num_init_samples,
+                diffusion_scale=self.diffusion_scale
             )
         init_energies = self.energy_function(init_states)
 

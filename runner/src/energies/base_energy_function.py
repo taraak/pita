@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 import torch
+import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 
 from src.models.components.replay_buffer import ReplayBuffer
@@ -137,3 +138,10 @@ class BaseEnergyFunction(ABC):
         wandb_logger: WandbLogger,
     ) -> None:
         pass
+
+    def save_samples(
+        self,
+        samples: torch.Tensor,
+        dataset_name: str,
+    ) -> None:
+        np.save(f"{dataset_name}_samples.npy", samples.cpu().numpy())

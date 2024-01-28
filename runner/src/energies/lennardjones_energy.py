@@ -89,6 +89,7 @@ class LennardJonesPotential(Energy):
         # for lj13, to match the eacf set energy_factor=0.5
         self._energy_factor = energy_factor
 
+
     def _energy(self, x):
         batch_shape = x.shape[: -len(self.event_shape)]
         x = x.view(*batch_shape, self._n_particles, self._n_dims)
@@ -138,8 +139,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         energy_factor = 1.0,
         is_molecule = True,
     ):
-        torch.manual_seed(0)  # seed of 0
-        np.random.seed(0)
 
         self.n_particles = n_particles
         self.n_spatial_dim = dimensionality // n_particles
@@ -156,6 +155,11 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.data_path = data_path
         self.data_path_train = data_path_train
         self.data_path_val = data_path_val
+
+        if self.n_particles == 13:
+            self.name="LJ13_efm"
+        elif self.n_particles == 55:
+            self.name="LJ55"
 
         self.device = device
 

@@ -77,3 +77,4 @@ use_buffer: true
 
 logz_with_cfm: false
 
+num_samples_to_save: 2048

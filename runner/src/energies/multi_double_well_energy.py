@@ -28,8 +28,6 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         data_normalization_factor=1.0,
         is_molecule = True,
     ):
-        torch.manual_seed(0)  # seed of 0
-        np.random.seed(0)
 
         self.n_particles = n_particles
         self.n_spatial_dim = dimensionality // n_particles
@@ -41,6 +39,11 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         self.data_normalization_factor = data_normalization_factor
 
         self.data_from_efm = data_from_efm
+
+        if data_from_efm:
+            self.name = "DW4_EFM"
+        else:
+            self.name = "DW4_EACF"
 
         if self.data_from_efm:
             if data_path_train is None:
@@ -208,7 +211,7 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         energy_samples = -self(samples).detach().detach().cpu()
         energy_test = -self(test_data_smaller).detach().detach().cpu()
 
-        min_energy = -25 
+        min_energy = -26
         max_energy = 0
         
         axs[1].hist(

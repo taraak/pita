@@ -236,6 +236,9 @@ class LogGaussianCoxProcessEnergy(BaseEnergyFunction, CoxDist):
         data_normalization_factor: int,
         data_path: str = "../data/df_pines.csv",
     ):
+        
+        self.name="lgcp"
+
         CoxDist.__init__(self, data_path, -1, _LGCP_DIM)
         BaseEnergyFunction.__init__(self, _LGCP_DIM)
 

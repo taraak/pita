@@ -50,6 +50,8 @@ class GMM(BaseEnergyFunction):
         self.train_set_size = train_set_size
         self.test_set_size = test_set_size
 
+        self.name="gmm"
+
         super().__init__(
             dimensionality=dimensionality,
             normalization_min=-data_normalization_factor,
