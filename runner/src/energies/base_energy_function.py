@@ -32,7 +32,7 @@ class BaseEnergyFunction(ABC):
 
     def setup_train_set(self) -> Optional[torch.Tensor]:
         return None
-    
+
     def setup_val_set(self) -> Optional[torch.Tensor]:
         return None
 
@@ -87,7 +87,7 @@ class BaseEnergyFunction(ABC):
             outs = self.normalize(outs)
 
         return outs
-    
+
     def sample_val_set(
         self, num_points: int, normalize: bool = False
     ) -> Optional[torch.Tensor]:
@@ -104,7 +104,7 @@ class BaseEnergyFunction(ABC):
     @property
     def dimensionality(self) -> int:
         return self._dimensionality
-    
+
     @property
     def is_molecule(self) -> Optional[bool]:
         return self._is_molecule
@@ -112,7 +112,7 @@ class BaseEnergyFunction(ABC):
     @property
     def test_set(self) -> Optional[torch.Tensor]:
         return self._test_set
-    
+
     @property
     def val_set(self) -> Optional[torch.Tensor]:
         return self._val_set

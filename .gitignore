@@ -160,6 +160,7 @@ cython_debug/
 #.idea/
 #
 *.sw?
+*.sv?
 slurm*.out
 
 data/
