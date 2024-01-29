@@ -85,6 +85,21 @@ class ReplayBuffer:
         self.current_index = new_index % self.max_length
         self.current_add_count += 1
 
+    def get_last_n_inserted(self, num_to_get: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        if self.is_full:
+            assert num_to_get <= self.max_length
+        else:
+            assert num_to_get < self.current_index
+
+        start_idx = self.current_idx - num_to_get
+        idxs = [torch.arange(max(start_idx, 0), self.current_idx)]
+        if start_idx < 0:
+            idxs.append(torch.arange(self.max_length + start_idx, self.max_length))
+
+        idx = torch.cat(idxs)
+
+        return self.buffer.x[idx], self.buffer.log_w[idx]
+
     @torch.no_grad()
     def sample(self, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return a batch of sampled data, if the batch size is specified then the batch will have a
