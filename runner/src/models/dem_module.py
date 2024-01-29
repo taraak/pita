@@ -550,9 +550,9 @@ class DEMLitModule(LightningModule):
             return
 
         val_set = self.energy_function.sample_val_set(self.eval_batch_size)
-        val_energies = self.energy_function(val_energies)
+        val_energies = self.energy_function(self.energy_function.normalize(val_set))
 
-        _, generated_energies self.buffer.get_last_n_inserted(self.eval_batch_size)
+        _, generated_energies = self.buffer.get_last_n_inserted(self.eval_batch_size)
 
         energy_w2 = pot.emd2_1d(
             val_energies.cpu().numpy(),

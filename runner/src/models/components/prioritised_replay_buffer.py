@@ -296,14 +296,14 @@ class SimpleBuffer:
         else:
             assert num_to_get < self.current_index
 
-        start_idx = self.current_idx - num_to_get
-        idxs = [torch.arange(max(start_idx, 0), self.current_idx)]
+        start_idx = self.current_index - num_to_get
+        idxs = [torch.arange(max(start_idx, 0), self.current_index)]
         if start_idx < 0:
             idxs.append(torch.arange(self.max_length + start_idx, self.max_length))
 
         idx = torch.cat(idxs)
 
-        return self.buffer.x[idx], self.buffer.log_w[idx]
+        return self.buffer.x[idx], self.buffer.energy[idx]
 
     @torch.no_grad()
     def sample(
