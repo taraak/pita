@@ -822,7 +822,6 @@ class DEMLitModule(LightningModule):
             end = time.time()
             print(f"batch {i} took {end - start:0.2f}s")
         final_samples = torch.cat(final_samples, dim=0)
-        self.energy_function.save_samples(final_samples, self.energy_function.name)
         output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
         path = f"{output_dir}/samples_{self.num_samples_to_save}.pt"
         torch.save(final_samples, path)
