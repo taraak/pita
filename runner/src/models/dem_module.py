@@ -333,6 +333,15 @@ class DEMLitModule(LightningModule):
 
     def should_train_cfm(self, batch_idx: int) -> bool:
         return self.nll_with_cfm or self.hparams.debug_use_train_data
+    
+    def get_score_loss(self, times: torch.Tensor,
+                       samples: torch.Tensor,
+                       noised_samples: torch.Tensor) -> torch.Tensor:
+        predicted_score = self.forward(times, noised_samples)
+
+        true_score = -(noised_samples - samples)/ (self.noise_schedule.h(times).unsqueeze(1)  + 1e-4)
+        error_norms = (predicted_score - true_score).pow(2).mean(-1)
+        return error_norms
 
     def get_loss(self, times: torch.Tensor, samples: torch.Tensor) -> torch.Tensor:
         estimated_score = estimate_grad_Rt(
@@ -377,7 +386,9 @@ class DEMLitModule(LightningModule):
                     self.num_samples_to_sample_from_buffer
                 )
             else:
-                iter_samples = self.prior.sample(self.num_samples_to_sample_from_buffer)
+                iter_samples = self.prior.sample(self.num_samples_to_sample_from_buffer) 
+                # Uncomment for SM 
+                #iter_samples = self.energy_function.sample_train_set(self.num_samples_to_sample_from_buffer)
 
             times = torch.rand(
                 (self.num_samples_to_sample_from_buffer,), device=iter_samples.device
@@ -396,6 +407,8 @@ class DEMLitModule(LightningModule):
                 )
 
             dem_loss = self.get_loss(times, noised_samples)
+            # Uncomment for SM
+            #dem_loss = self.get_score_loss(times, iter_samples, noised_samples)
             self.log_dict(
                 t_stratified_loss(
                     times, dem_loss, loss_name="train/stratified/dem_loss"
@@ -752,7 +765,7 @@ class DEMLitModule(LightningModule):
                 prioritize=self.prioritize_cfm_training_samples,
             )
 
-            # cfm_samples = self.generate_cfm_samples(self.eval_batch_size)
+
             cfm_samples = self.cfm_cnf.generate(
                 self.cfm_prior.sample(self.eval_batch_size),
             )[-1]
@@ -793,7 +806,7 @@ class DEMLitModule(LightningModule):
 
     def on_test_epoch_end(self) -> None:
         self.eval_epoch_end("test")
-        batch_size = 256
+        batch_size = 500
         final_samples = []
         n_batches = self.num_samples_to_save // batch_size
         for i in range(n_batches):
