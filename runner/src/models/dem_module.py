@@ -1,5 +1,8 @@
 from typing import Any, Dict, Optional
+import time
 
+from hydra.utils import get_original_cwd
+import hydra
 import matplotlib.pyplot as plt
 import ot as pot
 import numpy as np
@@ -141,6 +144,7 @@ class DEMLitModule(LightningModule):
         compute_nll_on_train_data=False,
         use_buffer=True,
         tol=1e-5,
+        version=1,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -624,6 +628,14 @@ class DEMLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
+        if False and self.hparams.generate_samples:
+            backwards_samples = self.generate_samples(
+                num_samples=self.eval_batch_size, diffusion_scale=self.diffusion_scale
+            )
+            to_log = {
+                "gen_0": backwards_samples,
+            }
+            return
         if prefix == "test":
             # import ipdb; ipdb.set_trace()
             batch = self.energy_function.sample_test_set(self.eval_batch_size)
@@ -778,16 +790,6 @@ class DEMLitModule(LightningModule):
                 self.buffer,
                 wandb_logger,
             )
-        else:
-            # Hack, cfm samples are not actually cfm samples
-            self.energy_function.log_on_epoch_end(
-                self.last_samples,
-                self.last_energies,
-                unprioritized_buffer_samples,
-                self.last_samples,
-                self.buffer,
-                wandb_logger,
-            )
 
         if "data_0" in outputs:
             # pad with time dimension 1
@@ -809,14 +811,27 @@ class DEMLitModule(LightningModule):
         batch_size = 500
         final_samples = []
         n_batches = self.num_samples_to_save // batch_size
+        print("Generating samples")
         for i in range(n_batches):
+            start = time.time()
             final_samples.append(
                 self.generate_samples(
                     num_samples=batch_size, diffusion_scale=self.diffusion_scale
                 )
             )
+            end = time.time()
+            print(f"batch {i} took {end - start:0.2f}s")
         final_samples = torch.cat(final_samples, dim=0)
         self.energy_function.save_samples(final_samples, self.energy_function.name)
+        output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+        path = f"{output_dir}/samples_{self.num_samples_to_save}.pt"
+        torch.save(final_samples, path)
+        print(f"Saving samples to {path}")
+        import os
+        os.makedirs(self.energy_function.name, exist_ok=True)
+        path2 = f"{self.energy_function.name}/samples_{self.hparams.version}_{self.num_samples_to_save}.pt"
+        torch.save(final_samples, path2)
+        print(f"Saving samples to {path2}")
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

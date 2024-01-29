@@ -1,14 +1,11 @@
-import PIL
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-
 from typing import Optional
 
+import matplotlib.pyplot as plt
+import numpy as np
+import PIL
+import torch
+from hydra.utils import get_original_cwd
 from lightning.pytorch.loggers import WandbLogger
-
-from bgflow import Energy
-from bgflow.utils import distance_vectors, distances_from_vectors
 
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.replay_buffer import ReplayBuffer
@@ -106,10 +103,10 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.device = device
 
-        self.data_path = data_path
-        self.data_path_train = data_path_train
+        self.data_path = get_original_cwd() + "/" + data_path
+        self.data_path_train = get_original_cwd() + "/" + data_path_train
 
-        self.name="LJ13_eacf"
+        self.name = "LJ13_eacf"
 
         self.lennard_jones = LennardJonesPotential(
             dim=dimensionality,
@@ -135,20 +132,17 @@ class LennardJonesEnergy(BaseEnergyFunction):
         test_data = torch.tensor(test_data, device=self.device)
         del all_data
         return test_data
-    
+
     def setup_val_set(self):
         all_data = np.load(self.data_path, allow_pickle=True)
         # Following the EACF paper for the partitions
         # This test set is bad. It's a single MC Chain
         val_data = all_data[1000:2000]
-        val_data = remove_mean(
-            val_data, self.n_particles, self.n_spatial_dim
-        )
-        val_data = torch.tensor(val_data,
-                                 device=self.device)
+        val_data = remove_mean(val_data, self.n_particles, self.n_spatial_dim)
+        val_data = torch.tensor(val_data, device=self.device)
         del all_data
         return val_data
-    
+
     def setup_train_set(self):
         if self.data_path_train is None:
             raise ValueError("No train data path provided")
@@ -182,7 +176,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         wandb_logger: WandbLogger,
         prefix: str = "",
     ) -> None:
-
         if latest_samples is None:
             return
 
