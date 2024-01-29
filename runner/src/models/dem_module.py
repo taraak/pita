@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 
 import matplotlib.pyplot as plt
+import ot as pot
 import numpy as np
 import torch
 from lightning import LightningModule
@@ -241,6 +242,7 @@ class DEMLitModule(LightningModule):
         self.test_nll = MeanMetric()
         self.val_nfe = MeanMetric()
         self.test_nfe = MeanMetric()
+        self.val_energy_w2 = MeanMetric()
 
         self.val_dem_nll_logdetjac = MeanMetric()
         self.test_dem_nll_logdetjac = MeanMetric()
@@ -529,6 +531,30 @@ class DEMLitModule(LightningModule):
             self.last_energies = self.energy_function(self.last_samples)
 
         self.buffer.add(self.last_samples, self.last_energies)
+
+        self._log_energy_w2()
+
+    def _log_energy_w2(self):
+        if len(self.buffer) < self.eval_batch_size:
+            return
+
+        val_set = self.energy_function.sample_val_set(self.eval_batch_size)
+        val_energies = self.energy_function(self.energy_function.normalize(val_set))
+
+        _, generated_energies = self.buffer.get_last_n_inserted(self.eval_batch_size)
+
+        energy_w2 = pot.emd2_1d(
+            val_energies.cpu().numpy(),
+            generated_energies.cpu().numpy()
+        )
+
+        self.log(
+            f"val/energy_w2",
+            self.val_energy_w2(energy_w2),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
 
     def compute_log_z(self, cnf, prior, samples, prefix, name):
         nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(

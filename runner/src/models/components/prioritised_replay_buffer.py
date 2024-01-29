@@ -267,6 +267,12 @@ class SimpleBuffer:
         else:
             print("Buffer not initialised, expected that checkpoint will be loaded.")
 
+    def __len__(self):
+        if self.is_full:
+            return self.max_length
+        else:
+            return self.current_index
+
     @torch.no_grad()
     def add(self, x: torch.Tensor, energy: torch.Tensor) -> None:
         """Add a new batch of generated data to the replay buffer"""
@@ -283,6 +289,21 @@ class SimpleBuffer:
             self.is_full = new_index >= self.max_length
             self.can_sample = new_index >= self.min_sample_length
         self.current_index = new_index % self.max_length
+
+    def get_last_n_inserted(self, num_to_get: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        if self.is_full:
+            assert num_to_get <= self.max_length
+        else:
+            assert num_to_get < self.current_index
+
+        start_idx = self.current_index - num_to_get
+        idxs = [torch.arange(max(start_idx, 0), self.current_index)]
+        if start_idx < 0:
+            idxs.append(torch.arange(self.max_length + start_idx, self.max_length))
+
+        idx = torch.cat(idxs)
+
+        return self.buffer.x[idx], self.buffer.energy[idx]
 
     @torch.no_grad()
     def sample(
