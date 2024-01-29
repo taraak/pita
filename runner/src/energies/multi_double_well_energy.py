@@ -1,16 +1,16 @@
-import PIL
-import torch
-import numpy as np
-
 from typing import Optional
-from lightning.pytorch.loggers import WandbLogger
 
 import matplotlib.pyplot as plt
-from src.utils.data_utils import remove_mean
+import numpy as np
+import PIL
+import torch
 from bgflow import MultiDoubleWellPotential
+from hydra.utils import get_original_cwd
+from lightning.pytorch.loggers import WandbLogger
 
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.replay_buffer import ReplayBuffer
+from src.utils.data_utils import remove_mean
 
 
 class MultiDoubleWellEnergy(BaseEnergyFunction):
@@ -21,14 +21,13 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         data_path,
         data_path_train=None,
         data_path_val=None,
-        data_from_efm=True, #if False, data from EFM
+        data_from_efm=True,  # if False, data from EFM
         device="cpu",
         plot_samples_epoch_period=5,
         plotting_buffer_sample_size=512,
         data_normalization_factor=1.0,
-        is_molecule = True,
+        is_molecule=True,
     ):
-
         self.n_particles = n_particles
         self.n_spatial_dim = dimensionality // n_particles
 
@@ -51,9 +50,9 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
             if data_path_val is None:
                 raise ValueError("DW4 is from EFM. No val data path provided")
 
-        self.data_path = data_path
-        self.data_path_train = data_path_train
-        self.data_path_val = data_path_val
+        self.data_path = get_original_cwd() + "/" + data_path
+        self.data_path_train = get_original_cwd() + "/" + data_path_train
+        self.data_path_val = get_original_cwd() + "/" + data_path_val
 
         self.device = device
 
@@ -62,19 +61,19 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         self.train_set_size = 100000
 
         self.multi_double_well = MultiDoubleWellPotential(
-            dim = dimensionality,
-            n_particles = n_particles,
-            a = 0.9,
-            b = -4,
-            c = 0,
-            offset = 4,
-            two_event_dims=False)
+            dim=dimensionality,
+            n_particles=n_particles,
+            a=0.9,
+            b=-4,
+            c=0,
+            offset=4,
+            two_event_dims=False,
+        )
 
-        super().__init__(dimensionality=dimensionality,
-                         is_molecule=is_molecule)
+        super().__init__(dimensionality=dimensionality, is_molecule=is_molecule)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
-        return - self.multi_double_well.energy(samples).squeeze(-1)
+        return -self.multi_double_well.energy(samples).squeeze(-1)
 
     def setup_test_set(self):
         if self.data_from_efm:
@@ -82,13 +81,13 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
 
         else:
             all_data = np.load(self.data_path, allow_pickle=True)
-            data = all_data[0][-self.test_set_size:]
+            data = all_data[0][-self.test_set_size :]
             del all_data
-        
-        data = remove_mean(
-            torch.tensor(data), self.n_particles, self.n_spatial_dim
-            ).to(self.device)
-        
+
+        data = remove_mean(torch.tensor(data), self.n_particles, self.n_spatial_dim).to(
+            self.device
+        )
+
         return data
 
     def setup_train_set(self):
@@ -97,27 +96,29 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
 
         else:
             all_data = np.load(self.data_path, allow_pickle=True)
-            data = all_data[0][:self.train_set_size]        
+            data = all_data[0][: self.train_set_size]
             del all_data
 
-        data = remove_mean(
-            torch.tensor(data), self.n_particles, self.n_spatial_dim
-        ).to(self.device)
+        data = remove_mean(torch.tensor(data), self.n_particles, self.n_spatial_dim).to(
+            self.device
+        )
 
         return data
-    
+
     def setup_val_set(self):
         if self.data_from_efm:
             data = np.load(self.data_path_val, allow_pickle=True)
 
         else:
             all_data = np.load(self.data_path, allow_pickle=True)
-            data = all_data[0][-self.test_set_size - self.val_set_size : -self.test_set_size]
+            data = all_data[0][
+                -self.test_set_size - self.val_set_size : -self.test_set_size
+            ]
             del all_data
 
-        data = remove_mean(
-            torch.tensor(data), self.n_particles, self.n_spatial_dim
-        ).to(self.device)
+        data = remove_mean(torch.tensor(data), self.n_particles, self.n_spatial_dim).to(
+            self.device
+        )
         return data
 
     def interatomic_dist(self, x):
@@ -213,7 +214,7 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
 
         min_energy = -26
         max_energy = 0
-        
+
         axs[1].hist(
             energy_test.cpu(),
             bins=100,

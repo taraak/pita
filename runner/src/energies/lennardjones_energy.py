@@ -1,15 +1,13 @@
-import re
-import PIL
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-
 from typing import Optional
 
-from lightning.pytorch.loggers import WandbLogger
-
+import matplotlib.pyplot as plt
+import numpy as np
+import PIL
+import torch
 from bgflow import Energy
 from bgflow.utils import distance_vectors, distances_from_vectors
+from hydra.utils import get_original_cwd
+from lightning.pytorch.loggers import WandbLogger
 
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.replay_buffer import ReplayBuffer
@@ -28,6 +26,7 @@ def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
 
     # lj = lj * ~filter + filter * (energy_slope(p) * (r-p) +  ((1 / p) ** 12 - 2 * (1 / p) ** 6))
     return lj
+
 
 # def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
 #     p = 0.9
@@ -89,7 +88,6 @@ class LennardJonesPotential(Energy):
         # for lj13, to match the eacf set energy_factor=0.5
         self._energy_factor = energy_factor
 
-
     def _energy(self, x):
         batch_shape = x.shape[: -len(self.event_shape)]
         x = x.view(*batch_shape, self._n_particles, self._n_dims)
@@ -136,10 +134,9 @@ class LennardJonesEnergy(BaseEnergyFunction):
         plot_samples_epoch_period=5,
         plotting_buffer_sample_size=512,
         data_normalization_factor=1.0,
-        energy_factor = 1.0,
-        is_molecule = True,
+        energy_factor=1.0,
+        is_molecule=True,
     ):
-
         self.n_particles = n_particles
         self.n_spatial_dim = dimensionality // n_particles
 
@@ -152,14 +149,14 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
-        self.data_path = data_path
-        self.data_path_train = data_path_train
-        self.data_path_val = data_path_val
+        self.data_path = get_original_cwd() + "/" + data_path
+        self.data_path_train = get_original_cwd() + "/" + data_path_train
+        self.data_path_val = get_original_cwd() + "/" + data_path_val
 
         if self.n_particles == 13:
-            self.name="LJ13_efm"
+            self.name = "LJ13_efm"
         elif self.n_particles == 55:
-            self.name="LJ55"
+            self.name = "LJ55"
 
         self.device = device
 
@@ -171,45 +168,34 @@ class LennardJonesEnergy(BaseEnergyFunction):
             oscillator=True,
             oscillator_scale=1.0,
             two_event_dims=False,
-            energy_factor = energy_factor,
+            energy_factor=energy_factor,
         )
 
-        super().__init__(dimensionality=dimensionality,
-                         is_molecule=is_molecule)
+        super().__init__(dimensionality=dimensionality, is_molecule=is_molecule)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         return self.lennard_jones._log_prob(samples).squeeze(-1)
 
     def setup_test_set(self):
         data = np.load(self.data_path_val, allow_pickle=True)
-        data = remove_mean(
-            data, self.n_particles, self.n_spatial_dim
-        )
-        data = torch.tensor(data,
-                            device=self.device)
+        data = remove_mean(data, self.n_particles, self.n_spatial_dim)
+        data = torch.tensor(data, device=self.device)
         return data
-
 
     def setup_val_set(self):
         if self.data_path_val is None:
             raise ValueError("Data path for validation data is not provided")
         data = np.load(self.data_path_val, allow_pickle=True)
-        data = remove_mean(
-            data, self.n_particles, self.n_spatial_dim
-        )
-        data = torch.tensor(data,
-                            device=self.device)
+        data = remove_mean(data, self.n_particles, self.n_spatial_dim)
+        data = torch.tensor(data, device=self.device)
         return data
 
     def setup_train_set(self):
         if self.data_path_train is None:
             raise ValueError("Data path for training data is not provided")
         data = np.load(self.data_path_val, allow_pickle=True)
-        data = remove_mean(
-            data, self.n_particles, self.n_spatial_dim
-        )
-        data = torch.tensor(data,
-                            device=self.device)
+        data = remove_mean(data, self.n_particles, self.n_spatial_dim)
+        data = torch.tensor(data, device=self.device)
         return data
 
     def interatomic_dist(self, x):
@@ -311,7 +297,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         elif self.n_particles == 55:
             min_energy = -380
             max_energy = -180
-        
 
         axs[1].hist(
             energy_test.cpu(),
