@@ -1,6 +1,4 @@
-from operator import is_
-from os import remove
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +9,6 @@ from torchcfm.conditional_flow_matching import (
     ConditionalFlowMatcher,
     ExactOptimalTransportConditionalFlowMatcher,
 )
-from torchdiffeq import odeint
 from torchmetrics import MeanMetric
 
 from src.energies.base_energy_function import BaseEnergyFunction
@@ -142,7 +139,7 @@ class DEMLitModule(LightningModule):
         init_from_prior=False,
         compute_nll_on_train_data=False,
         use_buffer=True,
-        tol=1e-5
+        tol=1e-5,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -508,15 +505,7 @@ class DEMLitModule(LightningModule):
         )
         aug_output = cnf.integrate(aug_samples)[-1]
         x_1, logdetjac = aug_output[..., :-1], aug_output[..., -1]
-
-        if self.nll_with_dem:
-            x1 = self.energy_function.unnormalize(x_1)
-            unscaled_prior = self.partial_prior(
-            device=self.device, scale=self.noise_schedule.h(1) ** 0.5 * 50 **2
-            )
-            log_p_1 = unscaled_prior.log_prob(x1)
-        else:
-            log_p_1 = prior.log_prob(x_1)
+        log_p_1 = prior.log_prob(x_1)
         log_p_0 = log_p_1 + logdetjac
         nll = -log_p_0
         return nll, x_1, logdetjac, log_p_1
@@ -597,7 +586,7 @@ class DEMLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         if prefix == "test":
-            #import ipdb; ipdb.set_trace()
+            # import ipdb; ipdb.set_trace()
             batch = self.energy_function.sample_test_set(self.eval_batch_size)
         elif prefix == "val":
             batch = self.energy_function.sample_val_set(self.eval_batch_size)
@@ -607,8 +596,7 @@ class DEMLitModule(LightningModule):
         # generate samples noise --> data if needed
         if backwards_samples is None or self.eval_batch_size > len(backwards_samples):
             backwards_samples = self.generate_samples(
-                num_samples=self.eval_batch_size,
-                diffusion_scale=self.diffusion_scale
+                num_samples=self.eval_batch_size, diffusion_scale=self.diffusion_scale
             )
 
         # sample eval_batch_size from generated samples from dem to match dimenstions
@@ -751,6 +739,16 @@ class DEMLitModule(LightningModule):
                 self.buffer,
                 wandb_logger,
             )
+        else:
+            # Hack, cfm samples are not actually cfm samples
+            self.energy_function.log_on_epoch_end(
+                self.last_samples,
+                self.last_energies,
+                unprioritized_buffer_samples,
+                self.last_samples,
+                self.buffer,
+                wandb_logger,
+            )
 
         if "data_0" in outputs:
             # pad with time dimension 1
@@ -773,10 +771,11 @@ class DEMLitModule(LightningModule):
         final_samples = []
         n_batches = self.num_samples_to_save // batch_size
         for i in range(n_batches):
-            final_samples.append(self.generate_samples(
-            num_samples=batch_size,
-            diffusion_scale=self.diffusion_scale
-            ))
+            final_samples.append(
+                self.generate_samples(
+                    num_samples=batch_size, diffusion_scale=self.diffusion_scale
+                )
+            )
         final_samples = torch.cat(final_samples, dim=0)
         self.energy_function.save_samples(final_samples, self.energy_function.name)
 
@@ -808,9 +807,7 @@ class DEMLitModule(LightningModule):
             init_states = self.prior.sample(self.num_init_samples)
         else:
             init_states = self.generate_samples(
-                reverse_sde,
-                self.num_init_samples,
-                diffusion_scale=self.diffusion_scale
+                reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale
             )
         init_energies = self.energy_function(init_states)
 
