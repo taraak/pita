@@ -86,10 +86,10 @@ class GMM(BaseEnergyFunction):
         self,
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
-        unprioritized_buffer_samples: Optional[torch.Tensor],
-        cfm_samples: Optional[torch.Tensor],
-        replay_buffer: ReplayBuffer,
         wandb_logger: WandbLogger,
+        unprioritized_buffer_samples = None,
+        cfm_samples=None,
+        replay_buffer=None,
         prefix: str = "",
     ) -> None:
         if wandb_logger is None:
@@ -99,26 +99,27 @@ class GMM(BaseEnergyFunction):
             prefix += "/"
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
-            buffer_samples, _, _ = replay_buffer.sample(
-                self.plotting_buffer_sample_size
-            )
+            
+            if unprioritized_buffer_samples is not None:
+                buffer_samples, _, _ = replay_buffer.sample(
+                    self.plotting_buffer_sample_size
+                )
 
-            if self.should_unnormalize:
-                # Don't unnormalize CFM samples since they're in the
-                # unnormalized space
-                buffer_samples = self.unnormalize(buffer_samples)
-                latest_samples = self.unnormalize(latest_samples)
+                if self.should_unnormalize:
+                    # Don't unnormalize CFM samples since they're in the
+                    # unnormalized space
+                    buffer_samples = self.unnormalize(buffer_samples)
+                    latest_samples = self.unnormalize(latest_samples)
 
-                if unprioritized_buffer_samples is not None:
                     unprioritized_buffer_samples = self.unnormalize(
                         unprioritized_buffer_samples
                     )
 
-            samples_fig = self.get_dataset_fig(buffer_samples, latest_samples)
+                samples_fig = self.get_dataset_fig(buffer_samples, latest_samples)
 
-            wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
+                wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 
-            if unprioritized_buffer_samples is not None:
+            if cfm_samples is not None:
                 cfm_samples_fig = self.get_dataset_fig(
                     unprioritized_buffer_samples, cfm_samples
                 )
@@ -130,10 +131,12 @@ class GMM(BaseEnergyFunction):
             if latest_samples is not None:
                 fig, ax = plt.subplots()
                 ax.scatter(*latest_samples.detach().cpu().T)
-
+                
                 wandb_logger.log_image(
                     f"{prefix}generated_samples_scatter", [fig_to_image(fig)]
                 )
+                self.get_single_dataset_fig(latest_samples, "dem_generated_samples")
+
 
         self.curr_epoch += 1
 

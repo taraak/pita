@@ -149,9 +149,13 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
-        self.data_path = get_original_cwd() + "/" + data_path
-        self.data_path_train = get_original_cwd() + "/" + data_path_train
-        self.data_path_val = get_original_cwd() + "/" + data_path_val
+        self.data_path = data_path
+        self.data_path_train = data_path_train
+        self.data_path_val = data_path_val
+
+        # self.data_path = get_original_cwd() + "/" + data_path
+        # self.data_path_train = get_original_cwd() + "/" + data_path_train
+        # self.data_path_val = get_original_cwd() + "/" + data_path_val
 
         if self.n_particles == 13:
             self.name = "LJ13_efm"
@@ -217,10 +221,10 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self,
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
-        unprioritized_buffer_samples: Optional[torch.Tensor],
-        cfm_samples: Optional[torch.Tensor],
-        replay_buffer: ReplayBuffer,
         wandb_logger: WandbLogger,
+        unprioritized_buffer_samples = None,
+        cfm_samples=None,
+        replay_buffer=None,
         prefix: str = "",
     ) -> None:
         if latest_samples is None:
@@ -237,7 +241,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
             wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 
-            if unprioritized_buffer_samples is not None:
+            if cfm_samples is not None:
                 cfm_samples_fig = self.get_dataset_fig(cfm_samples)
 
                 wandb_logger.log_image(

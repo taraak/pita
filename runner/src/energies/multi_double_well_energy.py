@@ -50,9 +50,13 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
             if data_path_val is None:
                 raise ValueError("DW4 is from EFM. No val data path provided")
 
-        self.data_path = get_original_cwd() + "/" + data_path
-        self.data_path_train = get_original_cwd() + "/" + data_path_train
-        self.data_path_val = get_original_cwd() + "/" + data_path_val
+        # self.data_path = get_original_cwd() + "/" + data_path
+        # self.data_path_train = get_original_cwd() + "/" + data_path_train
+        # self.data_path_val = get_original_cwd() + "/" + data_path_val
+
+        self.data_path = data_path
+        self.data_path_train = data_path_train
+        self.data_path_val = data_path_val
 
         self.device = device
 
@@ -153,10 +157,10 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         self,
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
-        unprioritized_buffer_samples: Optional[torch.Tensor],
-        cfm_samples: Optional[torch.Tensor],
-        replay_buffer: ReplayBuffer,
         wandb_logger: WandbLogger,
+        unprioritized_buffer_samples = None,
+        cfm_samples=None,
+        replay_buffer=None,
         prefix: str = "",
     ) -> None:
         if latest_samples is None:
