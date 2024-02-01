@@ -19,7 +19,6 @@ defaults:
   - override /energy: dw4
   - override /model/net: egnn
 
-
 optimizer:
   lr: 5e-4
 

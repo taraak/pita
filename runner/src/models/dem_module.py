@@ -210,6 +210,7 @@ class DEMLitModule(LightningModule):
         self.cfm_prior_std = cfm_prior_std
         self.compute_nll_on_train_data = compute_nll_on_train_data
 
+
         flow_matcher = ConditionalFlowMatcher
         if use_otcfm:
             flow_matcher = ExactOptimalTransportConditionalFlowMatcher
@@ -247,6 +248,8 @@ class DEMLitModule(LightningModule):
         self.val_nfe = MeanMetric()
         self.test_nfe = MeanMetric()
         self.val_energy_w2 = MeanMetric()
+        self.val_dist_w2 = MeanMetric()
+        self.val_dist_total_var = MeanMetric()
 
         self.val_dem_nll_logdetjac = MeanMetric()
         self.test_dem_nll_logdetjac = MeanMetric()
@@ -550,8 +553,10 @@ class DEMLitModule(LightningModule):
         self.buffer.add(self.last_samples, self.last_energies)
 
         self._log_energy_w2(prefix="val")
+
         if self.energy_function.is_molecule:
             self._log_dist_w2(prefix="val")
+            self._log_dist_total_var(prefix="val")
 
     def _log_energy_w2(self, prefix="val"):
         if prefix == "test":
@@ -598,7 +603,34 @@ class DEMLitModule(LightningModule):
         )
         self.log(
             f"{prefix}/dist_w2",
-            self.val_energy_w2(dist_w2),
+            self.val_dist_w2(dist_w2),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+    def _log_dist_total_var(self, prefix="val"):
+        if prefix == "test":
+            import pdb; pdb.set_trace()
+            data_set = self.energy_function.sample_val_set(self.eval_batch_size)
+            generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
+                                                      diffusion_scale=self.diffusion_scale)
+        else:
+            if len(self.buffer) < self.eval_batch_size:
+                return
+            data_set = self.energy_function.sample_test_set(self.eval_batch_size)
+            generated_samples, _ = self.buffer.get_last_n_inserted(self.eval_batch_size)
+
+        generated_samples_dists = self.energy_function.interatomic_dist(generated_samples).cpu().numpy().reshape(-1),
+        data_set_dists = self.energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1)
+
+        H_data_set, x_data_set = np.histogram(data_set_dists, bins=200)
+        H_generated_samples, _ = np.histogram(generated_samples_dists, bins=(x_data_set))
+        total_var = 0.5 * np.abs(H_data_set/H_data_set.sum() - H_generated_samples/H_generated_samples.sum()).sum()
+
+        self.log(
+            f"{prefix}/dist_total_var",
+            self.val_dist_total_var(total_var),
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -805,12 +837,10 @@ class DEMLitModule(LightningModule):
                 prioritize=self.prioritize_cfm_training_samples,
             )
 
-
             cfm_samples = self.cfm_cnf.generate(
                 self.cfm_prior.sample(self.eval_batch_size),
             )[-1]
             
-
             self.energy_function.log_on_epoch_end(
                 self.last_samples,
                 self.last_energies,
@@ -848,6 +878,9 @@ class DEMLitModule(LightningModule):
 
         self.eval_epoch_end("test")
         self._log_energy_w2(prefix="test")
+        if self.energy_function.is_molecule:
+            self._log_dist_w2(prefix="test")
+            self._log_dist_total_var(prefix="test")
         
         batch_size = 1000
         final_samples = []

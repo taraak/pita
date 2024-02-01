@@ -48,7 +48,7 @@ model:
 
   lambda_weighter:
     _target_: src.models.components.lambda_weighter.NoLambdaWeighter
-    _partial_: true
+`    _partial_: true
 
   clipper:
     _target_: src.models.components.clipper.Clipper
