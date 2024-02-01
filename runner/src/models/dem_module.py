@@ -210,6 +210,7 @@ class DEMLitModule(LightningModule):
         self.cfm_prior_std = cfm_prior_std
         self.compute_nll_on_train_data = compute_nll_on_train_data
 
+
         flow_matcher = ConditionalFlowMatcher
         if use_otcfm:
             flow_matcher = ExactOptimalTransportConditionalFlowMatcher
@@ -247,6 +248,8 @@ class DEMLitModule(LightningModule):
         self.val_nfe = MeanMetric()
         self.test_nfe = MeanMetric()
         self.val_energy_w2 = MeanMetric()
+        self.val_dist_w2 = MeanMetric()
+        self.val_dist_total_var = MeanMetric()
 
         self.val_dem_nll_logdetjac = MeanMetric()
         self.test_dem_nll_logdetjac = MeanMetric()
@@ -549,25 +552,85 @@ class DEMLitModule(LightningModule):
 
         self.buffer.add(self.last_samples, self.last_energies)
 
-        self._log_energy_w2()
+        self._log_energy_w2(prefix="val")
 
-    def _log_energy_w2(self):
-        if len(self.buffer) < self.eval_batch_size:
-            return
+        if self.energy_function.is_molecule:
+            self._log_dist_w2(prefix="val")
+            self._log_dist_total_var(prefix="val")
 
-        val_set = self.energy_function.sample_val_set(self.eval_batch_size)
-        val_energies = self.energy_function(self.energy_function.normalize(val_set))
+    def _log_energy_w2(self, prefix="val"):
+        if prefix == "test":
+            data_set = self.energy_function.sample_val_set(self.eval_batch_size)
+            generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
+                                                      diffusion_scale=self.diffusion_scale)
+            generated_energies = self.energy_function(generated_samples)
+        else:
+            if len(self.buffer) < self.eval_batch_size:
+                return
+            data_set = self.energy_function.sample_test_set(self.eval_batch_size)
+            _, generated_energies = self.buffer.get_last_n_inserted(self.eval_batch_size)
 
-        _, generated_energies = self.buffer.get_last_n_inserted(self.eval_batch_size)
-
+        energies = self.energy_function(self.energy_function.normalize(data_set))
         energy_w2 = pot.emd2_1d(
-            val_energies.cpu().numpy(),
+            energies.cpu().numpy(),
             generated_energies.cpu().numpy()
         )
 
         self.log(
-            f"val/energy_w2",
+            f"{prefix}/energy_w2",
             self.val_energy_w2(energy_w2),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+
+    def _log_dist_w2(self, prefix="val"):
+        if prefix == "test":
+            import pdb; pdb.set_trace()
+            data_set = self.energy_function.sample_val_set(self.eval_batch_size)
+            generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
+                                                      diffusion_scale=self.diffusion_scale)
+        else:
+            if len(self.buffer) < self.eval_batch_size:
+                return
+            data_set = self.energy_function.sample_test_set(self.eval_batch_size)
+            generated_samples, _ = self.buffer.get_last_n_inserted(self.eval_batch_size)
+
+        dist_w2 = pot.emd2_1d(
+            self.energy_function.interatomic_dist(generated_samples).cpu().numpy().reshape(-1),
+            self.energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1)
+        )
+        self.log(
+            f"{prefix}/dist_w2",
+            self.val_dist_w2(dist_w2),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+    def _log_dist_total_var(self, prefix="val"):
+        if prefix == "test":
+            import pdb; pdb.set_trace()
+            data_set = self.energy_function.sample_val_set(self.eval_batch_size)
+            generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
+                                                      diffusion_scale=self.diffusion_scale)
+        else:
+            if len(self.buffer) < self.eval_batch_size:
+                return
+            data_set = self.energy_function.sample_test_set(self.eval_batch_size)
+            generated_samples, _ = self.buffer.get_last_n_inserted(self.eval_batch_size)
+
+        generated_samples_dists = self.energy_function.interatomic_dist(generated_samples).cpu().numpy().reshape(-1),
+        data_set_dists = self.energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1)
+
+        H_data_set, x_data_set = np.histogram(data_set_dists, bins=200)
+        H_generated_samples, _ = np.histogram(generated_samples_dists, bins=(x_data_set))
+        total_var = 0.5 * np.abs(H_data_set/H_data_set.sum() - H_generated_samples/H_generated_samples.sum()).sum()
+
+        self.log(
+            f"{prefix}/dist_total_var",
+            self.val_dist_total_var(total_var),
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -690,9 +753,6 @@ class DEMLitModule(LightningModule):
             "gen_0": backwards_samples,
         }
 
-        # batch = self.energy_function.sample_test_set(
-        #     self.eval_batch_size
-        # )
         if self.nll_with_dem:
             batch = self.energy_function.normalize(batch)
             forwards_samples = self.compute_and_log_nll(
@@ -777,17 +837,24 @@ class DEMLitModule(LightningModule):
                 prioritize=self.prioritize_cfm_training_samples,
             )
 
-
             cfm_samples = self.cfm_cnf.generate(
                 self.cfm_prior.sample(self.eval_batch_size),
             )[-1]
-
+            
             self.energy_function.log_on_epoch_end(
                 self.last_samples,
                 self.last_energies,
-                unprioritized_buffer_samples,
-                cfm_samples,
-                self.buffer,
+                wandb_logger,
+                unprioritized_buffer_samples = unprioritized_buffer_samples,
+                cfm_samples = cfm_samples,
+                replay_buffer = self.buffer,
+            )
+        
+        else:
+            # Only plot dem samples
+            self.energy_function.log_on_epoch_end(
+                self.last_samples,
+                self.last_energies,
                 wandb_logger,
             )
 
@@ -795,7 +862,7 @@ class DEMLitModule(LightningModule):
             # pad with time dimension 1
             names, dists = compute_distribution_distances(
                 self.energy_function.unnormalize(outputs["gen_0"])[:, None],
-                outputs["data_0"][:, None],
+                outputs["data_0"][:, None], self.energy_function
             )
             names = [f"{prefix}/{name}" for name in names]
             d = dict(zip(names, dists))
@@ -807,20 +874,35 @@ class DEMLitModule(LightningModule):
         self.eval_epoch_end("val")
 
     def on_test_epoch_end(self) -> None:
+        wandb_logger = get_wandb_logger(self.loggers)
+
         self.eval_epoch_end("test")
-        batch_size = 500
+        self._log_energy_w2(prefix="test")
+        if self.energy_function.is_molecule:
+            self._log_dist_w2(prefix="test")
+            self._log_dist_total_var(prefix="test")
+        
+        batch_size = 1000
         final_samples = []
         n_batches = self.num_samples_to_save // batch_size
         print("Generating samples")
         for i in range(n_batches):
             start = time.time()
-            final_samples.append(
-                self.generate_samples(
+            samples = self.generate_samples(
                     num_samples=batch_size, diffusion_scale=self.diffusion_scale
                 )
+            final_samples.append(samples
             )
             end = time.time()
             print(f"batch {i} took {end - start:0.2f}s")
+
+            if i==0:
+                self.energy_function.log_on_epoch_end(
+                    samples,
+                    self.energy_function(samples),
+                    wandb_logger,
+                )
+
         final_samples = torch.cat(final_samples, dim=0)
         output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
         path = f"{output_dir}/samples_{self.num_samples_to_save}.pt"
