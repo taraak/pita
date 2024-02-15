@@ -145,6 +145,7 @@ class DEMLitModule(LightningModule):
         use_buffer=True,
         tol=1e-5,
         version=1,
+        do_langevin=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -480,6 +481,7 @@ class DEMLitModule(LightningModule):
         num_samples: Optional[int] = None,
         return_full_trajectory: bool = False,
         diffusion_scale=1.0,
+        do_langevin=False,
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_samples_to_generate_per_epoch
 
@@ -491,6 +493,7 @@ class DEMLitModule(LightningModule):
             reverse_time=True,
             return_full_trajectory=return_full_trajectory,
             diffusion_scale=diffusion_scale,
+            do_langevin=do_langevin,
         )
 
     def integrate(
@@ -501,6 +504,7 @@ class DEMLitModule(LightningModule):
         return_full_trajectory=False,
         diffusion_scale=1.0,
         no_grad=True,
+        do_langevin=False,
     ) -> torch.Tensor:
         trajectory = integrate_sde(
             reverse_sde or self.reverse_sde,
@@ -510,6 +514,7 @@ class DEMLitModule(LightningModule):
             diffusion_scale=diffusion_scale,
             reverse_time=reverse_time,
             no_grad=no_grad,
+            do_langevin=do_langevin,
         )
         if return_full_trajectory:
             return trajectory
@@ -534,8 +539,6 @@ class DEMLitModule(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
-        # self.last_samples = self.generate_samples()
-        # self.last_energies = self.energy_function(self.last_samples)
         if self.clipper_gen is not None:
             reverse_sde = VEReverseSDE(
                 self.clipper_gen.wrap_grad_fxn(self.net), self.noise_schedule
@@ -710,7 +713,8 @@ class DEMLitModule(LightningModule):
         # generate samples noise --> data if needed
         if backwards_samples is None or self.eval_batch_size > len(backwards_samples):
             backwards_samples = self.generate_samples(
-                num_samples=self.eval_batch_size, diffusion_scale=self.diffusion_scale
+                num_samples=self.eval_batch_size,
+                diffusion_scale=self.diffusion_scale,
             )
 
         # sample eval_batch_size from generated samples from dem to match dimenstions
@@ -792,7 +796,6 @@ class DEMLitModule(LightningModule):
             self.compute_log_z(
                 self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
             )
-
         self.eval_step_outputs.append(to_log)
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
@@ -875,21 +878,22 @@ class DEMLitModule(LightningModule):
 
     def on_test_epoch_end(self) -> None:
         wandb_logger = get_wandb_logger(self.loggers)
-
         self.eval_epoch_end("test")
-        self._log_energy_w2(prefix="test")
-        if self.energy_function.is_molecule:
-            self._log_dist_w2(prefix="test")
-            self._log_dist_total_var(prefix="test")
+        # self._log_energy_w2(prefix="test")
+        # if self.energy_function.is_molecule:
+        #     self._log_dist_w2(prefix="test")
+        #     self._log_dist_total_var(prefix="test")
         
-        batch_size = 1000
+        batch_size = 500
         final_samples = []
         n_batches = self.num_samples_to_save // batch_size
         print("Generating samples")
         for i in range(n_batches):
             start = time.time()
             samples = self.generate_samples(
-                    num_samples=batch_size, diffusion_scale=self.diffusion_scale
+                    num_samples=batch_size,
+                    diffusion_scale=self.diffusion_scale,
+                    do_langevin=self.hparams.do_langevin
                 )
             final_samples.append(samples
             )
@@ -913,6 +917,16 @@ class DEMLitModule(LightningModule):
         path2 = f"{self.energy_function.name}/samples_{self.hparams.version}_{self.num_samples_to_save}.pt"
         torch.save(final_samples, path2)
         print(f"Saving samples to {path2}")
+
+        traj_samples = self.generate_samples(
+                    num_samples=2000,
+                    diffusion_scale=self.diffusion_scale,
+                    do_langevin=self.hparams.do_langevin,
+                    return_full_trajectory=True
+                )
+        path = f"{output_dir}/traj_samples_{self.num_samples_to_save}.pt"
+        torch.save(traj_samples, path)
+        print(f"Saving samples to {path}")
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

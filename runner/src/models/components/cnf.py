@@ -96,7 +96,7 @@ class CNF(torch.nn.Module):
             # forward drift too.
             shaped_t = torch.ones(x.shape[0], device=x.device) * t
             if self.is_diffusion:
-                return 0.5 * self.vf(shaped_t, x) * self.noise_schedule.g(t) ** 2
+                return - 0.5 * self.vf(shaped_t, x) * self.noise_schedule.g(t) ** 2
             else:
                 return self.vf(shaped_t, x)
 
