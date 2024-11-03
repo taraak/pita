@@ -17,6 +17,13 @@ class SimpleReplayData(NamedTuple):
     energy: torch.Tensor
 
 
+class ReplayDataModule(torch.nn.Module):
+    def __init__(self, x: torch.Tensor, energy: torch.Tensor):
+        super().__init__()
+        self.register_buffer("x", x)
+        self.register_buffer("energy", energy)
+
+
 def sample_without_replacement(logits: torch.Tensor, n: int) -> torch.Tensor:
     # https://timvieira.github.io/blog/post/2014/07/31/gumbel-max-trick/
     z = (
@@ -245,11 +252,13 @@ class SimpleBuffer:
         self.dim = dim
         self.max_length = max_length
         self.min_sample_length = min_sample_length
-        self.buffer = SimpleReplayData(
+        # self.buffer = SimpleReplayData(
+        #     x=torch.zeros(self.max_length, dim).to(device),
+        #     energy=torch.zeros(self.max_length,).to(device),
+        # )
+        self.buffer = ReplayDataModule(
             x=torch.zeros(self.max_length, dim).to(device),
-            energy=torch.zeros(
-                self.max_length,
-            ).to(device),
+            energy=torch.zeros(self.max_length,).to(device),
         )
         self.possible_indices = torch.arange(self.max_length).to(device)
         self.device = device

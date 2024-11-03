@@ -6,16 +6,53 @@ from src.utils.data_utils import remove_mean
 from src.energies.base_energy_function import BaseEnergyFunction
 
 
+# def euler_maruyama_step(
+#     sde: VEReverseSDE, t: torch.Tensor, x: torch.Tensor, dt: float, diffusion_scale=1.0
+# ):
+#     # Calculate drift and diffusion terms
+#     drift = sde.f(t, x) * dt
+#     diffusion = diffusion_scale * sde.g(t, x) * np.sqrt(dt) * torch.randn_like(x)
+
+#     # Update the state
+#     x_next = x + drift + diffusion
+#     return x_next, drift
+
+
 def euler_maruyama_step(
-    sde: VEReverseSDE, t: torch.Tensor, x: torch.Tensor, dt: float, diffusion_scale=1.0
+        sde: VEReverseSDE,
+        t: torch.Tensor,
+        x: torch.Tensor,
+        a: torch.tensor, 
+        dt: float,
+        step: int,
+        resampling_interval=None,
+        diffusion_scale=1.0,
 ):
     # Calculate drift and diffusion terms
-    drift = sde.f(t, x) * dt
-    diffusion = diffusion_scale * sde.g(t, x) * np.sqrt(dt) * torch.randn_like(x)
+    drift_Xt, drift_At = sde.f(t, x, resampling_interval)
+    drift_Xt = drift_Xt * dt
+    drift_At = drift_At * dt
+
+    if t.dim() == 0:
+        # repeat the same time for all points if we have a scalar time
+        t = t * torch.ones_like(x).to(x.device)
+    diffusion = diffusion_scale * sde.g(t, x) * np.sqrt(dt) * torch.randn_like(x).to(x.device)
 
     # Update the state
-    x_next = x + drift + diffusion
-    return x_next, drift
+    x_next = x + drift_Xt + diffusion
+    a_next = a + drift_At
+
+    if resampling_interval is None or step % resampling_interval != 0:
+        return x_next, a_next, a_next
+
+    #resample based on the weights
+    choice = torch.multinomial(torch.exp(-a_next), x.shape[0], replacement=True)
+    x_next = x_next[choice]
+    a_next_plotting = a_next.clone()
+
+    a_next = torch.zeros_like(a_next)
+    
+    return x_next, a_next, a_next_plotting
 
 
 def integrate_pfode(
@@ -41,6 +78,46 @@ def integrate_pfode(
     return torch.stack(samples)
 
 
+# def integrate_sde(
+#     sde: VEReverseSDE,
+#     x0: torch.Tensor,
+#     num_integration_steps: int,
+#     energy_function: BaseEnergyFunction,
+#     reverse_time: bool = True,
+#     diffusion_scale=1.0,
+#     no_grad=True,
+#     time_range=1.0,
+# ):
+#     start_time = time_range if reverse_time else 0.0
+#     end_time = time_range - start_time
+
+#     times = torch.linspace(
+#         start_time, end_time, num_integration_steps + 1, device=x0.device
+#     )[:-1]
+
+#     x = x0
+#     samples = []
+#     if no_grad:
+#         with torch.no_grad():
+#             for t in times:
+#                 x, f = euler_maruyama_step(
+#                     sde, t, x, time_range / num_integration_steps, diffusion_scale
+#                 )
+#                 if energy_function.is_molecule:
+#                     x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
+#                 samples.append(x)
+#     else:
+#         for t in times:
+#             x, f = euler_maruyama_step(
+#                 sde, t, x, time_range / num_integration_steps, diffusion_scale
+#             )
+#             if energy_function.is_molecule:
+#                 x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
+#             samples.append(x)
+
+#     return torch.stack(samples)
+
+
 def integrate_sde(
     sde: VEReverseSDE,
     x0: torch.Tensor,
@@ -50,6 +127,8 @@ def integrate_sde(
     diffusion_scale=1.0,
     no_grad=True,
     time_range=1.0,
+    resampling_interval=None,
+    do_langevin=False,
 ):
     start_time = time_range if reverse_time else 0.0
     end_time = time_range - start_time
@@ -57,25 +136,34 @@ def integrate_sde(
     times = torch.linspace(
         start_time, end_time, num_integration_steps + 1, device=x0.device
     )[:-1]
-
     x = x0
+
+    x0.requires_grad = True
     samples = []
+    logweights = []
+    a = torch.zeros(x.shape[0]).to(x.device)
+
     if no_grad:
         with torch.no_grad():
-            for t in times:
-                x, f = euler_maruyama_step(
-                    sde, t, x, time_range / num_integration_steps, diffusion_scale
-                )
+            for step, t in enumerate(times):
+                x, a, a_plot = euler_maruyama_step(sde, t, x, a, 
+                                                   time_range/num_integration_steps, step,
+                                                   resampling_interval=resampling_interval,
+                                                   diffusion_scale=diffusion_scale)
                 if energy_function.is_molecule:
                     x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
                 samples.append(x)
+                logweights.append(a_plot)
+
     else:
-        for t in times:
-            x, f = euler_maruyama_step(
-                sde, t, x, time_range / num_integration_steps, diffusion_scale
-            )
+        for step, t in enumerate(times):
+            x, a, a_plot = euler_maruyama_step(sde, t, x, a,
+                                               time_range/num_integration_steps, step,
+                                               resampling_interval=resampling_interval,
+                                               diffusion_scale=diffusion_scale)
             if energy_function.is_molecule:
                 x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
             samples.append(x)
+            logweights.append(a_plot)
 
-    return torch.stack(samples)
+    return torch.stack(samples), torch.stack(logweights)

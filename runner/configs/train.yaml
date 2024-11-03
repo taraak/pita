@@ -12,8 +12,8 @@ defaults:
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default
   - paths: default
-  - extras: default
   - hydra: default
+  - extras: default
 
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
@@ -31,6 +31,8 @@ defaults:
 
 # task name, determines output directory path
 task_name: "train"
+
+run_name: "default"
 
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs

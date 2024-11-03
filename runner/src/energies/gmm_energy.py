@@ -177,7 +177,7 @@ class GMM(BaseEnergyFunction):
         return fig_to_image(fig)
 
     def get_dataset_fig(
-        self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40)
+        self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40), color="blue"
     ):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -191,7 +191,7 @@ class GMM(BaseEnergyFunction):
         )
 
         # plot dataset samples
-        plot_marginal_pair(samples, ax=axs[0], bounds=plotting_bounds)
+        plot_marginal_pair(samples, ax=axs[0], bounds=plotting_bounds, color=color)
         axs[0].set_title("Buffer")
 
         if gen_samples is not None:
@@ -203,7 +203,7 @@ class GMM(BaseEnergyFunction):
                 grid_width_n_points=200,
             )
             # plot generated samples
-            plot_marginal_pair(gen_samples, ax=axs[1], bounds=plotting_bounds)
+            plot_marginal_pair(gen_samples, ax=axs[1], bounds=plotting_bounds, color=color)
             axs[1].set_title("Generated samples")
 
         # delete subplot

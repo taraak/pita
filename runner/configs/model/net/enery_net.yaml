@@ -1,0 +1,2 @@
+_target_: src.models.components.energy_net.EnergyNet
+_partial_: true

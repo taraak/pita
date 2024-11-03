@@ -20,7 +20,11 @@ defaults:
   - override /model/net: egnn
 
 optimizer:
-  lr: 5e-4
+  lr: 1e-3 #5e-4
+
+trainer:
+  check_val_every_n_epoch: 10
+  max_epochs: 2000
 
 model:
   net:
@@ -31,7 +35,7 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.00001 #0.01
+    sigma_min: 0.01 #0.00001 #0.01
     sigma_max: 3       #5
   # noise_schedule:
   #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
@@ -64,6 +68,11 @@ model:
 
   nll_integration_method: dopri5
   cfm_prior_std: 2.
-  logz_with_cfm: true
+  logz_with_cfm: false
 
-  num_estimator_mc_samples: 1000
+  nll_with_cfm: false
+
+  num_estimator_mc_samples: 200 #1000
+
+  exact_hessian: true
+  resampling_interval: 1

@@ -51,6 +51,7 @@ class LennardJonesPotential(Energy):
         oscillator_scale=1.0,
         two_event_dims=True,
         energy_factor=1.0,
+
     ):
         """Energy for a Lennard-Jones cluster
 
@@ -87,6 +88,7 @@ class LennardJonesPotential(Energy):
         # this is to match the eacf energy with the eq-fm energy
         # for lj13, to match the eacf set energy_factor=0.5
         self._energy_factor = energy_factor
+
 
     def _energy(self, x):
         batch_shape = x.shape[: -len(self.event_shape)]

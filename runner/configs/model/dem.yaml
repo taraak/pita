@@ -19,13 +19,13 @@ defaults:
   - noise_schedule:
     - geometric
 
-buffer:
+partial_buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
+  _partial_: true
   dim: ${energy.dimensionality}
   max_length: 10000
   min_sample_length: 1000
   initial_sampler: null
-  device: ${trainer.accelerator}
   sample_with_replacement: True
   fill_buffer_during_init: False
   prioritize: False
@@ -80,3 +80,6 @@ logz_with_cfm: false
 num_samples_to_save: 100000
 tol: 1e-5
 
+
+exact_hessian: false
+resampling_interval: 1

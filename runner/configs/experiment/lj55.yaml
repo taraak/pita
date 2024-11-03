@@ -18,12 +18,13 @@ logger:
 defaults: 
   - override /energy: lj55
   - override /model/net: egnn
+  # - override /model/net: energy_net
 
 data:
   n_val_batches_per_epoch: 4
 
 trainer:
-  check_val_every_n_epoch: 50
+  check_val_every_n_epoch: 20
   max_epochs: 2000
 
 model:
@@ -65,17 +66,21 @@ model:
     max_score_norm: 20
     min_log_reward: null
 
-  diffusion_scale: 0.5
+  diffusion_scale: 1.0
 
   num_init_samples: 1024
-  num_samples_to_generate_per_epoch: 128
+  num_samples_to_generate_per_epoch: 32
   num_samples_to_sample_from_buffer: 128
   eval_batch_size: 16
 
-  nll_with_cfm: true
+  nll_with_cfm: false
   init_from_prior: true
-  logz_with_cfm: true
+  logz_with_cfm: false
 
   nll_integration_method: dopri5
+
+  exact_hessian: false
+  resampling_interval: 1
+
 
   
