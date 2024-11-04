@@ -10,5 +10,5 @@ micromamba activate ~/scratch/demenv
 
 export seed=62;
 
-python src/train.py experiment=dw4 trainer=gpu #model.resampling_interval=null
+python src/train.py experiment=dw4 trainer=gpu model.resampling_interval=null
 

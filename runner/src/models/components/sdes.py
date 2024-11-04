@@ -51,7 +51,7 @@ class VEReverseSDE(torch.nn.Module):
             if resampling_interval is None:
                 return  drift_X, drift_A
             
-            dUt_dt = torch.autograd.grad(nabla_Ut.sum(), t, create_graph=True)[0]
+            dUt_dt = torch.autograd.grad(Ut.sum(), t, create_graph=True)[0]
             laplacian_b = epsilon_t * compute_laplacian(self.model, nabla_Ut, t, x, 1, exact=self.exact_hessian)
             drift_A = laplacian_b + epsilon_t * nabla_Ut.pow(2).sum(-1)  + dUt_dt
 

@@ -23,7 +23,7 @@ optimizer:
   lr: 1e-3 #5e-4
 
 trainer:
-  check_val_every_n_epoch: 10
+  check_val_every_n_epoch: 1
   max_epochs: 2000
 
 model:
@@ -75,4 +75,4 @@ model:
   num_estimator_mc_samples: 200 #1000
 
   exact_hessian: true
-  resampling_interval: 1
+  resampling_interval: 10

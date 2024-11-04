@@ -593,7 +593,7 @@ class DEMLitModule(LightningModule):
         axs.plot(integration_times, logweights)
 
         #limit yaxis
-        axs.set_ylim(-logweights.min()-1, logweights[0].mean() + logweights[0].std())
+        # axs.set_ylim(-logweights.min()-1, logweights[0].mean() + logweights[0].std())
         axs.set_xlabel("Integration time")
         fig.canvas.draw()
         img = PIL.Image.frombytes(
@@ -1005,7 +1005,7 @@ class DEMLitModule(LightningModule):
 
         self.cfm_net = self.hparams.net(energy_function=self.energy_function)
         score_net = self.hparams.net(energy_function=self.energy_function)
-        self.net = EnergyModel(score_net)
+        self.net = EnergyModel(score_net, self.energy_function, self.prior)
 
         self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
 
