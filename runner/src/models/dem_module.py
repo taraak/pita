@@ -494,11 +494,11 @@ class DEMLitModule(LightningModule):
         resampling_interval = resampling_interval or self.hparams.resampling_interval
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale
 
-        samples = self.prior.sample(num_samples)
+        prior_samples = self.prior.sample(num_samples)
 
-        samples, logweights = self.integrate(
+        samples, _ = self.integrate(
             reverse_sde=reverse_sde,
-            samples=samples,
+            samples=prior_samples.clone(),
             reverse_time=True,
             return_full_trajectory=return_full_trajectory,
             diffusion_scale=diffusion_scale,
@@ -506,7 +506,18 @@ class DEMLitModule(LightningModule):
             resampling_interval=resampling_interval
         )
         if return_logweights:
+            # reintegrate without resampling to get logweights
+            _, logweights = self.integrate(
+                reverse_sde=reverse_sde,
+                samples=prior_samples.clone(),
+                reverse_time=True,
+                return_full_trajectory=return_full_trajectory,
+                diffusion_scale=diffusion_scale,
+                do_langevin=do_langevin,
+                resampling_interval=self.num_integration_steps
+            )
             return samples, logweights
+        
         return samples
 
 

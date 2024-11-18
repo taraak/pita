@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-
 from src.models.components.sdes import VEReverseSDE
 from src.utils.data_utils import remove_mean
 from src.energies.base_energy_function import BaseEnergyFunction
@@ -43,16 +42,19 @@ def euler_maruyama_step(
     a_next = a + drift_At
 
     if resampling_interval is None or step % resampling_interval != 0:
-        return x_next, a_next, a_next
+        return x_next, a_next
 
     #resample based on the weights
-    choice = torch.multinomial(torch.exp(-a_next), x.shape[0], replacement=True)
+    if a_next.isnan().any():
+        print("NAN in the AIS weights")
+    if torch.exp(-a_next).clamp(0, 10).isnan().any():
+        print("NAN in the AIS weights exp")
+    # a_next = a_next.clamp(-10, 10)
+    choice = torch.multinomial(torch.softmax(-a_next, dim=-1), x.shape[0], replacement=True)
     x_next = x_next[choice]
-    a_next_plotting = a_next.clone()
-
     a_next = torch.zeros_like(a_next)
     
-    return x_next, a_next, a_next_plotting
+    return x_next, a_next
 
 
 def integrate_pfode(
@@ -146,24 +148,24 @@ def integrate_sde(
     if no_grad:
         with torch.no_grad():
             for step, t in enumerate(times):
-                x, a, a_plot = euler_maruyama_step(sde, t, x, a, 
+                x, a = euler_maruyama_step(sde, t, x, a, 
                                                    time_range/num_integration_steps, step,
                                                    resampling_interval=resampling_interval,
                                                    diffusion_scale=diffusion_scale)
                 if energy_function.is_molecule:
                     x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
                 samples.append(x)
-                logweights.append(a_plot)
+                logweights.append(a)
 
     else:
         for step, t in enumerate(times):
-            x, a, a_plot = euler_maruyama_step(sde, t, x, a,
+            x, a = euler_maruyama_step(sde, t, x, a,
                                                time_range/num_integration_steps, step,
                                                resampling_interval=resampling_interval,
                                                diffusion_scale=diffusion_scale)
             if energy_function.is_molecule:
                 x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
             samples.append(x)
-            logweights.append(a_plot)
+            logweights.append(a)
 
     return torch.stack(samples), torch.stack(logweights)

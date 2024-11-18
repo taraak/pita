@@ -21,7 +21,6 @@ class SDE(torch.nn.Module):
         return self.diffusion(t, x)
 
 
-
 class VEReverseSDE(torch.nn.Module):
     noise_type = "diagonal"
     sde_type = "ito"
@@ -52,8 +51,9 @@ class VEReverseSDE(torch.nn.Module):
                 return  drift_X, drift_A
             
             dUt_dt = torch.autograd.grad(Ut.sum(), t, create_graph=True)[0]
+
             laplacian_b = epsilon_t * compute_laplacian(self.model, nabla_Ut, t, x, 1, exact=self.exact_hessian)
-            drift_A = laplacian_b + epsilon_t * nabla_Ut.pow(2).sum(-1)  + dUt_dt
+            drift_A = -laplacian_b - epsilon_t * nabla_Ut.pow(2).sum(-1) + dUt_dt
 
         return  drift_X.detach(), drift_A.detach()
 
