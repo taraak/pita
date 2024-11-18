@@ -27,6 +27,7 @@ class GMM(BaseEnergyFunction):
         train_set_size=100000,
         test_set_size=2000,
         val_set_size=2000,
+        temperature=1.0,
     ):
         use_gpu = device != "cpu"
         torch.manual_seed(0)  # seed of 0 for GMM problem
@@ -38,6 +39,8 @@ class GMM(BaseEnergyFunction):
             use_gpu=use_gpu,
             true_expectation_estimation_n_samples=true_expectation_estimation_n_samples,
         )
+
+        self.temperature = temperature
 
         self.curr_epoch = 0
         self.device = device
@@ -72,11 +75,11 @@ class GMM(BaseEnergyFunction):
         val_samples = self.gmm.sample((self.val_set_size,))
         return val_samples
 
-    def __call__(self, samples: torch.Tensor) -> torch.Tensor:
+    def __call__(self, samples: torch.Tensor, T=1.0) -> torch.Tensor:
         if self.should_unnormalize:
             samples = self.unnormalize(samples)
 
-        return self.gmm.log_prob(samples)
+        return self.gmm.log_prob(samples) / self.temperature * T
 
     @property
     def dimensionality(self):
@@ -156,7 +159,7 @@ class GMM(BaseEnergyFunction):
         wandb_logger.log_image(f"{name}", [samples_fig])
 
     def get_single_dataset_fig(
-        self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40)
+        self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40), T=1.0
     ):
         fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 
@@ -167,6 +170,8 @@ class GMM(BaseEnergyFunction):
             ax=ax,
             n_contour_levels=50,
             grid_width_n_points=200,
+            T = T,
+            temperature=self.temperature
         )
 
         plot_marginal_pair(samples, ax=ax, bounds=plotting_bounds)
@@ -177,7 +182,8 @@ class GMM(BaseEnergyFunction):
         return fig_to_image(fig)
 
     def get_dataset_fig(
-        self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40), color="blue"
+        self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40), color="blue", T=1.0, cmap=None
+
     ):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -188,10 +194,12 @@ class GMM(BaseEnergyFunction):
             ax=axs[0],
             n_contour_levels=50,
             grid_width_n_points=200,
+            T=T,
+            temperature=self.temperature
         )
 
         # plot dataset samples
-        plot_marginal_pair(samples, ax=axs[0], bounds=plotting_bounds, color=color)
+        plot_marginal_pair(samples, ax=axs[0], bounds=plotting_bounds, color=color, cmap=cmap)
         axs[0].set_title("Buffer")
 
         if gen_samples is not None:
@@ -203,7 +211,7 @@ class GMM(BaseEnergyFunction):
                 grid_width_n_points=200,
             )
             # plot generated samples
-            plot_marginal_pair(gen_samples, ax=axs[1], bounds=plotting_bounds, color=color)
+            plot_marginal_pair(gen_samples, ax=axs[1], bounds=plotting_bounds, color=color, cmap=cmap)
             axs[1].set_title("Generated samples")
 
         # delete subplot
