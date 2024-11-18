@@ -24,9 +24,6 @@ model:
     n_layers: 5
     hidden_nf: 128
 
-  # noise_schedule:
-  #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-  #   beta: 3
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
@@ -38,13 +35,6 @@ model:
     _partial_: true
     n_particles: 13
     spatial_dim: 3
-
-  # clipper_gen:
-  #   _target_: src.models.components.clipper.Clipper
-  #   should_clip_scores: True
-  #   should_clip_log_rewards: False
-  #   max_score_norm: 100
-  #   min_log_reward: null
 
   lambda_weighter:
     _target_: src.models.components.lambda_weighter.NoLambdaWeighter

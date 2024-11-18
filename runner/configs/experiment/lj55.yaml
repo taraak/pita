@@ -24,7 +24,7 @@ data:
   n_val_batches_per_epoch: 4
 
 trainer:
-  check_val_every_n_epoch: 20
+  check_val_every_n_epoch: 10
   max_epochs: 2000
 
 model:
@@ -63,7 +63,7 @@ model:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
     should_clip_log_rewards: False
-    max_score_norm: 20
+    max_score_norm: 100 #20
     min_log_reward: null
 
   diffusion_scale: 1.0
@@ -80,7 +80,7 @@ model:
   nll_integration_method: dopri5
 
   exact_hessian: false
-  resampling_interval: 1
+  resampling_interval: 10
 
 
   

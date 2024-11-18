@@ -12,5 +12,7 @@
 
   is_molecule: True
 
+  smooth: True
+
 
 

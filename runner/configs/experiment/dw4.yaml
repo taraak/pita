@@ -75,4 +75,4 @@ model:
   num_estimator_mc_samples: 200 #1000
 
   exact_hessian: true
-  resampling_interval: 10
+  resampling_interval: 50
