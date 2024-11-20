@@ -28,11 +28,11 @@ from .components.mlp import TimeConder
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.scaling_wrapper import ScalingWrapper
-from .components.score_estimator import estimate_grad_Rt, wrap_for_richardsons
+from .components.score_estimator import estimate_grad_Rt, wrap_for_richardsons, estimate_Rt
 from .components.score_scaler import BaseScoreScaler
 from .components.sde_integration import integrate_sde
 from .components.sdes import VEReverseSDE
-from .components.energy_model import EnergyModel
+from .components.energy_model_2 import EnergyModel
 
 def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
     """Stratify loss by binning t."""
@@ -317,7 +317,7 @@ class DEMLitModule(LightningModule):
         :param x: A tensor of images.
         :return: A tensor of logits.
         """
-        return self.net(t, x)
+        return self.net.forward_energy(t, x)
 
     def get_cfm_loss(self, samples: torch.Tensor) -> torch.Tensor:
         x0 = self.cfm_prior.sample(self.num_samples_to_sample_from_buffer)
@@ -354,7 +354,14 @@ class DEMLitModule(LightningModule):
         return error_norms
 
     def get_loss(self, times: torch.Tensor, samples: torch.Tensor) -> torch.Tensor:
-        estimated_score = estimate_grad_Rt(
+        # estimated_score = estimate_grad_Rt(
+        #     times,
+        #     samples,
+        #     self.energy_function,
+        #     self.noise_schedule,
+        #     num_mc_samples=self.num_estimator_mc_samples,
+        # )
+        estimated_energy = estimate_Rt(
             times,
             samples,
             self.energy_function,
@@ -362,32 +369,37 @@ class DEMLitModule(LightningModule):
             num_mc_samples=self.num_estimator_mc_samples,
         )
 
-        if self.clipper is not None and self.clipper.should_clip_scores:
-            if self.energy_function.is_molecule:
-                estimated_score = estimated_score.reshape(
-                    -1,
-                    self.energy_function.n_particles,
-                    self.energy_function.n_spatial_dim,
-                )
+        # if self.clipper is not None and self.clipper.should_clip_scores:
+        #     if self.energy_function.is_molecule:
+        #         estimated_score = estimated_score.reshape(
+        #             -1,
+        #             self.energy_function.n_particles,
+        #             self.energy_function.n_spatial_dim,
+        #         )
 
-            estimated_score = self.clipper.clip_scores(estimated_score)
+        #     estimated_score = self.clipper.clip_scores(estimated_score)
 
-            if self.energy_function.is_molecule:
-                estimated_score = estimated_score.reshape(
-                    -1, self.energy_function.dimensionality
-                )
+        #     if self.energy_function.is_molecule:
+        #         estimated_score = estimated_score.reshape(
+        #             -1, self.energy_function.dimensionality
+        #         )
 
-        if self.score_scaler is not None:
-            estimated_score = self.score_scaler.scale_target_score(
-                estimated_score, times
-            )
+        # if self.score_scaler is not None:
+        #     estimated_score = self.score_scaler.scale_target_score(
+        #         estimated_score, times
+        #     )
 
+        # with torch.enable_grad():
+        #     samples.requires_grad_(True)
+        #     pred_energy = self.forward(times, samples)
+        #     predicted_score = torch.autograd.grad(pred_energy.sum(), samples, create_graph=True)[0]
         with torch.enable_grad():
             samples.requires_grad_(True)
             pred_energy = self.forward(times, samples)
-            predicted_score = torch.autograd.grad(pred_energy.sum(), samples, create_graph=True)[0]
 
-        error_norms = (predicted_score - estimated_score).pow(2).mean(-1)
+        # error_norms = (predicted_score - estimated_score).pow(2).mean(-1)
+        error_norms = (pred_energy - estimated_energy).abs()
+        error_norms = torch.clamp(error_norms, max=1e5)
 
         return self.lambda_weighter(times) * error_norms
 
@@ -420,6 +432,7 @@ class DEMLitModule(LightningModule):
                 )
 
             dem_loss = self.get_loss(times, noised_samples)
+
             # Uncomment for SM
             #dem_loss = self.get_score_loss(times, iter_samples, noised_samples)
             self.log_dict(
@@ -1014,9 +1027,10 @@ class DEMLitModule(LightningModule):
 
         self.buffer.add(init_states, init_energies)
 
-        self.cfm_net = self.hparams.net(energy_function=self.energy_function)
-        score_net = self.hparams.net(energy_function=self.energy_function)
-        self.net = EnergyModel(score_net, self.energy_function, self.prior)
+        self.cfm_net = self.hparams.net()
+        # score_net = self.hparams.net()
+        # self.net = EnergyModel(score_net, self.energy_function, self.prior)
+        self.net = EnergyModel(self.hparams.net, self.energy_function, self.prior, score_clipper=self.clipper)
 
         self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
 

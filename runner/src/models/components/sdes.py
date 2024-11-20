@@ -41,8 +41,10 @@ class VEReverseSDE(torch.nn.Module):
             t.requires_grad_(True)
             epsilon_t = self.g(t, x).pow(2) / 2 
             
-            Ut = self.model(t, x)
-            nabla_Ut = torch.autograd.grad(Ut.sum(), x, create_graph=True)[0]
+            Ut = self.model.forward_energy(t, x)
+            # nabla_Ut = torch.autograd.grad(Ut.sum(), x, create_graph=True)[0]
+            nabla_Ut = self.model(t, x)
+
             drift_X = nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1)
 
             drift_A = torch.zeros(x.shape[0]).to(x.device)
@@ -52,7 +54,7 @@ class VEReverseSDE(torch.nn.Module):
             
             dUt_dt = torch.autograd.grad(Ut.sum(), t, create_graph=True)[0]
 
-            laplacian_b = epsilon_t * compute_laplacian(self.model, nabla_Ut, t, x, 1, exact=self.exact_hessian)
+            laplacian_b = epsilon_t * compute_laplacian(self.model.forward_energy, nabla_Ut, t, x, 1, exact=self.exact_hessian)
             drift_A = -laplacian_b - epsilon_t * nabla_Ut.pow(2).sum(-1) + dUt_dt
 
         return  drift_X.detach(), drift_A.detach()

@@ -15,33 +15,18 @@ class EnergyModel(nn.Module):
         if self.target.is_molecule:
             self.score_net = score_net(energy_function=target, 
                                        add_virtual=False,
-                                       energy=True)
+                                       energy=False)
         else:
-            self.score_net = score_net
-            self.c = nn.Parameter(torch.tensor(0.0))
+            self.score_net = score_net()
         self.prior = prior
         self.score_clipper = score_clipper
 
     def forward_energy(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        score = self.score_net(t, x)
+        # parametrize energy as <score_net(t, x), x>
+        U_theta = torch.sum(self.score_net(t, x) * x, dim=-1)
         U_1 = self.prior.log_prob(x)
-
-        if not self.target.is_molecule:
-            U = - torch.linalg.vector_norm(score, dim=-1) + score.sum(-1) + self.c
-            U_theta = U.unsqueeze(-1)
-        
-        else:
-            score, potential = score
-            score = score.view(score.shape[0], 
-                            self.target.n_particles,
-                            self.target.n_spatial_dim)
-            potential = potential.view(score.shape[0], 
-                            self.target.n_particles, -1)
-            U = - torch.linalg.vector_norm(score, dim=-1) + potential.sum(-1)
-            U_theta = U.sum(-1)
-        return U_theta
-        #return t * U_1 + (1 - t) * U_theta
-
+        # U_0 = self.target(x)
+        return t * U_1 + (1 - t) * U_theta
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         U = self.forward_energy(t, x)
