@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from .dem_module import *
+from src.models.components.sdes import VEReverseSDE
 
 class rDEMLitModule(DEMLitModule):
 
@@ -56,11 +57,12 @@ class rDEMLitModule(DEMLitModule):
 
         wandb_logger = get_wandb_logger(self.loggers)
         
-        reverse_sde = VEReverseSDE(self.score_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
+        reverse_sde = VEReverseSDEScore(self.score_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
 
         self.last_samples, _ = self.generate_samples(
             reverse_sde = reverse_sde,
-            return_logweights=True
+            return_logweights=True,
+            resampling_interval=None
         )
         
         self.last_energies = self.energy_function(self.last_samples)
