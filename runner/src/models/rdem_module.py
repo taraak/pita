@@ -57,7 +57,7 @@ class rDEMLitModule(DEMLitModule):
 
         wandb_logger = get_wandb_logger(self.loggers)
         
-        reverse_sde = VEReverseSDEScore(self.score_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
+        reverse_sde = VEReverseSDE(self.score_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
 
         self.last_samples, _ = self.generate_samples(
             reverse_sde = reverse_sde,
