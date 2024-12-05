@@ -1,4 +1,4 @@
-_target_: src.models.dem_module.DEMLitModule
+_target_: src.models.rdem_module.rDEMLitModule
 
 optimizer:
   _target_: torch.optim.Adam

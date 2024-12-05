@@ -53,6 +53,7 @@ model:
 
   clipper:
     _target_: src.models.components.clipper.Clipper
+    _partial_: true
     should_clip_scores: True
     should_clip_log_rewards: False
     max_score_norm: 20 #30

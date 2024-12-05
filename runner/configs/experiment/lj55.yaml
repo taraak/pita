@@ -39,7 +39,7 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.5
+    sigma_min: 0.01 #0.5
     sigma_max: 4
 
   partial_prior:
@@ -61,11 +61,12 @@ model:
 
   clipper:
     _target_: src.models.components.clipper.Clipper
+    # _partial_: true
     should_clip_scores: True
     should_clip_log_rewards: False
-    max_score_norm: 100 #20
+    max_score_norm: 50 #20
     min_log_reward: null
-
+    
   diffusion_scale: 1.0
 
   num_init_samples: 1024
