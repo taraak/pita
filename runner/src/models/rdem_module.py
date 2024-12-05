@@ -59,9 +59,9 @@ class rDEMLitModule(DEMLitModule):
         
         reverse_sde = VEReverseSDE(self.score_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
 
-        self.last_samples, _ = self.generate_samples(
+        self.last_samples = self.generate_samples(
             reverse_sde = reverse_sde,
-            return_logweights=True,
+            return_logweights=False,
             resampling_interval=None
         )
         
