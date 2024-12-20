@@ -1,0 +1,19 @@
+einops
+matplotlib
+mdtraj
+networkx 
+numpy 
+nglview
+openmm
+pot
+scikit-learn
+scipy
+tables
+tensorboard
+torch
+torchdiffeq
+torchvision
+tqdm
+jupyterlab
+bgflow @ git+https://github.com/atong01/bgflow.git
+bgmol @ git+https://github.com/noegroup/bgmol.git
