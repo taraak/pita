@@ -33,13 +33,9 @@ model:
     n_layers: 5
     hidden_nf: 128
 
-  # noise_schedule:
-    # _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-    # beta: 1.5
-
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01 #0.5
+    sigma_min: 0.5 #0.5
     sigma_max: 4
 
   partial_prior:
@@ -47,13 +43,6 @@ model:
     _partial_: true
     n_particles: 55
     spatial_dim: 3
-
-  # clipper_gen:
-  #   _target_: src.models.components.clipper.Clipper
-  #   should_clip_scores: True
-  #   should_clip_log_rewards: False
-  #   max_score_norm: 100
-  #   min_log_reward: null
 
   lambda_weighter:
     _target_: src.models.components.lambda_weighter.NoLambdaWeighter
@@ -64,15 +53,15 @@ model:
     # _partial_: true
     should_clip_scores: True
     should_clip_log_rewards: False
-    max_score_norm: 50 #20
+    max_score_norm: 20 #20
     min_log_reward: null
     
-  diffusion_scale: 1.0
+  diffusion_scale: 0.5
 
   num_init_samples: 1024
-  num_samples_to_generate_per_epoch: 32
-  num_samples_to_sample_from_buffer: 128
-  eval_batch_size: 16
+  num_samples_to_generate_per_epoch: 256
+  num_samples_to_sample_from_buffer: 256
+  eval_batch_size: 32
 
   nll_with_cfm: false
   init_from_prior: true
@@ -80,8 +69,3 @@ model:
 
   nll_integration_method: dopri5
 
-  exact_hessian: false
-  resampling_interval: 10
-
-
-  

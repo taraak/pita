@@ -10,6 +10,7 @@ class rDEMLitModule(DEMLitModule):
     def __init__(
         self,
         num_samples_to_generate_per_epoch_energy,
+        t0_energy_loss,
         *args,
         **kwargs,
     ):
@@ -24,6 +25,7 @@ class rDEMLitModule(DEMLitModule):
         do_langevin=False,
         resampling_interval=None,
         return_logweights=False,
+        num_langevin_steps=1,
     ) -> torch.Tensor:
         num_samples = num_samples or self.hparams.num_samples_to_generate_per_epoch_energy
         resampling_interval = resampling_interval or self.hparams.resampling_interval
@@ -37,8 +39,10 @@ class rDEMLitModule(DEMLitModule):
             reverse_time=True,
             return_full_trajectory=return_full_trajectory,
             diffusion_scale=diffusion_scale, 
-            resampling_interval=resampling_interval
+            resampling_interval=resampling_interval,
+            num_langevin_steps=num_langevin_steps
         )
+        # TODO: When returning the weights for plotting, I am not doing additional langevin steps
         if return_logweights:
             # reintegrate without resampling to get logweights
             _, logweights = self.integrate(
@@ -47,7 +51,8 @@ class rDEMLitModule(DEMLitModule):
                 reverse_time=True,
                 return_full_trajectory=return_full_trajectory,
                 diffusion_scale=diffusion_scale, 
-                resampling_interval=self.num_integration_steps
+                resampling_interval=self.num_integration_steps,
+                num_langevin_steps = 1
             )
             return samples, logweights
         return samples
@@ -79,6 +84,14 @@ class rDEMLitModule(DEMLitModule):
         error_norms_energy = (predicted_score_from_energy - predicted_score.detach()).pow(2).mean(-1)
         loss_energy_net = self.lambda_weighter(times) * error_norms_energy
 
+
+        if self.hparams.t0_energy_loss:
+            predicted_energy_t0 = self.energy_net.forward_energy(torch.zeros_like(times), samples)
+            target_energy_t0 = self.energy_function(samples)
+            loss_energy_t0 = (predicted_energy_t0 - target_energy_t0).pow(2).mean(-1)
+            return loss_score_net + loss_energy_net + loss_energy_t0
+
+
         return loss_score_net + loss_energy_net
 
     def eval_epoch_end(self, prefix: str):
@@ -89,8 +102,9 @@ class rDEMLitModule(DEMLitModule):
 
         self.last_samples, logweights = self.generate_samples(
             reverse_sde=reverse_sde,
-            return_logweights=True, #HERE
-            resampling_interval=self.hparams.resampling_interval
+            return_logweights=True,
+            resampling_interval=self.hparams.resampling_interval,
+            num_langevin_steps=self.hparams.num_langevin_steps
         )
         self.last_energies = self.energy_function(self.last_samples)
 
@@ -100,7 +114,6 @@ class rDEMLitModule(DEMLitModule):
             wandb_logger,
             prefix="energy_net",
         )
-
 
         if self.hparams.resampling_interval!=-1: #HERE
             self._log_logweights(logweights, prefix="val")

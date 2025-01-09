@@ -82,8 +82,10 @@ logz_with_cfm: false
 num_samples_to_save: 100000
 
 exact_hessian: false
-resampling_interval: 1
+resampling_interval: -1
 pin_energy_net: false
 
 negative_time: false
 num_negative_time_steps: 100
+
+num_langevin_steps: 1
