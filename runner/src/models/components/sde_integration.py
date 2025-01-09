@@ -18,6 +18,16 @@ from contextlib import contextmanager
 #     return x_next, drift
 
 
+
+def sample_cat_sys(bs, logits):
+    u = torch.rand(size=(1,), dtype=torch.float64)
+    u = (u + 1/bs*torch.arange(bs)) % 1.0
+    clipped_weights = torch.clip(torch.softmax(logits, dim=-1), 1e-6, 1.0)
+    bins = torch.cumsum(clipped_weights, dim=-1)
+    ids = np.digitize(u, bins.cpu())
+    return ids, None
+
+
 @contextmanager
 def conditional_no_grad(condition):
     if condition:
@@ -50,7 +60,7 @@ def euler_maruyama_step(
         a: torch.tensor, 
         dt: float,
         step: int,
-        resampling_interval=None,
+        resampling_interval=-1,
         diffusion_scale=1.0,
 ):
     # Calculate drift and diffusion terms
@@ -67,7 +77,7 @@ def euler_maruyama_step(
     x_next = x + drift_Xt + diffusion
     a_next = a + drift_At
 
-    if resampling_interval is None or step % resampling_interval != 0:
+    if resampling_interval==-1 or step % resampling_interval != 0:
         return x_next, a_next
 
     #resample based on the weights
@@ -76,7 +86,8 @@ def euler_maruyama_step(
     if torch.exp(-a_next).clamp(0, 10).isnan().any():
         print("NAN in the AIS weights exp")
     # a_next = a_next.clamp(-10, 10)
-    choice = torch.multinomial(torch.softmax(-a_next, dim=-1), x.shape[0], replacement=True)
+    # choice = torch.multinomial(torch.softmax(-a_next, dim=-1), x.shape[0], replacement=True)
+    choice, _ = sample_cat_sys(x.shape[0], a_next)
     x_next = x_next[choice]
     a_next = torch.zeros_like(a_next)
     
@@ -155,7 +166,7 @@ def integrate_sde(
     diffusion_scale=1.0,
     no_grad=True,
     time_range=1.0,
-    resampling_interval=None,
+    resampling_interval=-1,
     negative_time=False,
     num_negative_time_steps=100,
 ):
@@ -175,9 +186,9 @@ def integrate_sde(
     with conditional_no_grad(no_grad):
         for step, t in enumerate(times):
             x, a = euler_maruyama_step(sde, t, x, a, 
-                                                time_range/num_integration_steps, step,
-                                                resampling_interval=resampling_interval,
-                                                diffusion_scale=diffusion_scale)
+                                       time_range/num_integration_steps, step,
+                                       resampling_interval=resampling_interval,
+                                       diffusion_scale=diffusion_scale)
             if energy_function.is_molecule:
                 x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
             samples.append(x)
