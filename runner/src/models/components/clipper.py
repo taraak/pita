@@ -20,10 +20,6 @@ class Clipper:
         self.min_log_reward = min_log_reward
         self.energy_function = energy_function
 
-        self.is_molecule = False
-        if energy_function is not None:
-            self.is_molecule = energy_function.is_molecule
-
     @property
     def should_clip_scores(self) -> bool:
         return self._should_clip_scores
@@ -31,6 +27,12 @@ class Clipper:
     @property
     def should_clip_log_rewards(self) -> bool:
         return self._should_clip_log_rewards
+    
+    @property
+    def is_molecule(self) -> bool:
+        if self.energy_function is not None:
+            return self.energy_function.is_molecule
+        return False
 
     def clip_scores(self, scores: torch.Tensor) -> torch.Tensor:
         if self.is_molecule:
