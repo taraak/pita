@@ -27,7 +27,7 @@ def compute_laplacian_hutchinson(nabla_Ut, t, xt):
     return laplacian.detach()
 
 
-def compute_laplacian(model, nabla_Ut, t, xt, n_samples, exact=True):
+def compute_laplacian(model, nabla_Ut, t, xt, n_samples=1, exact=True):
     if exact:
         return compute_laplacian_exact(model, t, xt)
     else:

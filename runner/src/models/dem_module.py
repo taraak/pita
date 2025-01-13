@@ -463,6 +463,7 @@ class DEMLitModule(LightningModule):
         no_grad=True,
         resampling_interval=-1,
         num_langevin_steps=1,
+        batch_size=None,
     ) -> torch.Tensor:
         trajectory, logweights = integrate_sde(
             reverse_sde or self.reverse_sde,
@@ -475,7 +476,8 @@ class DEMLitModule(LightningModule):
             negative_time=self.hparams.negative_time,
             num_negative_time_steps=self.hparams.num_negative_time_steps,
             num_langevin_steps=num_langevin_steps,
-            resampling_interval=resampling_interval
+            resampling_interval=resampling_interval,
+            batch_size=batch_size
         )
         if return_full_trajectory:
             return trajectory, logweights

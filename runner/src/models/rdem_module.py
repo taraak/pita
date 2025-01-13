@@ -11,6 +11,7 @@ class rDEMLitModule(DEMLitModule):
         self,
         num_samples_to_generate_per_epoch_energy,
         t0_energy_loss,
+        n_hutchinson_samples,
         *args,
         **kwargs,
     ):
@@ -26,8 +27,9 @@ class rDEMLitModule(DEMLitModule):
         resampling_interval=None,
         return_logweights=False,
         num_langevin_steps=1,
+        batch_size=None,
     ) -> torch.Tensor:
-        num_samples = num_samples or self.hparams.num_samples_to_generate_per_epoch_energy
+        num_samples = num_samples or self.hparams.num_samples_to_generate_per_epoch
         resampling_interval = resampling_interval or self.hparams.resampling_interval
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale #should we use same diff scale?
 
@@ -40,7 +42,8 @@ class rDEMLitModule(DEMLitModule):
             return_full_trajectory=return_full_trajectory,
             diffusion_scale=diffusion_scale, 
             resampling_interval=resampling_interval,
-            num_langevin_steps=num_langevin_steps
+            num_langevin_steps=num_langevin_steps,
+            batch_size=batch_size
         )
         # TODO: When returning the weights for plotting, I am not doing additional langevin steps
         if return_logweights:
@@ -52,7 +55,8 @@ class rDEMLitModule(DEMLitModule):
                 return_full_trajectory=return_full_trajectory,
                 diffusion_scale=diffusion_scale, 
                 resampling_interval=self.num_integration_steps,
-                num_langevin_steps = 1
+                num_langevin_steps=1,
+                batch_size=batch_size
             )
             return samples, logweights
         return samples
@@ -84,13 +88,16 @@ class rDEMLitModule(DEMLitModule):
         error_norms_energy = (predicted_score_from_energy - predicted_score.detach()).pow(2).mean(-1)
         loss_energy_net = self.lambda_weighter(times) * error_norms_energy
 
+        # if self.hparams.t0_energy_loss:
+        #     predicted_energy_t0 = self.energy_net.forward_energy(torch.zeros_like(times), samples)
+        #     target_energy_t0 = self.energy_function(samples)
+        #     loss_energy_t0 = (predicted_energy_t0 - target_energy_t0).pow(2).mean(-1)
+        #     return loss_score_net + loss_energy_net + loss_energy_t0
 
-        if self.hparams.t0_energy_loss:
-            predicted_energy_t0 = self.energy_net.forward_energy(torch.zeros_like(times), samples)
-            target_energy_t0 = self.energy_function(samples)
-            loss_energy_t0 = (predicted_energy_t0 - target_energy_t0).pow(2).mean(-1)
-            return loss_score_net + loss_energy_net + loss_energy_t0
-
+        #don't take a step if the loss is too high
+        if loss_score_net.max() > 1e4:
+            print("Loss too high, skipping step")
+            return torch.zeros_like(loss_score_net)
 
         return loss_score_net + loss_energy_net
 
@@ -98,13 +105,19 @@ class rDEMLitModule(DEMLitModule):
         super().eval_epoch_end(prefix)
 
         wandb_logger = get_wandb_logger(self.loggers)
-        reverse_sde = VEReverseSDE(self.energy_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
+        reverse_sde = VEReverseSDE(self.energy_net, self.noise_schedule,
+                                   n_hutchinson_samples=self.hparams.num_hutchinson_samples, 
+                                   exact_hessian=self.hparams.exact_hessian)
+
 
         self.last_samples, logweights = self.generate_samples(
             reverse_sde=reverse_sde,
+            num_samples=self.hparams.num_samples_to_generate_per_epoch_energy,
             return_logweights=True,
             resampling_interval=self.hparams.resampling_interval,
-            num_langevin_steps=self.hparams.num_langevin_steps
+            num_langevin_steps=self.hparams.num_langevin_steps,
+            batch_size=self.hparams.num_samples_to_generate_per_epoch # HERE
+
         )
         self.last_energies = self.energy_function(self.last_samples)
 
@@ -121,12 +134,14 @@ class rDEMLitModule(DEMLitModule):
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
         #HERE changed to generate samples with og  net to see if that's the issue
-        # reverse_sde = VEReverseSDE(self.energy_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
-        # self.last_samples, logweights = self.generate_samples(
-        #     reverse_sde=reverse_sde,
-        #     return_logweights=True
-        # )
-        self.last_samples = self.generate_samples(resampling_interval=-1)
+        reverse_sde = VEReverseSDE(self.energy_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
+        self.last_samples = self.generate_samples(
+            reverse_sde=reverse_sde,
+            return_logweights=False,
+            resampling_interval=self.hparams.resampling_interval,
+            num_langevin_steps=self.hparams.num_langevin_steps
+        )
+        # self.last_samples = self.generate_samples(resampling_interval=-1)
         
         self.last_energies = self.energy_function(self.last_samples)
         self.buffer.add(self.last_samples, self.last_energies)
@@ -139,6 +154,55 @@ class rDEMLitModule(DEMLitModule):
         if self.energy_function.is_molecule:
             self._log_dist_w2(prefix="val")
             self._log_dist_total_var(prefix="val")
+
+
+    def on_test_epoch_end(self) -> None:
+        wandb_logger = get_wandb_logger(self.loggers)
+
+        self.eval_epoch_end("test")
+        self._log_energy_w2(prefix="test")
+        if self.energy_function.is_molecule:
+            self._log_dist_w2(prefix="test")
+            self._log_dist_total_var(prefix="test")
+        
+        batch_size = self.hparams.num_samples_to_generate_per_epoch
+        final_samples = []
+        n_batches = self.num_samples_to_save // batch_size
+        print("Generating samples")
+
+        reverse_sde = VEReverseSDE(self.energy_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
+
+        for i in range(n_batches):
+            start = time.time()
+            samples = self.generate_samples(
+                    reverse_sde=reverse_sde,
+                    num_samples=batch_size,
+                    return_logweights=False,
+                    resampling_interval=self.hparams.resampling_interval,
+                    num_langevin_steps=self.hparams.num_langevin_steps
+                )
+            final_samples.append(samples
+            )
+            end = time.time()
+            print(f"batch {i} took {end - start:0.2f}s")
+
+            if i==0:
+                self.energy_function.log_on_epoch_end(
+                    samples,
+                    self.energy_function(samples),
+                    wandb_logger,
+                )
+
+        final_samples = torch.cat(final_samples, dim=0)
+        output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+        path = f"{output_dir}/samples_{self.num_samples_to_save}.pt"
+        torch.save(final_samples, path)
+        print(f"Saving samples to {path}")
+        import os
+        os.makedirs(self.energy_function.name, exist_ok=True)
+        path2 = f"{self.energy_function.name}/samples_{self.hparams.version}_{self.num_samples_to_save}.pt"
+        torch.save(final_samples, path2)
+        print(f"Saving samples to {path2}")
 
 
     def _log_logweights(self, logweights, prefix="val"):
