@@ -11,7 +11,7 @@ class rDEMLitModule(DEMLitModule):
         self,
         num_samples_to_generate_per_epoch_energy,
         t0_energy_loss,
-        n_hutchinson_samples,
+        num_hutchinson_samples,
         *args,
         **kwargs,
     ):
@@ -23,7 +23,6 @@ class rDEMLitModule(DEMLitModule):
         num_samples: Optional[int] = None,
         return_full_trajectory: bool = False,
         diffusion_scale = None,
-        do_langevin=False,
         resampling_interval=None,
         return_logweights=False,
         num_langevin_steps=1,
