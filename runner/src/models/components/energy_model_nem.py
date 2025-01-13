@@ -42,10 +42,12 @@ class EnergyModel(nn.Module):
             U = - torch.linalg.vector_norm(score, dim=-1) + potential.sum(-1)
             U_theta = U.sum(-1)
         if self.pinned:
-            # U_0 = self.energy_function(x)
+            U_0 = self.energy_function(x)
+            U_0 = torch.clamp(U_0, max=100, min=-100)
             # pin at t=0 and t=1
             # U_theta = t * U_1 + (1 - t) * t * U_theta + (1 - t) * U_0
-            return t * U_1 + (1 - t) * U_theta
+            # return t * U_1 + (1 - t) * U_theta
+            return (1-t) * U_0 + t * U_theta
         return U_theta
 
 

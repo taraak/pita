@@ -71,7 +71,7 @@ model:
 
   exact_hessian: false
   resampling_interval: 10
-  num_samples_to_generate_per_epoch_energy: 512
+  num_samples_to_generate_per_epoch_energy: 64
 
   num_samples_to_save: 5000
   

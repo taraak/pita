@@ -133,14 +133,14 @@ class rDEMLitModule(DEMLitModule):
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
         #HERE changed to generate samples with og  net to see if that's the issue
-        reverse_sde = VEReverseSDE(self.energy_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
-        self.last_samples = self.generate_samples(
-            reverse_sde=reverse_sde,
-            return_logweights=False,
-            resampling_interval=self.hparams.resampling_interval,
-            num_langevin_steps=self.hparams.num_langevin_steps
-        )
-        # self.last_samples = self.generate_samples(resampling_interval=-1)
+        # reverse_sde = VEReverseSDE(self.energy_net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
+        # self.last_samples = self.generate_samples(
+        #     reverse_sde=reverse_sde,
+        #     return_logweights=False,
+        #     resampling_interval=self.hparams.resampling_interval,
+        #     num_langevin_steps=self.hparams.num_langevin_steps
+        # )
+        self.last_samples = self.generate_samples(resampling_interval=-1)
         
         self.last_energies = self.energy_function(self.last_samples)
         self.buffer.add(self.last_samples, self.last_energies)

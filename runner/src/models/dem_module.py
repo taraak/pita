@@ -433,7 +433,6 @@ class DEMLitModule(LightningModule):
         reverse_sde: VEReverseSDE = None,
         num_samples: Optional[int] = None,
         return_full_trajectory: bool = False,
-        do_langevin=False,
         diffusion_scale=None,
         resampling_interval=-1,
         return_logweights=False,

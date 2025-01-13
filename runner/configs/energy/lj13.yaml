@@ -11,4 +11,4 @@ data_normalization_factor: 1.0
 
 is_molecule: True
 
-smooth: True
+smooth: False
