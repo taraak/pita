@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import PIL
 import torch
-# from bgflow import MultiDoubleWellPotential
+from bgflow import MultiDoubleWellPotential
 from hydra.utils import get_original_cwd
 from lightning.pytorch.loggers import WandbLogger
 

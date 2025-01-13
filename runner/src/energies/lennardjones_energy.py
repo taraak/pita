@@ -29,18 +29,6 @@ def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
     return lj
 
 
-# def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
-#     p = 0.9
-#     lj = eps * ((rm / r) ** 12 - 2 * (rm / r) ** 6)
-#     filter = (r < p)
-
-#     lj = lj * ~filter + filter * (energy_slope(p) * (r-p) +  ((1 / p) ** 12 - 2 * (1 / p) ** 6))
-#     return lj
-
-# def energy_slope(r):
-#     return 12 * (r**6 - 1)/r**13
-
-
 def cubic_spline(x_new, x, c):
     x, c = x.to(x_new.device), c.to(x_new.device)
     intervals = torch.bucketize(x_new, x) - 1

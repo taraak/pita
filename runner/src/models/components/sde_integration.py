@@ -148,9 +148,6 @@ def integrate_sde(
     if batch_size is None:
         batch_size = x0.shape[0]
 
-    print("batch size is ", batch_size)
-    print("x0 shape is ", x0.shape)
-
     times = torch.linspace(
         start_time, end_time, num_integration_steps + 1, device=x0.device
     )[:-1]
