@@ -1,9 +1,9 @@
 defaults:
   - default
 
-strategy: ddp
-
-accelerator: gpu
+# strategy: ddp
+accelerator: cuda
 devices: 4
 num_nodes: 1
 sync_batchnorm: True
+strategy: ddp_find_unused_parameters_true

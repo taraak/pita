@@ -6,6 +6,7 @@ import rootutils
 from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
+import os
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -94,8 +95,15 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     if cfg.get("train"):
         log.info("Starting training!")
-        trainer.validate(model=model, datamodule=datamodule)
-        trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+        trainer.validate(model=model, datamodule=datamodule)                 
+
+        ckpt_path = cfg.get("ckpt_path")
+        if ckpt_path is not None and not os.path.exists(ckpt_path):
+            ckpt_path = None
+            print("No checkpoint was found. Training from scratch.")
+        else:
+            log.info(f"Resuming training from checkpoint: {cfg.get('ckpt_path')}")    
+        trainer.fit(model=model, datamodule=datamodule, ckpt_path=ckpt_path)
 
     train_metrics = trainer.callback_metrics
 

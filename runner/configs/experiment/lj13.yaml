@@ -24,14 +24,10 @@ model:
     n_layers: 5
     hidden_nf: 128
 
-  # noise_schedule:
-  #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
-  #   beta: 3
-
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
     sigma_min: 0.01
-    sigma_max: 2 
+    sigma_max: 2
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -39,16 +35,14 @@ model:
     n_particles: 13
     spatial_dim: 3
 
-  # clipper_gen:
-  #   _target_: src.models.components.clipper.Clipper
-  #   should_clip_scores: True
-  #   should_clip_log_rewards: False
-  #   max_score_norm: 100
-  #   min_log_reward: null
-
   lambda_weighter:
     _target_: src.models.components.lambda_weighter.NoLambdaWeighter
     _partial_: true
+
+  # lambda_weighter:
+  #   _target_: src.models.components.lambda_weighter.BasicLambdaWeighter
+  #   _partial_: true
+  #   epsilon: 1e-3
 
   clipper:
     _target_: src.models.components.clipper.Clipper
@@ -56,6 +50,14 @@ model:
     should_clip_log_rewards: False
     max_score_norm: 20
     min_log_reward: null
+
+  # # this is if we clip scores in the model itself
+  # clipper_gen:
+  #   _target_: src.models.components.clipper.Clipper
+  #   should_clip_scores: True
+  #   should_clip_log_rewards: False
+  #   max_score_norm: 50 
+  #   min_log_reward: null
 
   # num_samples_to_sample_from_buffer: 5120
   diffusion_scale: 0.9
@@ -66,6 +68,7 @@ model:
 
   cfm_prior_std: 2
   nll_integration_method: dopri5
-  logz_with_cfm: true
+  logz_with_cfm: false
+  nll_with_cfm: false
 
   num_estimator_mc_samples: 1000

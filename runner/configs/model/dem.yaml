@@ -19,13 +19,13 @@ defaults:
   - noise_schedule:
     - geometric
 
-buffer:
+partial_buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
+  _partial_: true
   dim: ${energy.dimensionality}
   max_length: 10000
   min_sample_length: 1000
   initial_sampler: null
-  device: ${trainer.accelerator}
   sample_with_replacement: True
   fill_buffer_during_init: False
   prioritize: False
@@ -39,11 +39,13 @@ num_samples_to_sample_from_buffer: 512
 eval_batch_size: 1024
 
 num_integration_steps: 1000
-
 nll_integration_method: dopri5
+tol: 1e-5
+
 nll_with_cfm: true
 nll_with_dem: false
 nll_on_buffer: false
+
 cfm_sigma: 0.0
 cfm_prior_std: ${energy.data_normalization_factor}
 use_otcfm: false
@@ -78,5 +80,12 @@ use_buffer: true
 logz_with_cfm: false
 
 num_samples_to_save: 100000
-tol: 1e-5
 
+exact_hessian: false
+resampling_interval: -1
+pin_energy_net: false
+
+negative_time: false
+num_negative_time_steps: 100
+
+num_langevin_steps: 1

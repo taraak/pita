@@ -109,7 +109,7 @@ class DEMLitModule(LightningModule):
         energy_function: BaseEnergyFunction,
         noise_schedule: BaseNoiseSchedule,
         lambda_weighter: BaseLambdaWeighter,
-        buffer: PrioritisedReplayBuffer,
+        partial_buffer: PrioritisedReplayBuffer,
         num_init_samples: int,
         num_estimator_mc_samples: int,
         num_samples_to_generate_per_epoch: int,
@@ -145,15 +145,13 @@ class DEMLitModule(LightningModule):
         use_buffer=True,
         tol=1e-5,
         version=1,
-        do_langevin=False,
+        negative_time=False,
+        num_negative_time_steps=100,
+        num_langevin_steps=1,
+        exact_hessian=True,
+        resampling_interval=None,
+        pin_energy_net=False,
     ) -> None:
-        """Initialize a `MNISTLitModule`.
-
-        :param net: The model to train.
-        :param optimizer: The optimizer to use for training.
-        :param scheduler: The learning rate scheduler to use for training.
-        :param buffer: Buffer of sampled objects
-        """
         super().__init__()
         # Seems to slow things down
         # torch.set_float32_matmul_precision('high')
@@ -162,47 +160,10 @@ class DEMLitModule(LightningModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
 
-        self.net = net(energy_function=energy_function)
-        self.cfm_net = net(energy_function=energy_function)
-
-        if use_ema:
-            self.net = EMAWrapper(self.net)
-            self.cfm_net = EMAWrapper(self.cfm_net)
-        if input_scaling_factor is not None or output_scaling_factor is not None:
-            self.net = ScalingWrapper(
-                self.net, input_scaling_factor, output_scaling_factor
-            )
-
-            self.cfm_net = ScalingWrapper(
-                self.cfm_net, input_scaling_factor, output_scaling_factor
-            )
 
         self.score_scaler = None
         if score_scaler is not None:
             self.score_scaler = self.hparams.score_scaler(noise_schedule)
-
-            self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
-            self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
-
-        self.dem_cnf = CNF(
-            self.net,
-            is_diffusion=True,
-            use_exact_likelihood=use_exact_likelihood,
-            noise_schedule=noise_schedule,
-            method=nll_integration_method,
-            num_steps=num_integration_steps,
-            atol=tol,
-            rtol=tol,
-        )
-        self.cfm_cnf = CNF(
-            self.cfm_net,
-            is_diffusion=False,
-            use_exact_likelihood=use_exact_likelihood,
-            method=nll_integration_method,
-            num_steps=num_integration_steps,
-            atol=tol,
-            rtol=tol,
-        )
 
         self.nll_with_cfm = nll_with_cfm
         self.nll_with_dem = nll_with_dem
@@ -221,19 +182,9 @@ class DEMLitModule(LightningModule):
 
         self.nll_integration_method = nll_integration_method
 
-        self.energy_function = energy_function
+        # self.energy_function = energy_function
         self.noise_schedule = noise_schedule
-        self.buffer = buffer
-        self.dim = self.energy_function.dimensionality
-
-        self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
-
-        grad_fxn = estimate_grad_Rt
-        if use_richardsons:
-            grad_fxn = wrap_for_richardsons(grad_fxn)
-
-        self.clipper = clipper
-        self.clipped_grad_fxn = self.clipper.wrap_grad_fxn(grad_fxn)
+        self.partial_buffer = partial_buffer
 
         self.dem_train_loss = MeanMetric()
         self.cfm_train_loss = MeanMetric()
@@ -305,9 +256,11 @@ class DEMLitModule(LightningModule):
         self.partial_prior = partial_prior
 
         self.clipper_gen = clipper_gen
+        self.clipper = clipper
 
-        self.diffusion_scale = diffusion_scale
         self.init_from_prior = init_from_prior
+        
+        self.diffusion_scale = diffusion_scale
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -361,19 +314,19 @@ class DEMLitModule(LightningModule):
         )
 
         if self.clipper is not None and self.clipper.should_clip_scores:
-            if self.energy_function.is_molecule:
-                estimated_score = estimated_score.reshape(
-                    -1,
-                    self.energy_function.n_particles,
-                    self.energy_function.n_spatial_dim,
-                )
+            # if self.energy_function.is_molecule:
+            #     estimated_score = estimated_score.reshape(
+            #         -1,
+            #         self.energy_function.n_particles,
+            #         self.energy_function.n_spatial_dim,
+            #     )
 
             estimated_score = self.clipper.clip_scores(estimated_score)
 
-            if self.energy_function.is_molecule:
-                estimated_score = estimated_score.reshape(
-                    -1, self.energy_function.dimensionality
-                )
+            # if self.energy_function.is_molecule:
+            #     estimated_score = estimated_score.reshape(
+            #         -1, self.energy_function.dimensionality
+            #     )
 
         if self.score_scaler is not None:
             estimated_score = self.score_scaler.scale_target_score(
@@ -480,21 +433,24 @@ class DEMLitModule(LightningModule):
         reverse_sde: VEReverseSDE = None,
         num_samples: Optional[int] = None,
         return_full_trajectory: bool = False,
-        diffusion_scale=1.0,
-        do_langevin=False,
+        diffusion_scale=None,
+        resampling_interval=-1,
+        return_logweights=False,
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_samples_to_generate_per_epoch
+        diffusion_scale = diffusion_scale or self.hparams.diffusion_scale
+        prior_samples = self.prior.sample(num_samples)
 
-        samples = self.prior.sample(num_samples)
-
-        return self.integrate(
+        samples, _ = self.integrate(
             reverse_sde=reverse_sde,
-            samples=samples,
+            samples=prior_samples.clone(),
             reverse_time=True,
             return_full_trajectory=return_full_trajectory,
             diffusion_scale=diffusion_scale,
-            do_langevin=do_langevin,
-        )
+            resampling_interval=resampling_interval
+        )   
+        return samples
+
 
     def integrate(
         self,
@@ -504,9 +460,11 @@ class DEMLitModule(LightningModule):
         return_full_trajectory=False,
         diffusion_scale=1.0,
         no_grad=True,
-        do_langevin=False,
+        resampling_interval=-1,
+        num_langevin_steps=1,
+        batch_size=None,
     ) -> torch.Tensor:
-        trajectory = integrate_sde(
+        trajectory, logweights = integrate_sde(
             reverse_sde or self.reverse_sde,
             samples,
             self.num_integration_steps,
@@ -514,12 +472,17 @@ class DEMLitModule(LightningModule):
             diffusion_scale=diffusion_scale,
             reverse_time=reverse_time,
             no_grad=no_grad,
-            do_langevin=do_langevin,
+            negative_time=self.hparams.negative_time,
+            num_negative_time_steps=self.hparams.num_negative_time_steps,
+            num_langevin_steps=num_langevin_steps,
+            resampling_interval=resampling_interval,
+            batch_size=batch_size
         )
         if return_full_trajectory:
-            return trajectory
+            return trajectory, logweights
 
-        return trajectory[-1]
+        return trajectory[-1], logweights
+
 
     def compute_nll(
         self,
@@ -539,17 +502,20 @@ class DEMLitModule(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
+        # self.last_samples = self.generate_samples()
+        # self.last_energies = self.energy_function(self.last_samples)
         if self.clipper_gen is not None:
             reverse_sde = VEReverseSDE(
-                self.clipper_gen.wrap_grad_fxn(self.net), self.noise_schedule
+                self.clipper_gen.wrap_grad_fxn(self.net), self.noise_schedule, exact_hessian=self.hparams.exact_hessian
             )
             self.last_samples = self.generate_samples(
-                reverse_sde=reverse_sde, diffusion_scale=self.diffusion_scale
+                reverse_sde=reverse_sde,
+                resampling_interval=-1
             )
             self.last_energies = self.energy_function(self.last_samples)
         else:
             self.last_samples = self.generate_samples(
-                diffusion_scale=self.diffusion_scale
+                resampling_interval=-1
             )
             self.last_energies = self.energy_function(self.last_samples)
 
@@ -565,7 +531,8 @@ class DEMLitModule(LightningModule):
         if prefix == "test":
             data_set = self.energy_function.sample_val_set(self.eval_batch_size)
             generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
-                                                      diffusion_scale=self.diffusion_scale)
+                                                      resampling_interval=-1
+                                                      )
             generated_energies = self.energy_function(generated_samples)
         else:
             if len(self.buffer) < self.eval_batch_size:
@@ -590,10 +557,10 @@ class DEMLitModule(LightningModule):
 
     def _log_dist_w2(self, prefix="val"):
         if prefix == "test":
-            import pdb; pdb.set_trace()
             data_set = self.energy_function.sample_val_set(self.eval_batch_size)
             generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
-                                                      diffusion_scale=self.diffusion_scale)
+                                                      resampling_interval=-1
+                                                      )
         else:
             if len(self.buffer) < self.eval_batch_size:
                 return
@@ -614,10 +581,10 @@ class DEMLitModule(LightningModule):
 
     def _log_dist_total_var(self, prefix="val"):
         if prefix == "test":
-            import pdb; pdb.set_trace()
             data_set = self.energy_function.sample_val_set(self.eval_batch_size)
             generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
-                                                      diffusion_scale=self.diffusion_scale)
+                                                      resampling_interval=-1
+                                                      )
         else:
             if len(self.buffer) < self.eval_batch_size:
                 return
@@ -703,7 +670,6 @@ class DEMLitModule(LightningModule):
             }
             return
         if prefix == "test":
-            # import ipdb; ipdb.set_trace()
             batch = self.energy_function.sample_test_set(self.eval_batch_size)
         elif prefix == "val":
             batch = self.energy_function.sample_val_set(self.eval_batch_size)
@@ -714,7 +680,7 @@ class DEMLitModule(LightningModule):
         if backwards_samples is None or self.eval_batch_size > len(backwards_samples):
             backwards_samples = self.generate_samples(
                 num_samples=self.eval_batch_size,
-                diffusion_scale=self.diffusion_scale,
+                resampling_interval=-1
             )
 
         # sample eval_batch_size from generated samples from dem to match dimenstions
@@ -796,6 +762,7 @@ class DEMLitModule(LightningModule):
             self.compute_log_z(
                 self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
             )
+
         self.eval_step_outputs.append(to_log)
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
@@ -878,13 +845,14 @@ class DEMLitModule(LightningModule):
 
     def on_test_epoch_end(self) -> None:
         wandb_logger = get_wandb_logger(self.loggers)
+
         self.eval_epoch_end("test")
-        # self._log_energy_w2(prefix="test")
-        # if self.energy_function.is_molecule:
-        #     self._log_dist_w2(prefix="test")
-        #     self._log_dist_total_var(prefix="test")
+        self._log_energy_w2(prefix="test")
+        if self.energy_function.is_molecule:
+            self._log_dist_w2(prefix="test")
+            self._log_dist_total_var(prefix="test")
         
-        batch_size = 500
+        batch_size = 1000
         final_samples = []
         n_batches = self.num_samples_to_save // batch_size
         print("Generating samples")
@@ -892,8 +860,7 @@ class DEMLitModule(LightningModule):
             start = time.time()
             samples = self.generate_samples(
                     num_samples=batch_size,
-                    diffusion_scale=self.diffusion_scale,
-                    do_langevin=self.hparams.do_langevin
+                    resampling_interval=-1
                 )
             final_samples.append(samples
             )
@@ -918,16 +885,6 @@ class DEMLitModule(LightningModule):
         torch.save(final_samples, path2)
         print(f"Saving samples to {path2}")
 
-        traj_samples = self.generate_samples(
-                    num_samples=2000,
-                    diffusion_scale=self.diffusion_scale,
-                    do_langevin=self.hparams.do_langevin,
-                    return_full_trajectory=True
-                )
-        path = f"{output_dir}/traj_samples_{self.num_samples_to_save}.pt"
-        torch.save(traj_samples, path)
-        print(f"Saving samples to {path}")
-
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
         test, or predict.
@@ -937,6 +894,22 @@ class DEMLitModule(LightningModule):
 
         :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
         """
+        self.energy_function = self.hparams.energy_function(device=self.device)
+
+        grad_fxn = estimate_grad_Rt
+        if self.hparams.use_richardsons:
+            grad_fxn = wrap_for_richardsons(grad_fxn)
+
+
+        self.clipper.energy_function=self.energy_function
+
+        self.clipped_grad_fxn = self.clipper.wrap_grad_fxn(grad_fxn)
+        
+        self.dim = self.energy_function.dimensionality
+    
+        self.buffer = self.partial_buffer(
+            device=self.device,
+        )
 
         def _grad_fxn(t, x):
             return self.clipped_grad_fxn(
@@ -946,9 +919,7 @@ class DEMLitModule(LightningModule):
                 self.noise_schedule,
                 self.num_estimator_mc_samples,
             )
-
-        reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule)
-
+        reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
         self.prior = self.partial_prior(
             device=self.device, scale=self.noise_schedule.h(1) ** 0.5
         )
@@ -956,11 +927,55 @@ class DEMLitModule(LightningModule):
             init_states = self.prior.sample(self.num_init_samples)
         else:
             init_states = self.generate_samples(
-                reverse_sde, self.num_init_samples, diffusion_scale=self.diffusion_scale
+                reverse_sde,
+                self.num_init_samples,
+                resampling_interval=-1
             )
         init_energies = self.energy_function(init_states)
 
         self.buffer.add(init_states, init_energies)
+
+        self.cfm_net = self.hparams.net()
+        
+        self.net = self.hparams.net()
+
+        self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
+
+        if self.hparams.use_ema:
+            self.net = EMAWrapper(self.net)
+            self.cfm_net = EMAWrapper(self.cfm_net)
+        if self.hparams.input_scaling_factor is not None or self.hparams.output_scaling_factor is not None:
+            self.net = ScalingWrapper(
+                self.net, self.hparams.input_scaling_factor, self.hparams.output_scaling_factor
+            )
+
+            self.cfm_net = ScalingWrapper(
+                self.cfm_net, self.hparams.input_scaling_factor, self.hparams.output_scaling_factor
+            )
+
+        if self.score_scaler is not None:
+            self.net = self.score_scaler.wrap_model_for_unscaling(self.net)
+            self.cfm_net = self.score_scaler.wrap_model_for_unscaling(self.cfm_net)
+
+        self.dem_cnf = CNF(
+            self.net,
+            is_diffusion=True,
+            use_exact_likelihood=self.hparams.use_exact_likelihood,
+            noise_schedule=self.noise_schedule,
+            method=self.hparams.nll_integration_method,
+            num_steps=self.hparams.num_integration_steps,
+            atol=self.hparams.tol,
+            rtol=self.hparams.tol,
+        )
+        self.cfm_cnf = CNF(
+            self.cfm_net,
+            is_diffusion=False,
+            use_exact_likelihood=self.hparams.use_exact_likelihood,
+            method=self.hparams.nll_integration_method,
+            num_steps=self.hparams.num_integration_steps,
+            atol=self.hparams.tol,
+            rtol=self.hparams.tol,
+        )
 
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
@@ -970,6 +985,7 @@ class DEMLitModule(LightningModule):
             self.cfm_prior = self.partial_prior(
                 device=self.device, scale=self.cfm_prior_std
             )
+
 
     def configure_optimizers(self) -> Dict[str, Any]:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
