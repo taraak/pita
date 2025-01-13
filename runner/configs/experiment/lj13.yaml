@@ -27,7 +27,7 @@ model:
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
     sigma_min: 0.01
-    sigma_max: 6 
+    sigma_max: 2
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -60,8 +60,8 @@ model:
   #   min_log_reward: null
 
   # num_samples_to_sample_from_buffer: 5120
-  diffusion_scale: 1.0 #0.9
-  num_samples_to_generate_per_epoch: 512 #1000
+  diffusion_scale: 0.9
+  num_samples_to_generate_per_epoch: 1000
   num_samples_to_sample_from_buffer: 512
   
   init_from_prior: true

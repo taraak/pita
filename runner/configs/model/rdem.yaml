@@ -88,7 +88,7 @@ pin_energy_net: false
 negative_time: false
 num_negative_time_steps: 100
 
-num_samples_to_generate_per_epoch_energy: 1024
+num_samples_to_generate_per_epoch_energy: 256 #1024
 t0_energy_loss: false
 num_langevin_steps: 1
 num_hutchinson_samples: 1
