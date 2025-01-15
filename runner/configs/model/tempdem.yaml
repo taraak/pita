@@ -1,4 +1,4 @@
-_target_: src.models.dem_module.DEMLitModule
+_target_: src.models.tempdem_module.tempDEMLitModule
 
 optimizer:
   _target_: torch.optim.Adam
@@ -81,9 +81,14 @@ logz_with_cfm: false
 
 num_samples_to_save: 100000
 
-resampling_interval: -1
-
 negative_time: false
 num_negative_time_steps: 100
-
 num_langevin_steps: 1
+
+
+# tempDEM specific parameters
+resampling_interval: -1
+num_eval_samples: 1024
+inverse_temp: 1.0
+
+
