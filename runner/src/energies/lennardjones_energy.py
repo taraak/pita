@@ -157,8 +157,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         dimensionality,
         n_particles,
         data_path,
-        data_path_train=None,
-        data_path_val=None,
         device="cpu",
         plot_samples_epoch_period=5,
         plotting_buffer_sample_size=512,
@@ -180,13 +178,9 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
-        self.data_path = data_path
-        self.data_path_train = data_path_train
-        self.data_path_val = data_path_val
-
-        # self.data_path = get_original_cwd() + "/" + data_path
-        # self.data_path_train = get_original_cwd() + "/" + data_path_train
-        # self.data_path_val = get_original_cwd() + "/" + data_path_val
+        self.data_path_train = data_path + f"LJ13_temp_{temperature}/train_split_LJ13-1000.npy"
+        self.data_path_val = data_path + f"LJ13_temp_{temperature}/val_split_LJ13-1000.npy"
+        self.data_path_test = data_path + f"LJ13_temp_{temperature}/test_split_LJ13-1000.npy"
 
         if self.n_particles == 13:
             self.name = "LJ13_efm"
@@ -215,7 +209,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         return self.lennard_jones._log_prob(samples, smooth=self.smooth, T=T).squeeze(-1)
 
     def setup_test_set(self):
-        data = np.load(self.data_path_val, allow_pickle=True)
+        data = np.load(self.data_path_test, allow_pickle=True)
         data = remove_mean(data, self.n_particles, self.n_spatial_dim)
         data = torch.tensor(data, device=self.device)
         return data
@@ -328,10 +322,14 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         # min_energy = min(energy_test.min(), energy_samples.min()).item()
         # max_energy = max(energy_test.max(), energy_samples.max()).item()
-        if self.n_particles == 13:
-            min_energy = -60
-            max_energy = 60
 
+        if self.n_particles == 13:
+            # min_energy = -60
+            # max_energy = 60
+
+            min_energy = energy_test.min().item() - 10
+            max_energy = energy_test.max().item() + 10
+            
         elif self.n_particles == 55:
             min_energy = -380
             max_energy = -180
