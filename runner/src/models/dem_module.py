@@ -148,9 +148,7 @@ class DEMLitModule(LightningModule):
         negative_time=False,
         num_negative_time_steps=100,
         num_langevin_steps=1,
-        exact_hessian=True,
         resampling_interval=None,
-        pin_energy_net=False,
     ) -> None:
         super().__init__()
         # Seems to slow things down
@@ -182,7 +180,6 @@ class DEMLitModule(LightningModule):
 
         self.nll_integration_method = nll_integration_method
 
-        # self.energy_function = energy_function
         self.noise_schedule = noise_schedule
         self.partial_buffer = partial_buffer
 
@@ -287,9 +284,6 @@ class DEMLitModule(LightningModule):
         vt = self.cfm_net(t, xt)
         loss = (vt - ut).pow(2).mean(dim=-1)
 
-        # if self.energy_function.normalization_max is not None:
-        #    loss = loss / (self.energy_function.normalization_max ** 2)
-
         return loss
 
     def should_train_cfm(self, batch_idx: int) -> bool:
@@ -314,19 +308,8 @@ class DEMLitModule(LightningModule):
         )
 
         if self.clipper is not None and self.clipper.should_clip_scores:
-            # if self.energy_function.is_molecule:
-            #     estimated_score = estimated_score.reshape(
-            #         -1,
-            #         self.energy_function.n_particles,
-            #         self.energy_function.n_spatial_dim,
-            #     )
-
             estimated_score = self.clipper.clip_scores(estimated_score)
 
-            # if self.energy_function.is_molecule:
-            #     estimated_score = estimated_score.reshape(
-            #         -1, self.energy_function.dimensionality
-            #     )
 
         if self.score_scaler is not None:
             estimated_score = self.score_scaler.scale_target_score(
@@ -463,6 +446,7 @@ class DEMLitModule(LightningModule):
         resampling_interval=-1,
         num_langevin_steps=1,
         batch_size=None,
+        inverse_temp=1.0
     ) -> torch.Tensor:
         trajectory, logweights = integrate_sde(
             reverse_sde or self.reverse_sde,
@@ -476,7 +460,8 @@ class DEMLitModule(LightningModule):
             num_negative_time_steps=self.hparams.num_negative_time_steps,
             num_langevin_steps=num_langevin_steps,
             resampling_interval=resampling_interval,
-            batch_size=batch_size
+            batch_size=batch_size,
+            inverse_temp=inverse_temp
         )
         if return_full_trajectory:
             return trajectory, logweights
@@ -506,7 +491,7 @@ class DEMLitModule(LightningModule):
         # self.last_energies = self.energy_function(self.last_samples)
         if self.clipper_gen is not None:
             reverse_sde = VEReverseSDE(
-                self.clipper_gen.wrap_grad_fxn(self.net), self.noise_schedule, exact_hessian=self.hparams.exact_hessian
+                self.clipper_gen.wrap_grad_fxn(self.net), self.noise_schedule
             )
             self.last_samples = self.generate_samples(
                 reverse_sde=reverse_sde,
@@ -919,7 +904,7 @@ class DEMLitModule(LightningModule):
                 self.noise_schedule,
                 self.num_estimator_mc_samples,
             )
-        reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
+        reverse_sde = VEReverseSDE(_grad_fxn, self.noise_schedule)
         self.prior = self.partial_prior(
             device=self.device, scale=self.noise_schedule.h(1) ** 0.5
         )
@@ -939,7 +924,7 @@ class DEMLitModule(LightningModule):
         
         self.net = self.hparams.net()
 
-        self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule, exact_hessian=self.hparams.exact_hessian)
+        self.reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
 
         if self.hparams.use_ema:
             self.net = EMAWrapper(self.net)

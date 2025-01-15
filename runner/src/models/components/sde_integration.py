@@ -53,6 +53,8 @@ def negative_time_descent(x, energy_function, num_steps, dt=1e-4):
         samples.append(x)
     return torch.stack(samples)
 
+
+
 def euler_maruyama_step(
         sde: VEReverseSDE,
         t: torch.Tensor,
@@ -63,6 +65,7 @@ def euler_maruyama_step(
         batch_size: int,
         resampling_interval=-1,
         diffusion_scale=1.0,
+        inverse_temp=1.0,
 ):
     # Calculate drift and diffusion terms for num_eval_batches
 
@@ -70,12 +73,12 @@ def euler_maruyama_step(
     drift_At = torch.zeros_like(a)
 
     for i in range(x.shape[0]//batch_size):
-        drift_Xt_i, drift_At_i = sde.f(t, x[i*batch_size:(i+1)*batch_size], resampling_interval)
+        drift_Xt_i, drift_At_i = sde.f(t, x[i*batch_size:(i+1)*batch_size], resampling_interval, inverse_temp)
         drift_Xt[i*batch_size:(i+1)*batch_size] = drift_Xt_i
         drift_At[i*batch_size:(i+1)*batch_size] = drift_At_i
 
     # drift_Xt, drift_At = sde.f(t, x, resampling_interval)
-    drift_Xt = drift_Xt * dt
+    drift_Xt = drift_Xt * dt * inverse_temp
     drift_At = drift_At * dt
 
     if t.dim() == 0:
@@ -95,8 +98,6 @@ def euler_maruyama_step(
         print("NAN in the AIS weights")
     if torch.exp(-a_next).clamp(0, 10).isnan().any():
         print("NAN in the AIS weights exp")
-    # a_next = a_next.clamp(-10, 10)
-    # choice = torch.multinomial(torch.softmax(-a_next, dim=-1), x.shape[0], replacement=True)
     choice, _ = sample_cat_sys(x.shape[0], a_next)
     x_next = x_next[choice]
     a_next = torch.zeros_like(a_next)
@@ -141,6 +142,7 @@ def integrate_sde(
     num_negative_time_steps=100,
     num_langevin_steps=1,
     batch_size=None,
+    inverse_temp=1.0,
 ):
     start_time = time_range if reverse_time else 0.0
     end_time = time_range - start_time
@@ -165,7 +167,8 @@ def integrate_sde(
                                         time_range/num_integration_steps, step,
                                         resampling_interval=resampling_interval,
                                         diffusion_scale=diffusion_scale,
-                                        batch_size=batch_size)
+                                        batch_size=batch_size,
+                                        inverse_temp=inverse_temp)
                 if energy_function.is_molecule:
                     x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
                 samples.append(x)

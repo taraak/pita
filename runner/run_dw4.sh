@@ -10,5 +10,4 @@ micromamba activate ~/scratch/demenv
 
 export seed=62;
 
-python src/train.py experiment=dw4 trainer=gpu model.resampling_interval=null
-
+python src/train.py experiment=dw4 trainer=gpu model.resampling_interval=50 tags=["EM3","DW4-EFM"]

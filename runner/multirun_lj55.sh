@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J h100_rdem                 # Job name
+#SBATCH -J lj55_dem_h100                 # Job name
 #SBATCH -o watch_folder/%x_%j.out     # output file (%j expands to jobID)
 #SBATCH -N 1                          # Total number of nodes requested
 #SBATCH --get-user-env                # retrieve the users login environment
@@ -19,7 +19,5 @@ micromamba activate ~/scratch/demenv
 
 export seed=62;
 
-# To enable preemption re-loading, set `hydra.run.dir` or
-srun python -u src/train.py -m experiment=lj55 trainer=ddp #extras=resumable run_name=v1 callbacks.model_checkpoint.every_n_epochs=1
-
+srun python -u src/train.py -m experiment=lj55 trainer=ddp model.resampling_interval=-1 data.n_train_batches_per_epoch=200 model.num_samples_to_sample_from_buffer=64 model.num_samples_to_generate_per_epoch=64 tags=["oldDEM","LJ55"]
 

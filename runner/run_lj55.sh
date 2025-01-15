@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --partition=unkillable
-#SBATCH -J a100_rdem                 # Job name
+#SBATCH -J lj55_dem                 # Job name
 #SBATCH -o watch_folder/%x_%j.out     # output file (%j expands to jobID)
 #SBATCH --cpus-per-task=6
 #SBATCH --gres=gpu:a100:1
@@ -12,5 +12,5 @@ micromamba activate ~/scratch/demenv
 
 export seed=62;
 
-python src/train.py -m experiment=lj55 trainer=gpu 
+python src/train.py -m experiment=lj55 trainer=gpu model.resampling_interval=-1 model.num_samples_to_sample_from_buffer=256 tags=["repDEM","LJ55"] 
 

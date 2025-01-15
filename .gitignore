@@ -2,6 +2,15 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.csv
+*.pt
+runner/wandb/
+bgmol/
+*.npy
+runner/dem/logs
+bgflow/
+runner/notebooks/gifs/
+figures/
 
 # C extensions
 *.so
