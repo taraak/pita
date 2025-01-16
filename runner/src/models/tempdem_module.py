@@ -27,11 +27,13 @@ class tempDEMLitModule(DEMLitModule):
         num_langevin_steps=1,
         batch_size=None,
         inverse_temp=1.0,
+        prior_samples = None
     ) -> torch.Tensor:
         num_samples = num_samples or self.hparams.num_samples_to_generate_per_epoch
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale #should we use same diff scale?
 
-        prior_samples = self.prior.sample(num_samples)
+        if prior_samples is None:
+            prior_samples = self.prior.sample(num_samples)
 
         samples, _ = self.integrate(
             reverse_sde=reverse_sde,
@@ -67,6 +69,8 @@ class tempDEMLitModule(DEMLitModule):
         wandb_logger = get_wandb_logger(self.loggers)
         reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
 
+        prior_samples = self.annealed_prior.sample(self.hparams.num_eval_samples)
+
         self.last_samples, logweights = self.generate_samples(
             reverse_sde=reverse_sde,
             num_samples=self.hparams.num_eval_samples,
@@ -75,7 +79,8 @@ class tempDEMLitModule(DEMLitModule):
             diffusion_scale=1.0,
             num_langevin_steps=self.hparams.num_langevin_steps,
             batch_size=self.hparams.num_samples_to_generate_per_epoch,
-            inverse_temp=self.hparams.inverse_temp
+            inverse_temp=self.inverse_temp,
+            prior_samples=prior_samples
         )
         self.last_energies = self.energy_function(self.last_samples)
 
@@ -105,6 +110,7 @@ class tempDEMLitModule(DEMLitModule):
         print("Generating samples")
 
         reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
+        prior_samples = self.annealed_prior.sample(batch_size)
 
         for i in range(n_batches):
             start = time.time()
@@ -115,8 +121,9 @@ class tempDEMLitModule(DEMLitModule):
                     diffusion_scale=1.0,
                     resampling_interval=self.hparams.resampling_interval,
                     num_langevin_steps=self.hparams.num_langevin_steps,
-                    inverse_temp=self.hparams.inverse_temp,
+                    inverse_temp=self.inverse_temp,
                     batch_size=self.hparams.num_samples_to_generate_per_epoch,
+                    prior_samples=prior_samples
 
                 )
             final_samples.append(samples
@@ -168,6 +175,12 @@ class tempDEMLitModule(DEMLitModule):
     def setup(self, stage: str) -> None:
         super().setup(stage)
         self.annealed_energy = self.hparams.annealed_energy(device=self.device)
+
+        self.inverse_temp = self.energy_function.temperature / self.annealed_energy.temperature
+        
+        self.annealed_prior = self.partial_prior(
+            device=self.device, scale=(self.noise_schedule.h(1) / self.inverse_temp) ** 0.5
+        )
 
 
 if __name__ == "__main__":
