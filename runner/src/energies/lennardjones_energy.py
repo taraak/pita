@@ -166,6 +166,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         smooth=False,
         temperature=1.0,
     ):
+        self.temperature = temperature
         self.n_particles = n_particles
         self.n_spatial_dim = dimensionality // n_particles
 
@@ -178,9 +179,9 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
-        self.data_path_train = data_path + f"LJ13_temp_{temperature}/train_split_LJ13-1000.npy"
-        self.data_path_val = data_path + f"LJ13_temp_{temperature}/val_split_LJ13-1000.npy"
-        self.data_path_test = data_path + f"LJ13_temp_{temperature}/test_split_LJ13-1000.npy"
+        self.data_path_train = data_path + f"LJ13_temp_{self.temperature}/train_split_LJ13-1000.npy"
+        self.data_path_val = data_path + f"LJ13_temp_{self.temperature}/val_split_LJ13-1000.npy"
+        self.data_path_test = data_path + f"LJ13_temp_{self.temperature}/test_split_LJ13-1000.npy"
 
         if self.n_particles == 13:
             self.name = "LJ13_efm"
@@ -198,7 +199,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
             oscillator_scale=1.0,
             two_event_dims=False,
             energy_factor=energy_factor,
-            temperature=temperature,
+            temperature=self.temperature,
         )
 
         self.smooth = smooth
