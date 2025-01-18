@@ -49,7 +49,6 @@ class GMM(BaseEnergyFunction):
 
         self.should_unnormalize = should_unnormalize
         self.data_normalization_factor = data_normalization_factor
-
         self.train_set_size = train_set_size
         self.test_set_size = test_set_size
         self.val_set_size = val_set_size
@@ -182,7 +181,8 @@ class GMM(BaseEnergyFunction):
         return fig_to_image(fig)
 
     def get_dataset_fig(
-        self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40), color="blue", T=1.0, cmap=None
+        self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40), color="blue", T=1.0, cmap=None,
+        title=None
 
     ):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
@@ -200,7 +200,10 @@ class GMM(BaseEnergyFunction):
 
         # plot dataset samples
         plot_marginal_pair(samples, ax=axs[0], bounds=plotting_bounds, color=color, cmap=cmap)
-        axs[0].set_title("Buffer")
+        if title is not None:
+            axs[0].set_title(title)
+        else:
+            axs[0].set_title("Buffer")
 
         if gen_samples is not None:
             plot_contours(
