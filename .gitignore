@@ -177,6 +177,4 @@ runner/run_gpu.sh
 runner/configs/launcher/mila_cluster.yaml
 *.zip
 results/
-models/
 AImplicitUnconstrained
-runner/
