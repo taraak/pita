@@ -58,7 +58,7 @@ class GMM(nn.Module, TargetDistribution):
                                                      component_distribution=com,
                                                      validate_args=False)
     
-    def convolve(self, var_t, t, var_exploding=True):
+    def convolve(self, var_t, t, var_exploding=True, mean_coeff=None):
         """Convolve the current distribution with a Gaussian with covariance sigma_t."""
         # this is actually standard deviation
         var_t = var_t.to(self.device)
@@ -68,8 +68,10 @@ class GMM(nn.Module, TargetDistribution):
             self.scale_trils = torch.sqrt(self.scale_trils**2 + torch.diag_embed(var_trils))
         else:
             # variance preserving path
-            self.locs = self.locs * torch.sqrt(1-t)
-            self.scale_trils =  self.scale_trils * torch.sqrt(1 - t) + torch.diag_embed(var_trils)
+            self.locs = self.locs * mean_coeff
+            self.scale_trils = torch.sqrt(self.scale_trils**2 + torch.diag_embed(var_trils))
+            # self.scale_trils = torch.sqrt(self.scale_trils **2 * (1 - var_t) + torch.diag_embed(var_trils))
+            # self.scale_trils * torch.sqrt(1 - t) + torch.diag_embed(var_trils)
     
     def reset(self):
         self.locs = self.original_locs.clone()
