@@ -96,7 +96,6 @@ class LennardJonesPotential(Energy):
 
         self._temperature = temperature
 
-
         self.range_min = range_min
         self.range_max = range_max
     
@@ -179,9 +178,9 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
-        self.data_path_train = data_path + f"LJ13_temp_{self.temperature}/train_split_LJ13-1000.npy"
-        self.data_path_val = data_path + f"LJ13_temp_{self.temperature}/val_split_LJ13-1000.npy"
-        self.data_path_test = data_path + f"LJ13_temp_{self.temperature}/test_split_LJ13-1000.npy"
+        self.data_path_train = data_path + f"LJ13_Alex_temp_{self.temperature}/train_split_LJ13-1000.npy"
+        self.data_path_val = data_path + f"LJ13_Alex_temp_{self.temperature}/val_split_LJ13-1000.npy"
+        self.data_path_test = data_path + f"LJ13_Alex_temp_{self.temperature}/test_split_LJ13-1000.npy"
 
         if self.n_particles == 13:
             self.name = "LJ13_efm"
