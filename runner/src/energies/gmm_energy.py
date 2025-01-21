@@ -38,6 +38,7 @@ class GMM(BaseEnergyFunction):
             log_var_scaling=log_var_scaling,
             use_gpu=use_gpu,
             true_expectation_estimation_n_samples=true_expectation_estimation_n_samples,
+            temperature = temperature
         )
 
         self.temperature = temperature
@@ -78,7 +79,7 @@ class GMM(BaseEnergyFunction):
         if self.should_unnormalize:
             samples = self.unnormalize(samples)
 
-        return self.gmm.log_prob(samples) / self.temperature * T
+        return self.gmm.log_prob(samples)
 
     @property
     def dimensionality(self):

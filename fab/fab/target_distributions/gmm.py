@@ -1,6 +1,6 @@
 from typing import Optional, Dict
 from fab.types_ import LogProbFunc
-
+from math import sqrt
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
@@ -13,7 +13,7 @@ class GMM(nn.Module, TargetDistribution):
     def __init__(self, dim, n_mixes, loc_scaling, log_var_scaling=0.1, seed=0,
                  n_test_set_samples=1000, use_gpu=True,
                  true_expectation_estimation_n_samples=int(1e7),
-                 mean=None, scale=None):
+                 mean=None, scale=None, temperature=1.0):
         super(GMM, self).__init__()
         self.seed = seed
         self.n_mixes = n_mixes
@@ -24,9 +24,9 @@ class GMM(nn.Module, TargetDistribution):
             mean = (torch.rand((n_mixes, dim)) - 0.5)*2 * loc_scaling
         if scale is None:
             log_var = torch.ones((n_mixes, dim)) * log_var_scaling
-            self.register_buffer("scale_trils", torch.diag_embed(f.softplus(log_var)))
+            self.register_buffer("scale_trils", torch.diag_embed(f.softplus(log_var)) * sqrt(temperature))
         else:
-            self.register_buffer("scale_trils", torch.diag_embed(scale))
+            self.register_buffer("scale_trils", torch.diag_embed(scale) * sqrt(temperature))
 
         self.register_buffer("cat_probs", torch.ones(n_mixes))
         self.register_buffer("locs", mean)
