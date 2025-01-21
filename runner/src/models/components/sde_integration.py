@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from src.models.components.sdes import VEReverseSDE
+from src.models.components.utils import sample_cat_sys
 from src.utils.data_utils import remove_mean
 from src.energies.base_energy_function import BaseEnergyFunction
 from contextlib import contextmanager
@@ -16,17 +17,6 @@ from contextlib import contextmanager
 #     # Update the state
 #     x_next = x + drift + diffusion
 #     return x_next, drift
-
-
-
-def sample_cat_sys(bs, logits):
-    u = torch.rand(size=(1,), dtype=torch.float64)
-    u = (u + 1/bs*torch.arange(bs)) % 1.0
-    clipped_weights = torch.clip(torch.softmax(logits, dim=-1), 1e-6, 1.0)
-    bins = torch.cumsum(clipped_weights, dim=-1)
-    ids = np.digitize(u, bins.cpu())
-    return ids, None
-
 
 @contextmanager
 def conditional_no_grad(condition):
@@ -78,16 +68,16 @@ def euler_maruyama_step(
         drift_At[i*batch_size:(i+1)*batch_size] = drift_At_i
 
     # drift_Xt, drift_At = sde.f(t, x, resampling_interval)
-    drift_Xt = drift_Xt * dt * inverse_temp
+    drift_Xt = drift_Xt * dt
     drift_At = drift_At * dt
 
     if t.dim() == 0:
         # repeat the same time for all points if we have a scalar time
         t = t * torch.ones_like(x).to(x.device)
-    diffusion = diffusion_scale * sde.g(t, x) * np.sqrt(dt) * torch.randn_like(x).to(x.device)
+    diffusion = sde.diffusion(t, x, diffusion_scale, inverse_temp)
 
     # Update the state
-    x_next = x + drift_Xt + diffusion
+    x_next = x + drift_Xt + diffusion * np.sqrt(dt)
     a_next = a + drift_At
 
     if resampling_interval==-1 or step+1 % resampling_interval != 0:
