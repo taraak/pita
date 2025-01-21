@@ -89,6 +89,4 @@ num_langevin_steps: 1
 # tempDEM specific parameters
 resampling_interval: -1
 num_eval_samples: 1024
-inverse_temp: 1.0
-
-
+scale_diffusion: false
