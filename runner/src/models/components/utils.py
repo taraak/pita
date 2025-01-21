@@ -1,6 +1,8 @@
 from torch import vmap
 import torch 
 from torch.func import hessian
+from scipy.stats import qmc
+import numpy as np
 
 def rademacher(shape, dtype=torch.float32, device='cuda'):
     """Sample from Rademacher distribution."""
@@ -35,3 +37,23 @@ def compute_laplacian(model, nabla_Ut, t, xt, n_samples=1, exact=True):
         for _ in range(n_samples):
             laplacian += compute_laplacian_hutchinson(nabla_Ut, t, xt)
         return laplacian / n_samples
+
+
+
+sampler = qmc.Sobol(d=1, scramble=False)
+def sample_cat(bs, next_u, logits):
+    # u, next_u = sample_uniform(bs, next_u)
+    u = sampler.random(bs).squeeze()
+    clipped_weights = torch.clip(torch.softmax(logits, dim=-1), 1e-6, 1.0)
+    bins = torch.cumsum(clipped_weights, dim=-1)
+    ids = np.digitize(u, bins.cpu())
+    return ids, next_u
+
+
+def sample_cat_sys(bs, logits):
+    u = torch.rand(size=(1,), dtype=torch.float64)
+    u = (u + 1/bs*torch.arange(bs)) % 1.0
+    clipped_weights = torch.clip(torch.softmax(logits, dim=-1), 1e-6, 1.0)
+    bins = torch.cumsum(clipped_weights, dim=-1)
+    ids = np.digitize(u, bins.cpu())
+    return ids, None
