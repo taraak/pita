@@ -31,16 +31,11 @@ model:
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
     sigma_min: 0.01
-    sigma_max: 2
+    sigma_max: 4
 
   # noise_schedule:
   #   _target_: src.models.components.noise_schedules.QuadraticNoiseSchedule
   #   beta: 20
-
-  noise_schedule_inference:
-    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01
-    sigma_max: 2
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -56,11 +51,11 @@ model:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
     should_clip_log_rewards: False
-    max_score_norm: 20 #5000
+    max_score_norm: 5000
     min_log_reward: null
 
 
-  diffusion_scale: 0.9 #1.0
+  diffusion_scale: 1.0
   num_samples_to_generate_per_epoch: 1000
   num_samples_to_sample_from_buffer: 512
   
@@ -83,3 +78,6 @@ model:
     data_normalization_factor: 1.0
     is_molecule: True
     temperature: 1.0
+
+  num_eval_samples: 4096
+  num_samples_to_save: 8192

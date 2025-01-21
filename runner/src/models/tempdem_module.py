@@ -10,7 +10,7 @@ class tempDEMLitModule(DEMLitModule):
         self,
         annealed_energy: BaseEnergyFunction,
         num_eval_samples: int,
-        inverse_temp: float,
+        scale_diffusion: bool,
         *args,
         **kwargs,
     ):
@@ -67,7 +67,8 @@ class tempDEMLitModule(DEMLitModule):
         super().eval_epoch_end(prefix)
 
         wandb_logger = get_wandb_logger(self.loggers)
-        reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
+        reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
+                                   scale_diffusion=self.hparams.scale_diffusion)
 
         prior_samples = self.annealed_prior.sample(self.hparams.num_eval_samples)
 
@@ -76,7 +77,7 @@ class tempDEMLitModule(DEMLitModule):
             num_samples=self.hparams.num_eval_samples,
             return_logweights=True,
             resampling_interval=self.hparams.resampling_interval,
-            diffusion_scale=1.0,
+            diffusion_scale=self.hparams.diffusion_scale,  #TODO: what should the diffusion scale be?
             num_langevin_steps=self.hparams.num_langevin_steps,
             batch_size=self.hparams.num_samples_to_generate_per_epoch,
             inverse_temp=self.inverse_temp,
@@ -93,6 +94,7 @@ class tempDEMLitModule(DEMLitModule):
 
         if self.hparams.resampling_interval!=-1: #HERE
             self._log_logweights(logweights, prefix="val")
+            self._plot_std_logweights(logweights, prefix="val")
 
 
     def on_test_epoch_end(self) -> None:
@@ -109,7 +111,8 @@ class tempDEMLitModule(DEMLitModule):
         n_batches = self.num_samples_to_save // batch_size
         print("Generating samples")
 
-        reverse_sde = VEReverseSDE(self.net, self.noise_schedule)
+        reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
+                                   scale_diffusion=self.hparams.scale_diffusion)
         prior_samples = self.annealed_prior.sample(batch_size)
 
         for i in range(n_batches):
@@ -172,11 +175,31 @@ class tempDEMLitModule(DEMLitModule):
             f"{prefix}/annealing_logweights", [img]
         )
 
+    def _plot_std_logweights(self, logweights, prefix="val"):
+        wandb_logger= get_wandb_logger(self.loggers)
+        if wandb_logger is None:
+            return
+        
+        fig, axs = plt.subplots(1, 1, figsize=(8, 4))
+        std_logweights = logweights.std(dim=1).cpu().numpy()
+        integration_times = torch.linspace(1, 0, std_logweights.shape[0])
+        axs.plot(integration_times, std_logweights)
+        axs.set_xlabel("Integration time")
+        fig.canvas.draw()
+        img = PIL.Image.frombytes(
+            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
+        )
+        wandb_logger.log_image(
+            f"{prefix}/std_logweights", [img]
+        )
+
     def setup(self, stage: str) -> None:
         super().setup(stage)
         self.annealed_energy = self.hparams.annealed_energy(device=self.device)
 
         self.inverse_temp = self.energy_function.temperature / self.annealed_energy.temperature
+
+        print("Inverse Temperature is", self.inverse_temp)
         
         self.annealed_prior = self.partial_prior(
             device=self.device, scale=(self.noise_schedule.h(1) / self.inverse_temp) ** 0.5
