@@ -26,13 +26,14 @@ class VEReverseSDE(torch.nn.Module):
     noise_type = "diagonal"
     sde_type = "ito"
 
-    def __init__(self, model, noise_schedule, scale_diffusion=False):
+    def __init__(self, model, noise_schedule, scale_diffusion=False, inverse_temp=1.0):
         super().__init__()
         self.model = model
         self.noise_schedule = noise_schedule
         self.scale_diffusion = scale_diffusion
+        self.inverse_temp = inverse_temp
 
-    def f(self, t, x, resampling_interval=None, inverse_temp=1.0):
+    def f(self, t, x, dt, resampling_interval=None):
         if t.dim() == 0:
             # repeat the same time for all points if we have a scalar time
             t = t * torch.ones(x.shape[0]).to(x.device)
@@ -44,29 +45,33 @@ class VEReverseSDE(torch.nn.Module):
             nabla_Ut = self.model(t, x)
 
             if self.scale_diffusion:
-                drift_X = 0.5 * (inverse_temp+1) * nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1)
+                drift_X = 0.5 * (self.inverse_temp+1) * nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1) * dt
             else:
-                drift_X = inverse_temp * nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1)
+                drift_X = self.inverse_temp * nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1) * dt
 
             drift_A = torch.zeros(x.shape[0]).to(x.device)
             
             if resampling_interval is None:
                 return  drift_X.detach(), drift_A.detach()
             
-            drift_A = 0.5 * (inverse_temp-1) * inverse_temp * (self.g(t, x)[:, None] * nabla_Ut).pow(2).sum(-1) 
+            drift_A = (0.5 * (self.inverse_temp-1) * self.inverse_temp 
+                       * (self.g(t, x)[:, None] * nabla_Ut).pow(2).sum(-1) * dt)
                 
         return  drift_X.detach(), drift_A.detach()
     
 
-    def diffusion(self, t, x, diffusion_scale, inverse_temp=1.0):
+    def diffusion(self, t, x, dt, diffusion_scale, sigma=0.0):
         if t.dim() == 0:
             # repeat the same time for all points if we have a scalar time
             t = t * torch.ones_like(x).to(x.device)
 
         if self.scale_diffusion:
-            return diffusion_scale * self.g(t, x) * torch.randn_like(x).to(x.device) / np.sqrt(inverse_temp)
+            return (diffusion_scale * torch.sqrt(self.g(t, x) ** 2 * dt - sigma) * torch.randn_like(x).to(x.device) 
+                    / np.sqrt(self.inverse_temp))
+            # return diffusion_scale * self.g(t, x) * torch.randn_like(x).to(x.device) / np.sqrt(inverse_temp)
         
-        return diffusion_scale * self.g(t, x) * torch.randn_like(x).to(x.device)
+        # return diffusion_scale * self.g(t, x) * torch.randn_like(x).to(x.device)
+        return diffusion_scale * torch.sqrt(self.g(t, x) ** 2 * dt - sigma) * torch.randn_like(x).to(x.device)
 
     def g(self, t, x):
         g = self.noise_schedule.g(t)
@@ -86,49 +91,3 @@ class RegVEReverseSDE(VEReverseSDE):
             [torch.full_like(x[..., :-1], g), torch.zeros_like(x[..., -1:])], dim=-1
         )
     
-
-
-# class VEReverseSDE(torch.nn.Module):
-#     noise_type = "diagonal"
-#     sde_type = "ito"
-
-#     def __init__(self, model, noise_schedule, exact_hessian=False, n_hutchinson_samples=1):
-#         super().__init__()
-#         self.model = model
-#         self.noise_schedule = noise_schedule
-#         self.exact_hessian = exact_hessian
-#         self.n_hutchinson_samples = n_hutchinson_samples
-
-#     def f(self, t, x,  resampling_interval=-1):
-#         if t.dim() == 0:
-#             # repeat the same time for all points if we have a scalar time
-#             t = t * torch.ones(x.shape[0]).to(x.device)
-
-#         with torch.enable_grad():
-#             x.requires_grad_(True)
-#             t.requires_grad_(True)
-            
-#             epsilon_t = self.g(t, x).pow(2) / 2 
-                            
-#             nabla_Ut = self.model(t, x)
-
-#             drift_X = nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1)
-
-#             drift_A = torch.zeros(x.shape[0]).to(x.device)
-
-#             if resampling_interval == -1:
-#                 return  drift_X, drift_A
-            
-#             Ut = self.model.forward_energy(t, x)
-#             dUt_dt = torch.autograd.grad(Ut.sum(), t, create_graph=True)[0]
-
-#             laplacian_b = epsilon_t * compute_laplacian(self.model.forward_energy, nabla_Ut,
-#                                                         t, x, n_samples=self.n_hutchinson_samples,
-#                                                         exact=self.exact_hessian)
-#             drift_A = -laplacian_b - epsilon_t * nabla_Ut.pow(2).sum(-1) + dUt_dt
-
-#         return  drift_X.detach(), drift_A.detach()
-
-#     def g(self, t, x):
-#         g = self.noise_schedule.g(t)
-#         return g
