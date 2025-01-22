@@ -298,20 +298,31 @@ class LennardJonesEnergy(BaseEnergyFunction):
         dist_samples = self.interatomic_dist(samples).detach().cpu()
         dist_test = self.interatomic_dist(test_data_smaller).detach().cpu()
 
-        axs[0].hist(
-            dist_samples.view(-1),
-            bins=100,
-            alpha=0.5,
-            density=True,
-            histtype="step",
-            linewidth=4,
-        )
-        axs[0].hist(
+        _, bins, _= axs[0].hist(
             dist_test.view(-1),
             bins=100,
+            density=True,
+            histtype='step',
+            linewidth=4,
+            color="g",
+        );
+        
+        # axs[0].hist(
+        #     dist_samples.view(-1),
+        #     bins=100,
+        #     alpha=0.5,
+        #     density=True,
+        #     histtype="step",
+        #     linewidth=4,
+        # )
+        
+        axs[0].hist(
+            dist_samples.view(-1),
+            bins=bins, #100,
             alpha=0.5,
             density=True,
             histtype="step",
+            color="r",
             linewidth=4,
         )
         axs[0].set_xlabel("Interatomic distance")
@@ -334,7 +345,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
             min_energy = -380
             max_energy = -180
 
-        axs[1].hist(
+        _, bins, _ = axs[1].hist(
             energy_test.cpu(),
             bins=100,
             density=True,
@@ -347,7 +358,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         )
         axs[1].hist(
             energy_samples.cpu(),
-            bins=100,
+            bins=bins, #100
             density=True,
             alpha=0.4,
             range=(min_energy, max_energy),
