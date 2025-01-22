@@ -82,8 +82,6 @@ logz_with_cfm: false
 num_samples_to_save: 100000
 
 resampling_interval: -1
-
-negative_time: false
-num_negative_time_steps: 100
-
+num_negative_time_steps: 0
 num_langevin_steps: 1
+noise_correct: false #noise correction based on Aapo's paper
