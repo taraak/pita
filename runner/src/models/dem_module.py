@@ -145,10 +145,10 @@ class DEMLitModule(LightningModule):
         use_buffer=True,
         tol=1e-5,
         version=1,
-        negative_time=False,
-        num_negative_time_steps=100,
+        num_negative_time_steps=0,
         num_langevin_steps=1,
         resampling_interval=None,
+        noise_correct=False
     ) -> None:
         super().__init__()
         # Seems to slow things down
@@ -320,7 +320,14 @@ class DEMLitModule(LightningModule):
 
         error_norms = (predicted_score - estimated_score).pow(2).mean(-1)
 
-        return self.lambda_weighter(times) * error_norms
+        loss = self.lambda_weighter(times) * error_norms
+
+        #don't take a step if the loss is too high and not at the beginning of training
+        if loss.max() > 1e4 and self.current_epoch > 100:
+            print("Loss too high, skipping step")
+            return loss * 0
+
+        return loss
 
     def training_step(self, batch, batch_idx):
         loss = 0.0
@@ -351,6 +358,10 @@ class DEMLitModule(LightningModule):
                 )
 
             dem_loss = self.get_loss(times, noised_samples)
+            # skip step if loss is too high
+            if dem_loss is None:
+                return None
+            
             # Uncomment for SM
             #dem_loss = self.get_score_loss(times, iter_samples, noised_samples)
             self.log_dict(
@@ -418,10 +429,14 @@ class DEMLitModule(LightningModule):
         return_full_trajectory: bool = False,
         diffusion_scale=None,
         resampling_interval=-1,
-        return_logweights=False,
+        num_negative_time_steps=-1,
+        noise_correct=False,
     ) -> torch.Tensor:
         num_samples = num_samples or self.num_samples_to_generate_per_epoch
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale
+        noise_correct = noise_correct or self.hparams.noise_correct
+        if num_negative_time_steps == -1:
+            num_negative_time_steps = self.hparams.num_negative_time_steps
         prior_samples = self.prior.sample(num_samples)
 
         samples, _ = self.integrate(
@@ -430,7 +445,9 @@ class DEMLitModule(LightningModule):
             reverse_time=True,
             return_full_trajectory=return_full_trajectory,
             diffusion_scale=diffusion_scale,
-            resampling_interval=resampling_interval
+            resampling_interval=resampling_interval,
+            num_negative_time_steps=num_negative_time_steps,
+            noise_correct=noise_correct,
         )   
         return samples
 
@@ -446,7 +463,8 @@ class DEMLitModule(LightningModule):
         resampling_interval=-1,
         num_langevin_steps=1,
         batch_size=None,
-        inverse_temp=1.0
+        num_negative_time_steps=-1,
+        noise_correct=False,
     ) -> torch.Tensor:
         trajectory, logweights = integrate_sde(
             reverse_sde or self.reverse_sde,
@@ -456,12 +474,11 @@ class DEMLitModule(LightningModule):
             diffusion_scale=diffusion_scale,
             reverse_time=reverse_time,
             no_grad=no_grad,
-            negative_time=self.hparams.negative_time,
-            num_negative_time_steps=self.hparams.num_negative_time_steps,
+            num_negative_time_steps=num_negative_time_steps,
             num_langevin_steps=num_langevin_steps,
             resampling_interval=resampling_interval,
             batch_size=batch_size,
-            inverse_temp=inverse_temp
+            noise_correct=noise_correct,
         )
         if return_full_trajectory:
             return trajectory, logweights
@@ -693,7 +710,11 @@ class DEMLitModule(LightningModule):
                 self.energy_function.n_spatial_dim,
             )
 
-        loss = self.get_loss(times, noised_batch).mean(-1)
+        loss = self.get_loss(times, noised_batch)
+        if loss is None:
+            return None
+        else:
+            loss = loss.mean(-1)
 
         # update and log metrics
         loss_metric = self.val_loss if prefix == "val" else self.test_loss
@@ -772,6 +793,8 @@ class DEMLitModule(LightningModule):
         wandb_logger.log_image(f"{prefix}/generated_prior", [fig_to_image(fig)])
 
     def eval_epoch_end(self, prefix: str):
+        if len(self.eval_step_outputs) == 0:
+            return 
         wandb_logger = get_wandb_logger(self.loggers)
         # convert to dict of tensors assumes [batch, ...]
         outputs = {

@@ -26,11 +26,14 @@ class tempDEMLitModule(DEMLitModule):
         return_logweights=False,
         num_langevin_steps=1,
         batch_size=None,
-        inverse_temp=1.0,
-        prior_samples = None
+        num_negative_time_steps=-1,
+        prior_samples = None,
+        noise_correct=False,
     ) -> torch.Tensor:
         num_samples = num_samples or self.hparams.num_samples_to_generate_per_epoch
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale #should we use same diff scale?
+        if num_negative_time_steps == -1:
+            num_negative_time_steps = self.hparams.num_negative_time_steps
 
         if prior_samples is None:
             prior_samples = self.prior.sample(num_samples)
@@ -44,7 +47,8 @@ class tempDEMLitModule(DEMLitModule):
             resampling_interval=resampling_interval,
             num_langevin_steps=num_langevin_steps,
             batch_size=batch_size,
-            inverse_temp=inverse_temp
+            num_negative_time_steps=num_negative_time_steps,
+            noise_correct=noise_correct
         )
         # TODO: When returning the weights for plotting, I am not doing additional langevin steps
         if return_logweights:
@@ -58,7 +62,8 @@ class tempDEMLitModule(DEMLitModule):
                 resampling_interval=self.num_integration_steps,
                 num_langevin_steps=1,
                 batch_size=batch_size,
-                inverse_temp=inverse_temp
+                num_negative_time_steps=0,
+                noise_correct=noise_correct
             )
             return samples, logweights
         return samples
@@ -68,6 +73,7 @@ class tempDEMLitModule(DEMLitModule):
 
         wandb_logger = get_wandb_logger(self.loggers)
         reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
+                                   inverse_temp=self.inverse_temp,
                                    scale_diffusion=self.hparams.scale_diffusion)
 
         prior_samples = self.annealed_prior.sample(self.hparams.num_eval_samples)
@@ -80,8 +86,8 @@ class tempDEMLitModule(DEMLitModule):
             diffusion_scale=self.hparams.diffusion_scale,  #TODO: what should the diffusion scale be?
             num_langevin_steps=self.hparams.num_langevin_steps,
             batch_size=self.hparams.num_samples_to_generate_per_epoch,
-            inverse_temp=self.inverse_temp,
-            prior_samples=prior_samples
+            prior_samples=prior_samples,
+            num_negative_time_steps=0
         )
         self.last_energies = self.energy_function(self.last_samples)
 
@@ -112,6 +118,7 @@ class tempDEMLitModule(DEMLitModule):
         print("Generating samples")
 
         reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
+                                   inverse_temp=self.inverse_temp,
                                    scale_diffusion=self.hparams.scale_diffusion)
         prior_samples = self.annealed_prior.sample(batch_size)
 
@@ -124,9 +131,9 @@ class tempDEMLitModule(DEMLitModule):
                     diffusion_scale=1.0,
                     resampling_interval=self.hparams.resampling_interval,
                     num_langevin_steps=self.hparams.num_langevin_steps,
-                    inverse_temp=self.inverse_temp,
                     batch_size=self.hparams.num_samples_to_generate_per_epoch,
-                    prior_samples=prior_samples
+                    prior_samples=prior_samples,
+                    num_negative_time_steps=self.hparams.num_negative_time_steps
 
                 )
             final_samples.append(samples
