@@ -89,4 +89,3 @@ num_langevin_steps: 1
 resampling_interval: -1
 num_eval_samples: 1024
 scale_diffusion: false
-noise_correct: false
