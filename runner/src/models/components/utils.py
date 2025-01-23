@@ -4,6 +4,11 @@ from torch.func import hessian
 from scipy.stats import qmc
 import numpy as np
 
+
+def sample_from_tensor(tensor, num_samples):
+    idx = torch.randint(0, tensor.shape[0], (num_samples,))
+    return tensor[idx]
+
 def rademacher(shape, dtype=torch.float32, device='cuda'):
     """Sample from Rademacher distribution."""
     rand = ((torch.rand(shape) < 0.5)) * 2 - 1

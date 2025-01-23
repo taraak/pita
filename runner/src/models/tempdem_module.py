@@ -3,6 +3,7 @@ import torch
 import PIL
 from .dem_module import *
 from src.models.components.sdes import VEReverseSDE
+from src.models.components.utils import sample_from_tensor
 
 
 class tempDEMLitModule(DEMLitModule):
@@ -71,51 +72,74 @@ class tempDEMLitModule(DEMLitModule):
     def eval_epoch_end(self, prefix: str):
         super().eval_epoch_end(prefix)
 
-        wandb_logger = get_wandb_logger(self.loggers)
-        reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
-                                   inverse_temp=self.inverse_temp,
-                                   scale_diffusion=self.hparams.scale_diffusion)
+        if self.eval_count % 50 == 0:
+            wandb_logger = get_wandb_logger(self.loggers)
+            reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
+                                    inverse_temp=self.inverse_temp,
+                                    scale_diffusion=self.hparams.scale_diffusion)
 
-        prior_samples = self.annealed_prior.sample(self.hparams.num_eval_samples)
+            prior_samples = self.annealed_prior.sample(self.hparams.num_eval_samples)
 
-        self.last_samples, logweights = self.generate_samples(
-            reverse_sde=reverse_sde,
-            num_samples=self.hparams.num_eval_samples,
-            return_logweights=True,
-            resampling_interval=self.hparams.resampling_interval,
-            diffusion_scale=self.hparams.diffusion_scale,  #TODO: what should the diffusion scale be?
-            num_langevin_steps=self.hparams.num_langevin_steps,
-            batch_size=self.hparams.num_samples_to_generate_per_epoch,
-            prior_samples=prior_samples,
-            num_negative_time_steps=0
-        )
-        self.last_energies = self.energy_function(self.last_samples)
+            self.last_samples_annealed, logweights = self.generate_samples(
+                reverse_sde=reverse_sde,
+                num_samples=self.hparams.num_eval_samples,
+                return_logweights=True,
+                resampling_interval=self.hparams.resampling_interval,
+                diffusion_scale=self.hparams.diffusion_scale,  #TODO: what should the diffusion scale be?
+                num_langevin_steps=self.hparams.num_langevin_steps,
+                batch_size=self.hparams.num_samples_to_generate_per_epoch,
+                prior_samples=prior_samples,
+                num_negative_time_steps=0
+            )
+            self.last_energies_annealed = self.annealed_energy(self.last_samples_annealed)
 
-        self.annealed_energy.log_on_epoch_end(
-            self.last_samples,
-            self.last_energies,
-            wandb_logger,
-            prefix="temp_annealed_samples",
-        )
+            self.annealed_energy.log_on_epoch_end(
+                self.last_samples_annealed,
+                self.last_energies_annealed,
+                wandb_logger,
+                prefix="temp_annealed_samples",
+            )
 
-        if self.hparams.resampling_interval!=-1: #HERE
-            self._log_logweights(logweights, prefix="val")
-            self._plot_std_logweights(logweights, prefix="val")
+            if self.hparams.resampling_interval!=-1: #HERE
+                self._log_logweights(logweights, prefix="val")
+                self._plot_std_logweights(logweights, prefix="val")
+            
+        self.eval_count +=1
 
 
     def on_test_epoch_end(self) -> None:
         wandb_logger = get_wandb_logger(self.loggers)
+        super().on_test_epoch_end()
 
-        self.eval_epoch_end("test")
-        self._log_energy_w2(prefix="test")
-        if self.energy_function.is_molecule:
-            self._log_dist_w2(prefix="test")
-            self._log_dist_total_var(prefix="test")
-        
-        batch_size = self.hparams.num_eval_samples
+        # Compute metrics for the annealed energy
+        batch_annealed_samples = sample_from_tensor(self.last_samples_annealed, self.hparams.eval_batch_size)
+        batch_test_samples = self.annealed_energy.sample_test_set(self.hparams.eval_batch_size)
+
+        names, dists = compute_distribution_distances(
+            self.annealed_energy.unnormalize(batch_annealed_samples)[:, None],
+            batch_test_samples[:, None], self.annealed_energy
+        )
+        names = [f"test/temp_annealed/{name}" for name in names]
+        d = dict(zip(names, dists))
+        self.log_dict(d, sync_dist=True)
+
+        self._log_energy_w2(prefix="test/temp_annealed", energy_function=self.annealed_energy)
+        if self.annealed_energy.is_molecule:
+            self._log_dist_w2(prefix="test/temp_annealed", energy_function=self.annealed_energy)
+            self._log_dist_total_var(prefix="test/temp_annealed", energy_function=self.annealed_energy)
+
+
+        # Generate annealed samples to save
         final_samples = []
-        n_batches = self.num_samples_to_save // batch_size
-        print("Generating samples")
+
+        if self.num_samples_to_save >  self.hparams.num_eval_samples:   
+            batch_size = self.hparams.num_eval_samples
+            n_batches = self.num_samples_to_save // batch_size
+        else:
+            batch_size = self.num_samples_to_save
+            n_batches = 1
+
+        print(f"Generating {n_batches} batches of annealed samples of size {batch_size}.")
 
         reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
                                    inverse_temp=self.inverse_temp,
@@ -146,16 +170,17 @@ class tempDEMLitModule(DEMLitModule):
                     samples,
                     self.annealed_energy(samples),
                     wandb_logger,
+                    prefix="test/temp_annealed_samples",
                 )
 
         final_samples = torch.cat(final_samples, dim=0)
         output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-        path = f"{output_dir}/samples_{self.num_samples_to_save}.pt"
+        path = f"{output_dir}/samples_temperature_{self.annealed_energy.temperature}_{self.num_samples_to_save}.pt"
         torch.save(final_samples, path)
         print(f"Saving samples to {path}")
         import os
-        os.makedirs(self.energy_function.name, exist_ok=True)
-        path2 = f"{self.energy_function.name}/samples_{self.hparams.version}_{self.num_samples_to_save}.pt"
+        os.makedirs(self.annealed_energy.name, exist_ok=True)
+        path2 = f"{self.annealed_energy.name}/samples_temperature_{self.annealed_energy.temperature}_{self.hparams.version}_{self.num_samples_to_save}.pt"
         torch.save(final_samples, path2)
         print(f"Saving samples to {path2}")
 
@@ -172,7 +197,6 @@ class tempDEMLitModule(DEMLitModule):
         axs.plot(integration_times, logweights)
 
         #limit yaxis
-        # axs.set_ylim(-logweights.min()-1, logweights[0].mean() + logweights[0].std())
         axs.set_xlabel("Integration time")
         fig.canvas.draw()
         img = PIL.Image.frombytes(
@@ -211,6 +235,8 @@ class tempDEMLitModule(DEMLitModule):
         self.annealed_prior = self.partial_prior(
             device=self.device, scale=(self.noise_schedule.h(1) / self.inverse_temp) ** 0.5
         )
+
+        self.eval_count = 0
 
 
 if __name__ == "__main__":

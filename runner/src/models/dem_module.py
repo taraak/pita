@@ -358,9 +358,6 @@ class DEMLitModule(LightningModule):
                 )
 
             dem_loss = self.get_loss(times, noised_samples)
-            # skip step if loss is too high
-            if dem_loss is None:
-                return None
             
             # Uncomment for SM
             #dem_loss = self.get_score_loss(times, iter_samples, noised_samples)
@@ -529,20 +526,23 @@ class DEMLitModule(LightningModule):
             self._log_dist_w2(prefix="val")
             self._log_dist_total_var(prefix="val")
 
-    def _log_energy_w2(self, prefix="val"):
-        if prefix == "test":
-            data_set = self.energy_function.sample_val_set(self.eval_batch_size)
+    def _log_energy_w2(self, prefix="val", energy_function=None):
+        if energy_function is None:
+            energy_function = self.energy_function
+
+        if "test" in prefix:
+            data_set = energy_function.sample_test_set(self.eval_batch_size)
             generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
                                                       resampling_interval=-1
                                                       )
-            generated_energies = self.energy_function(generated_samples)
+            generated_energies = energy_function(generated_samples)
         else:
             if len(self.buffer) < self.eval_batch_size:
                 return
-            data_set = self.energy_function.sample_test_set(self.eval_batch_size)
+            data_set = energy_function.sample_val_set(self.eval_batch_size)
             _, generated_energies = self.buffer.get_last_n_inserted(self.eval_batch_size)
 
-        energies = self.energy_function(self.energy_function.normalize(data_set))
+        energies = energy_function(energy_function.normalize(data_set))
         energy_w2 = pot.emd2_1d(
             energies.cpu().numpy(),
             generated_energies.cpu().numpy()
@@ -557,21 +557,23 @@ class DEMLitModule(LightningModule):
         )
 
 
-    def _log_dist_w2(self, prefix="val"):
-        if prefix == "test":
-            data_set = self.energy_function.sample_val_set(self.eval_batch_size)
+    def _log_dist_w2(self, prefix="val", energy_function=None):
+        if energy_function is None:
+            energy_function = self.energy_function
+        if "test" in prefix:
+            data_set = energy_function.sample_test_set(self.eval_batch_size)
             generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
                                                       resampling_interval=-1
                                                       )
         else:
             if len(self.buffer) < self.eval_batch_size:
                 return
-            data_set = self.energy_function.sample_test_set(self.eval_batch_size)
+            data_set = energy_function.sample_val_set(self.eval_batch_size)
             generated_samples, _ = self.buffer.get_last_n_inserted(self.eval_batch_size)
 
         dist_w2 = pot.emd2_1d(
-            self.energy_function.interatomic_dist(generated_samples).cpu().numpy().reshape(-1),
-            self.energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1)
+            energy_function.interatomic_dist(generated_samples).cpu().numpy().reshape(-1),
+            energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1)
         )
         self.log(
             f"{prefix}/dist_w2",
@@ -581,20 +583,22 @@ class DEMLitModule(LightningModule):
             prog_bar=True,
         )
 
-    def _log_dist_total_var(self, prefix="val"):
-        if prefix == "test":
-            data_set = self.energy_function.sample_val_set(self.eval_batch_size)
+    def _log_dist_total_var(self, prefix="val", energy_function=None):
+        if energy_function is None:
+            energy_function = self.energy_function
+        if "test" in prefix:
+            data_set = energy_function.sample_test_set(self.eval_batch_size)
             generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
                                                       resampling_interval=-1
                                                       )
         else:
             if len(self.buffer) < self.eval_batch_size:
                 return
-            data_set = self.energy_function.sample_test_set(self.eval_batch_size)
+            data_set = energy_function.sample_val_set(self.eval_batch_size)
             generated_samples, _ = self.buffer.get_last_n_inserted(self.eval_batch_size)
 
-        generated_samples_dists = self.energy_function.interatomic_dist(generated_samples).cpu().numpy().reshape(-1),
-        data_set_dists = self.energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1)
+        generated_samples_dists = energy_function.interatomic_dist(generated_samples).cpu().numpy().reshape(-1),
+        data_set_dists = energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1)
 
         H_data_set, x_data_set = np.histogram(data_set_dists, bins=200)
         H_generated_samples, _ = np.histogram(generated_samples_dists, bins=(x_data_set))
@@ -608,12 +612,14 @@ class DEMLitModule(LightningModule):
             prog_bar=True,
         )
 
-    def compute_log_z(self, cnf, prior, samples, prefix, name):
+    def compute_log_z(self, cnf, prior, samples, prefix, name, energy_function=None):
+        if energy_function is None:
+            energy_function = self.energy_function
         nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
             cnf, prior, samples
         )
         # this is stupid we should fix the normalization in the energy function
-        logz = self.energy_function(self.energy_function.normalize(samples)) + nll
+        logz = energy_function(energy_function.normalize(samples)) + nll
         logz_metric = getattr(self, f"{prefix}_{name}logz")
         logz_metric.update(logz)
         self.log(
@@ -663,14 +669,6 @@ class DEMLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        if False and self.hparams.generate_samples:
-            backwards_samples = self.generate_samples(
-                num_samples=self.eval_batch_size, diffusion_scale=self.diffusion_scale
-            )
-            to_log = {
-                "gen_0": backwards_samples,
-            }
-            return
         if prefix == "test":
             batch = self.energy_function.sample_test_set(self.eval_batch_size)
         elif prefix == "val":
@@ -710,11 +708,7 @@ class DEMLitModule(LightningModule):
                 self.energy_function.n_spatial_dim,
             )
 
-        loss = self.get_loss(times, noised_batch)
-        if loss is None:
-            return None
-        else:
-            loss = loss.mean(-1)
+        loss = self.get_loss(times, noised_batch).mean(-1)
 
         # update and log metrics
         loss_metric = self.val_loss if prefix == "val" else self.test_loss
@@ -820,8 +814,8 @@ class DEMLitModule(LightningModule):
             )[-1]
             
             self.energy_function.log_on_epoch_end(
-                self.last_samples,
-                self.last_energies,
+                outputs["gen_0"],
+                self.energy_function(outputs["gen_0"]),
                 wandb_logger,
                 unprioritized_buffer_samples = unprioritized_buffer_samples,
                 cfm_samples = cfm_samples,
@@ -831,8 +825,8 @@ class DEMLitModule(LightningModule):
         else:
             # Only plot dem samples
             self.energy_function.log_on_epoch_end(
-                self.last_samples,
-                self.last_energies,
+                outputs["gen_0"],
+                self.energy_function(outputs["gen_0"]),
                 wandb_logger,
             )
 
@@ -860,10 +854,10 @@ class DEMLitModule(LightningModule):
             self._log_dist_w2(prefix="test")
             self._log_dist_total_var(prefix="test")
         
-        batch_size = 1000
+        batch_size = 1024
         final_samples = []
         n_batches = self.num_samples_to_save // batch_size
-        print("Generating samples")
+        print("Generating original temperature samples.")
         for i in range(n_batches):
             start = time.time()
             samples = self.generate_samples(
@@ -884,12 +878,12 @@ class DEMLitModule(LightningModule):
 
         final_samples = torch.cat(final_samples, dim=0)
         output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-        path = f"{output_dir}/samples_{self.num_samples_to_save}.pt"
+        path = f"{output_dir}/samples_temperature_{self.energy_function.temperature}_{self.num_samples_to_save}.pt"
         torch.save(final_samples, path)
         print(f"Saving samples to {path}")
         import os
         os.makedirs(self.energy_function.name, exist_ok=True)
-        path2 = f"{self.energy_function.name}/samples_{self.hparams.version}_{self.num_samples_to_save}.pt"
+        path2 = f"{self.energy_function.name}/samples_temperature_{self.energy_function.temperature}_{self.hparams.version}_{self.num_samples_to_save}.pt"
         torch.save(final_samples, path2)
         print(f"Saving samples to {path2}")
 
