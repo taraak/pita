@@ -29,7 +29,6 @@ class tempDEMLitModule(DEMLitModule):
         batch_size=None,
         num_negative_time_steps=-1,
         prior_samples = None,
-        noise_correct=False,
     ) -> torch.Tensor:
         num_samples = num_samples or self.hparams.num_samples_to_generate_per_epoch
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale #should we use same diff scale?
@@ -49,7 +48,6 @@ class tempDEMLitModule(DEMLitModule):
             num_langevin_steps=num_langevin_steps,
             batch_size=batch_size,
             num_negative_time_steps=num_negative_time_steps,
-            noise_correct=noise_correct
         )
         # TODO: When returning the weights for plotting, I am not doing additional langevin steps
         if return_logweights:
@@ -63,8 +61,7 @@ class tempDEMLitModule(DEMLitModule):
                 resampling_interval=self.num_integration_steps,
                 num_langevin_steps=1,
                 batch_size=batch_size,
-                num_negative_time_steps=0,
-                noise_correct=noise_correct
+                num_negative_time_steps=self.hparams.num_negative_time_steps, #TODO: Should we do any negative time here?
             )
             return samples, logweights
         return samples
@@ -89,7 +86,7 @@ class tempDEMLitModule(DEMLitModule):
                 num_langevin_steps=self.hparams.num_langevin_steps,
                 batch_size=self.hparams.num_samples_to_generate_per_epoch,
                 prior_samples=prior_samples,
-                num_negative_time_steps=0
+                num_negative_time_steps=self.hparams.num_negative_time_steps, #TODO: Should we do any negative time here?
             )
             self.last_energies_annealed = self.annealed_energy(self.last_samples_annealed)
 
@@ -99,6 +96,8 @@ class tempDEMLitModule(DEMLitModule):
                 wandb_logger,
                 prefix="temp_annealed_samples",
             )
+
+            self._log_energy_mean(self.last_energies_annealed, prefix="val/temp_annealed")
 
             if self.hparams.resampling_interval!=-1: #HERE
                 self._log_logweights(logweights, prefix="val")
@@ -113,7 +112,9 @@ class tempDEMLitModule(DEMLitModule):
 
         # Compute metrics for the annealed energy
         batch_annealed_samples = sample_from_tensor(self.last_samples_annealed, self.hparams.eval_batch_size)
+        batch_annealed_energies = self.annealed_energy(batch_annealed_samples)
         batch_test_samples = self.annealed_energy.sample_test_set(self.hparams.eval_batch_size)
+        batch_test_energies = self.annealed_energy(batch_test_samples)
 
         names, dists = compute_distribution_distances(
             self.annealed_energy.unnormalize(batch_annealed_samples)[:, None],
@@ -123,11 +124,33 @@ class tempDEMLitModule(DEMLitModule):
         d = dict(zip(names, dists))
         self.log_dict(d, sync_dist=True)
 
-        self._log_energy_w2(prefix="test/temp_annealed", energy_function=self.annealed_energy)
+        energy_w2 = pot.emd2_1d(
+            batch_test_energies.cpu().numpy(),
+            batch_annealed_energies.cpu().numpy()
+        )
+        print("Energy W2", energy_w2)
+        dist_w2 = pot.emd2_1d(
+            self.annealed_energy.interatomic_dist(batch_annealed_samples).cpu().numpy().reshape(-1),
+            self.annealed_energy.interatomic_dist(batch_test_samples).cpu().numpy().reshape(-1)
+        )
+        self.log(
+            "test/temp_annealed/energy_w2",
+            self.val_energy_w2(energy_w2),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self.log(
+            "test/temp_annealed/dist_w2",
+            self.val_dist_w2(dist_w2),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
         if self.annealed_energy.is_molecule:
             self._log_dist_w2(prefix="test/temp_annealed", energy_function=self.annealed_energy)
             self._log_dist_total_var(prefix="test/temp_annealed", energy_function=self.annealed_energy)
-
 
         # Generate annealed samples to save
         final_samples = []

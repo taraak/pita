@@ -45,9 +45,9 @@ class VEReverseSDE(torch.nn.Module):
             nabla_Ut = self.model(t, x)
 
             if self.scale_diffusion:
-                drift_X = 0.5 * (self.inverse_temp+1) * nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1) * dt
+                drift_X = 0.5 * (self.inverse_temp+1) * nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1)
             else:
-                drift_X = self.inverse_temp * nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1) * dt
+                drift_X = self.inverse_temp * nabla_Ut * self.g(t, x).pow(2).unsqueeze(-1)
 
             drift_A = torch.zeros(x.shape[0]).to(x.device)
             
@@ -55,23 +55,21 @@ class VEReverseSDE(torch.nn.Module):
                 return  drift_X.detach(), drift_A.detach()
             
             drift_A = (0.5 * (self.inverse_temp-1) * self.inverse_temp 
-                       * (self.g(t, x)[:, None] * nabla_Ut).pow(2).sum(-1) * dt)
+                       * (self.g(t, x)[:, None] * nabla_Ut).pow(2).sum(-1))
                 
         return  drift_X.detach(), drift_A.detach()
     
 
-    def diffusion(self, t, x, dt, diffusion_scale, sigma=0.0):
+    def diffusion(self, t, x, diffusion_scale):
         if t.dim() == 0:
             # repeat the same time for all points if we have a scalar time
             t = t * torch.ones_like(x).to(x.device)
 
         if self.scale_diffusion:
-            return (diffusion_scale * torch.sqrt(self.g(t, x) ** 2 * dt - sigma) * torch.randn_like(x).to(x.device) 
+            return (diffusion_scale * self.g(t, x) * torch.randn_like(x).to(x.device) 
                     / np.sqrt(self.inverse_temp))
-            # return diffusion_scale * self.g(t, x) * torch.randn_like(x).to(x.device) / np.sqrt(inverse_temp)
-        
-        # return diffusion_scale * self.g(t, x) * torch.randn_like(x).to(x.device)
-        return diffusion_scale * torch.sqrt(self.g(t, x) ** 2 * dt - sigma) * torch.randn_like(x).to(x.device)
+
+        return diffusion_scale * self.g(t, x) * torch.randn_like(x).to(x.device)
 
     def g(self, t, x):
         g = self.noise_schedule.g(t)

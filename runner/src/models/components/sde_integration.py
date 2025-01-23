@@ -31,10 +31,10 @@ def grad_E(x, energy_function):
         x = x.requires_grad_()
         return torch.autograd.grad(torch.sum(energy_function(x)), x)[0].detach()
 
-def negative_time_descent(x, energy_function, num_steps, dt=1e-4):
+def negative_time_descent(x, energy_function, num_steps, dt=1e-4, temperature=1.0):
     samples = []
     for _ in range(num_steps):
-        drift = grad_E(x, energy_function)
+        drift = grad_E(x, energy_function) / temperature
         x = x + drift * dt
 
         if energy_function.is_molecule:
@@ -53,32 +53,21 @@ def euler_maruyama_step(
         batch_size: int,
         resampling_interval=-1,
         diffusion_scale=1.0,
-        noise_correct=False
 ):
     # Calculate drift and diffusion terms for num_eval_batches
-    EPS = 1e-6
-    if noise_correct:
-        sigma = np.sqrt(sde.g(0, x)**2 *  dt) - EPS
-    else:
-        sigma = 0.0
-
     drift_Xt = torch.zeros_like(x)
     drift_At = torch.zeros_like(a)
 
-    x_noisy = x + sigma * torch.randn_like(x)
-
     for i in range(x.shape[0]//batch_size):
-        drift_Xt_i, drift_At_i = sde.f(t, x_noisy[i*batch_size:(i+1)*batch_size], dt, 
-                                       resampling_interval)
+        drift_Xt_i, drift_At_i = sde.f(t, x[i*batch_size:(i+1)*batch_size], resampling_interval)
         drift_Xt[i*batch_size:(i+1)*batch_size] = drift_Xt_i
         drift_At[i*batch_size:(i+1)*batch_size] = drift_At_i
 
-
-    diffusion = sde.diffusion(t, x, dt, diffusion_scale)
+    diffusion = sde.diffusion(t, x, diffusion_scale)
 
     # Update the state
-    x_next = x + drift_Xt + diffusion
-    a_next = a + drift_At
+    x_next = x + drift_Xt * dt + diffusion * np.sqrt(dt)
+    a_next = a + drift_At * dt
 
     if resampling_interval==-1 or step+1 % resampling_interval != 0:
         return x_next, a_next
@@ -131,7 +120,6 @@ def integrate_sde(
     num_negative_time_steps=100,
     num_langevin_steps=1,
     batch_size=None,
-    noise_correct=False,
 ):
     start_time = time_range if reverse_time else 0.0
     end_time = time_range - start_time
@@ -157,7 +145,6 @@ def integrate_sde(
                                         resampling_interval=resampling_interval,
                                         diffusion_scale=diffusion_scale,
                                         batch_size=batch_size,
-                                        noise_correct=noise_correct
                                         )
                 if energy_function.is_molecule:
                     x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
@@ -170,7 +157,7 @@ def integrate_sde(
     if num_negative_time_steps > 0:
         print("doing negative time descent...")
         samples_langevin = negative_time_descent(
-            x, energy_function, num_steps=num_negative_time_steps
+            x, energy_function, num_steps=num_negative_time_steps, temperature=sde.inverse_temp
         )
         samples = torch.concatenate((samples, samples_langevin), axis=0)
 
