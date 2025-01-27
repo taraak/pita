@@ -13,7 +13,7 @@ class GMM(nn.Module, TargetDistribution):
     def __init__(self, dim, n_mixes, loc_scaling, log_var_scaling=0.1, seed=0,
                  n_test_set_samples=1000, use_gpu=True,
                  true_expectation_estimation_n_samples=int(1e7),
-                 mean=None, scale=None, temperature=1.0):
+                 mean=None, scale=None, cat_probs=None):
         super(GMM, self).__init__()
         self.seed = seed
         self.n_mixes = n_mixes
@@ -24,17 +24,20 @@ class GMM(nn.Module, TargetDistribution):
             mean = (torch.rand((n_mixes, dim)) - 0.5)*2 * loc_scaling
         if scale is None:
             log_var = torch.ones((n_mixes, dim)) * log_var_scaling
-            self.register_buffer("scale_trils", torch.diag_embed(f.softplus(log_var)) * sqrt(temperature))
+            self.register_buffer("scale_trils", torch.diag_embed(f.softplus(log_var)))
         else:
-            self.register_buffer("scale_trils", torch.diag_embed(scale) * sqrt(temperature))
+            self.register_buffer("scale_trils", torch.diag_embed(scale))
 
-        self.register_buffer("cat_probs", torch.ones(n_mixes))
+        if cat_probs is None:
+            self.register_buffer("cat_probs", torch.ones(n_mixes))
+        else: 
+            self.register_buffer("cat_probs", cat_probs)
         self.register_buffer("locs", mean)
         self.expectation_function = quadratic_function
-        self.register_buffer("true_expectation", MC_estimate_true_expectation(self,
-                                                             self.expectation_function,
-                                                             true_expectation_estimation_n_samples
-                                                                              ))
+        # self.register_buffer("true_expectation", MC_estimate_true_expectation(self,
+        #                                                      self.expectation_function,
+        #                                                      true_expectation_estimation_n_samples
+        #                                                                       ))
         self.device = "cuda" if use_gpu else "cpu"
         self.to(self.device)
 
@@ -50,7 +53,7 @@ class GMM(nn.Module, TargetDistribution):
 
     @property
     def distribution(self):
-        mix = torch.distributions.Categorical(self.cat_probs)
+        mix = torch.distributions.Categorical(logits=self.cat_probs)
         com = torch.distributions.MultivariateNormal(self.locs,
                                                      scale_tril=self.scale_trils,
                                                      validate_args=False)
