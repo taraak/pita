@@ -18,6 +18,9 @@ class GMM(BaseEnergyFunction):
         n_mixes=40,
         loc_scaling=40,
         log_var_scaling=1.0,
+        mean=None,
+        scale=None,
+        cat_probs=None,
         device="cpu",
         true_expectation_estimation_n_samples=int(1e5),
         plotting_buffer_sample_size=512,
@@ -25,8 +28,8 @@ class GMM(BaseEnergyFunction):
         should_unnormalize=False,
         data_normalization_factor=50,
         train_set_size=100000,
-        test_set_size=2000,
-        val_set_size=2000,
+        test_set_size=5000,
+        val_set_size=5000,
         temperature=1.0,
     ):
         use_gpu = device != "cpu"
@@ -34,11 +37,13 @@ class GMM(BaseEnergyFunction):
         self.gmm = gmm.GMM(
             dim=dimensionality,
             n_mixes=n_mixes,
+            mean=mean,
+            scale=scale,
+            cat_probs=cat_probs,
             loc_scaling=loc_scaling,
             log_var_scaling=log_var_scaling,
             use_gpu=use_gpu,
             true_expectation_estimation_n_samples=true_expectation_estimation_n_samples,
-            temperature = temperature
         )
 
         self.temperature = temperature
@@ -63,9 +68,9 @@ class GMM(BaseEnergyFunction):
         )
 
     def setup_test_set(self):
-        # test_sample = self.gmm.sample((self.test_set_size,))
-        # return test_sample
-        return self.gmm.test_set
+        test_sample = self.gmm.sample((self.test_set_size,))
+        return test_sample
+        # return self.gmm.test_set
 
     def setup_train_set(self):
         train_samples = self.gmm.sample((self.train_set_size,))
@@ -79,7 +84,7 @@ class GMM(BaseEnergyFunction):
         if self.should_unnormalize:
             samples = self.unnormalize(samples)
 
-        return self.gmm.log_prob(samples)
+        return (self.gmm.log_prob(samples) / self.temperature)
 
     @property
     def dimensionality(self):

@@ -18,6 +18,8 @@ defaults:
     - mlp
   - noise_schedule:
     - geometric
+  - temperature_schedule:
+    - constant
 
 partial_buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
@@ -84,8 +86,9 @@ num_samples_to_save: 100000
 num_negative_time_steps: 0
 num_langevin_steps: 1
 
-
 # tempDEM specific parameters
 resampling_interval: -1
 num_eval_samples: 1024
 scale_diffusion: false
+annealed_test_batch_size: 5000
+start_resampling_step : 50
