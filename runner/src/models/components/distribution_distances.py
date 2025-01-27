@@ -35,7 +35,7 @@ def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor,
         "Median_MSE",
         "Median_L2",
         "Median_L1",
-        "Eq-EMD2"
+        # "Eq-EMD2"
     ]
     is_jagged = isinstance(true, list)
     pred_is_jagged = isinstance(pred, list)
@@ -58,9 +58,9 @@ def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor,
         w1 = wasserstein(a, b, power=1)
         w2 = wasserstein(a, b, power=2)
 
-        if energy_function.is_molecule:
-            eq_emd2 = eot(a.reshape(-1, energy_function.n_particles, energy_function.n_spatial_dim).cpu(),
-                        b.reshape(-1, energy_function.n_particles, energy_function.n_spatial_dim).cpu()) 
+        # if energy_function.is_molecule:
+        #     eq_emd2 = eot(a.reshape(-1, energy_function.n_particles, energy_function.n_spatial_dim).cpu(),
+        #                 b.reshape(-1, energy_function.n_particles, energy_function.n_spatial_dim).cpu()) 
 
         if not pred_is_jagged and not is_jagged:
             mmd_linear = linear_mmd2(a, b).item()
@@ -73,14 +73,14 @@ def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor,
         if pred_is_jagged or is_jagged:
             dists.append((w1, w2, *mean_dists, *median_dists))
         else:
-            if energy_function.is_molecule:
-                dists.append(
-                    (w1, w2, mmd_linear, mmd_poly, mmd_rbf, *mean_dists, *median_dists, eq_emd2)
-                )
-            else:
-                dists.append(
-                    (w1, w2, mmd_linear, mmd_poly, mmd_rbf, *mean_dists, *median_dists)
-                )
+            # if energy_function.is_molecule:
+            #     dists.append(
+            #         (w1, w2, mmd_linear, mmd_poly, mmd_rbf, *mean_dists, *median_dists, eq_emd2)
+            #     )
+            # else:
+            dists.append(
+                (w1, w2, mmd_linear, mmd_poly, mmd_rbf, *mean_dists, *median_dists)
+            )
         # For multipoint datasets add timepoint specific distances
         if ts > 1:
             names.extend([f"t{t+1}/{name}" for name in filtered_names])
