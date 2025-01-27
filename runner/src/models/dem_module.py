@@ -148,7 +148,6 @@ class DEMLitModule(LightningModule):
         num_negative_time_steps=0,
         num_langevin_steps=1,
         resampling_interval=None,
-        noise_correct=False
     ) -> None:
         super().__init__()
         # Seems to slow things down
@@ -198,6 +197,7 @@ class DEMLitModule(LightningModule):
         self.test_nfe = MeanMetric()
         self.val_energy_w2 = MeanMetric()
         self.val_dist_w2 = MeanMetric()
+        self.val_num_unique_idxs = MeanMetric()
         self.val_dist_total_var = MeanMetric()
 
         self.val_dem_nll_logdetjac = MeanMetric()
@@ -421,38 +421,37 @@ class DEMLitModule(LightningModule):
 
     def generate_samples(
         self,
-        reverse_sde: VEReverseSDE = None,
-        num_samples: Optional[int] = None,
+        reverse_sde: VEReverseSDE,
+        num_samples: int,
         return_full_trajectory: bool = False,
         diffusion_scale=None,
         resampling_interval=-1,
         num_negative_time_steps=-1,
-        noise_correct=False,
     ) -> torch.Tensor:
-        num_samples = num_samples or self.num_samples_to_generate_per_epoch
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale
-        noise_correct = noise_correct or self.hparams.noise_correct
         if num_negative_time_steps == -1:
             num_negative_time_steps = self.hparams.num_negative_time_steps
         prior_samples = self.prior.sample(num_samples)
+        logq_prior_samples = self.prior.log_prob(prior_samples)
 
         samples, _ = self.integrate(
-            reverse_sde=reverse_sde,
+            reverse_sde=reverse_sde or self.reverse_sde,
             samples=prior_samples.clone(),
+            logq_samples=logq_prior_samples.clone(),
             reverse_time=True,
             return_full_trajectory=return_full_trajectory,
             diffusion_scale=diffusion_scale,
             resampling_interval=resampling_interval,
             num_negative_time_steps=num_negative_time_steps,
-            noise_correct=noise_correct,
         )   
         return samples
 
 
     def integrate(
         self,
-        reverse_sde: VEReverseSDE = None,
-        samples: torch.Tensor = None,
+        reverse_sde: VEReverseSDE,
+        samples: torch.Tensor,
+        logq_samples: torch.Tensor,
         reverse_time=True,
         return_full_trajectory=False,
         diffusion_scale=1.0,
@@ -461,11 +460,12 @@ class DEMLitModule(LightningModule):
         num_langevin_steps=1,
         batch_size=None,
         num_negative_time_steps=-1,
-        noise_correct=False,
+        start_resampling_step=50,
     ) -> torch.Tensor:
-        trajectory, logweights = integrate_sde(
-            reverse_sde or self.reverse_sde,
+        trajectory, logweights, num_unique_idxs = integrate_sde(
+            reverse_sde,
             samples,
+            logq_samples,
             self.num_integration_steps,
             self.energy_function,
             diffusion_scale=diffusion_scale,
@@ -475,13 +475,12 @@ class DEMLitModule(LightningModule):
             num_langevin_steps=num_langevin_steps,
             resampling_interval=resampling_interval,
             batch_size=batch_size,
-            noise_correct=noise_correct,
+            start_resampling_step=start_resampling_step,
         )
         if return_full_trajectory:
-            return trajectory, logweights
+            trajectory, logweights, num_unique_idxs
 
-        return trajectory[-1], logweights
-
+        return trajectory[-1], logweights, num_unique_idxs
 
     def compute_nll(
         self,
@@ -509,11 +508,14 @@ class DEMLitModule(LightningModule):
             )
             self.last_samples = self.generate_samples(
                 reverse_sde=reverse_sde,
+                num_samples=self.num_samples_to_generate_per_epoch,
                 resampling_interval=-1
             )
             self.last_energies = self.energy_function(self.last_samples)
         else:
             self.last_samples = self.generate_samples(
+                reverse_sde=self.reverse_sde,
+                num_samples=self.num_samples_to_generate_per_epoch,
                 resampling_interval=-1
             )
             self.last_energies = self.energy_function(self.last_samples)
@@ -532,7 +534,8 @@ class DEMLitModule(LightningModule):
 
         if "test" in prefix:
             data_set = energy_function.sample_test_set(self.eval_batch_size)
-            generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
+            generated_samples = self.generate_samples(self.reverse_sde,
+                                                      num_samples=self.eval_batch_size,
                                                       resampling_interval=-1
                                                       )
             generated_energies = energy_function(generated_samples)
@@ -557,12 +560,22 @@ class DEMLitModule(LightningModule):
         )
 
 
+    def _log_energy_mean(self, samples_energy, prefix="val",):
+        self.log(
+            f"{prefix}/energy_mean",
+            samples_energy.mean(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
     def _log_dist_w2(self, prefix="val", energy_function=None):
         if energy_function is None:
             energy_function = self.energy_function
         if "test" in prefix:
             data_set = energy_function.sample_test_set(self.eval_batch_size)
-            generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
+            generated_samples = self.generate_samples(reverse_sde=self.reverse_sde,
+                                                      num_samples=self.eval_batch_size,
                                                       resampling_interval=-1
                                                       )
         else:
@@ -588,7 +601,8 @@ class DEMLitModule(LightningModule):
             energy_function = self.energy_function
         if "test" in prefix:
             data_set = energy_function.sample_test_set(self.eval_batch_size)
-            generated_samples = self.generate_samples(num_samples=self.eval_batch_size,
+            generated_samples = self.generate_samples(reverse_sde=self.reverse_sde,
+                                                      num_samples=self.eval_batch_size,
                                                       resampling_interval=-1
                                                       )
         else:
@@ -679,6 +693,7 @@ class DEMLitModule(LightningModule):
         # generate samples noise --> data if needed
         if backwards_samples is None or self.eval_batch_size > len(backwards_samples):
             backwards_samples = self.generate_samples(
+                reverse_sde=self.reverse_sde,
                 num_samples=self.eval_batch_size,
                 resampling_interval=-1
             )
@@ -830,6 +845,8 @@ class DEMLitModule(LightningModule):
                 wandb_logger,
             )
 
+            self._log_energy_mean(self.energy_function(outputs["gen_0"]), prefix="val")
+
         if "data_0" in outputs:
             # pad with time dimension 1
             names, dists = compute_distribution_distances(
@@ -861,8 +878,9 @@ class DEMLitModule(LightningModule):
         for i in range(n_batches):
             start = time.time()
             samples = self.generate_samples(
-                    num_samples=batch_size,
-                    resampling_interval=-1
+                reverse_sde=self.reverse_sde,
+                num_samples=batch_size,
+                resampling_interval=-1
                 )
             final_samples.append(samples
             )
@@ -929,8 +947,8 @@ class DEMLitModule(LightningModule):
             init_states = self.prior.sample(self.num_init_samples)
         else:
             init_states = self.generate_samples(
-                reverse_sde,
-                self.num_init_samples,
+                reverse_sde=reverse_sde,
+                num_samples=self.num_init_samples,
                 resampling_interval=-1
             )
         init_energies = self.energy_function(init_states)
