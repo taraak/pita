@@ -67,12 +67,10 @@ class BaseEnergyFunction(ABC):
     ) -> Optional[torch.Tensor]:
         if self.test_set is None:
             return None
-
-        idxs = torch.randperm(len(self.test_set))[:num_points]
-        outs = self.test_set[idxs]
+    
+        outs = self.test_set[:num_points]
         if normalize:
             outs = self.normalize(outs)
-
         return outs
 
     def sample_train_set(
@@ -80,9 +78,7 @@ class BaseEnergyFunction(ABC):
     ) -> Optional[torch.Tensor]:
         if self.train_set is None:
             self._train_set = self.setup_train_set()
-
-        idxs = torch.randperm(len(self.train_set))[:num_points]
-        outs = self.train_set[idxs]
+        outs = self.train_set[:num_points]
         if normalize:
             outs = self.normalize(outs)
 
@@ -93,9 +89,8 @@ class BaseEnergyFunction(ABC):
     ) -> Optional[torch.Tensor]:
         if self.val_set is None:
             return None
-
-        idxs = torch.randperm(len(self.val_set))[:num_points]
-        outs = self.val_set[idxs]
+        
+        outs = self.val_set[:num_points]
         if normalize:
             outs = self.normalize(outs)
 

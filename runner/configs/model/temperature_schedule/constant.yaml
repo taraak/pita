@@ -1,0 +1,2 @@
+_target_: src.models.components.temperature_schedules.ConstantInvTempSchedule
+_partial_: true

@@ -44,7 +44,6 @@ def compute_laplacian(model, nabla_Ut, t, xt, n_samples=1, exact=True):
         return laplacian / n_samples
 
 
-
 sampler = qmc.Sobol(d=1, scramble=False)
 def sample_cat(bs, next_u, logits):
     # u, next_u = sample_uniform(bs, next_u)
@@ -54,11 +53,24 @@ def sample_cat(bs, next_u, logits):
     ids = np.digitize(u, bins.cpu())
     return ids, next_u
 
-
 def sample_cat_sys(bs, logits):
     u = torch.rand(size=(1,), dtype=torch.float64)
     u = (u + 1/bs*torch.arange(bs)) % 1.0
     clipped_weights = torch.clip(torch.softmax(logits, dim=-1), 1e-6, 1.0)
+    # clipped_weights = torch.softmax(logits, dim=-1)
     bins = torch.cumsum(clipped_weights, dim=-1)
-    ids = np.digitize(u, bins.cpu())
+    ids = np.digitize(u, bins.cpu(), right=True)
+
+    ids[ids == logits.shape[-1]] = ids[ids == logits.shape[-1]] - 1 
     return ids, None
+
+# ito density estimator for derivative of log density
+def ito_logdensity(sde, t, x, dt):
+    if t.dim() == 0:
+        # repeat the same time for all points if we have a scalar time
+        t = t * torch.ones(x.shape[0]).to(x.device)
+    # return ((nabla_qt * dx).sum(-1) 
+    #         - 0.5 * (sde.g(t, x)[:, None] * nabla_qt).pow(2).sum(-1) * dt).detach()
+    dwt = sde.noise * np.sqrt(dt)
+    return (sde.g(t, x) * (sde.nabla_logqt * dwt).sum(-1) 
+            + 0.5 * (sde.g(t, x)[:, None] * sde.nabla_logqt).pow(2).sum(-1) * dt)

@@ -178,9 +178,13 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
-        self.data_path_train = data_path + f"LJ13_Alex_temp_{self.temperature}/train_split_LJ13-1000.npy"
-        self.data_path_val = data_path + f"LJ13_Alex_temp_{self.temperature}/val_split_LJ13-1000.npy"
-        self.data_path_test = data_path + f"LJ13_Alex_temp_{self.temperature}/test_split_LJ13-1000.npy"
+
+        self.data_path_train = (data_path 
+                                + f"LJ{self.n_particles}_temp_{self.temperature}/train_split_LJ{self.n_particles}-1000.npy")
+        self.data_path_val = (data_path 
+                              + f"LJ{self.n_particles}_temp_{self.temperature}/val_split_LJ{self.n_particles}-1000.npy")
+        self.data_path_test = (data_path 
+                               + f"LJ{self.n_particles}_temp_{self.temperature}/test_split_LJ{self.n_particles}-1000.npy")
 
         if self.n_particles == 13:
             self.name = "LJ13_efm"
@@ -291,7 +295,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         wandb_logger.log_image(f"{name}", [samples_fig])
 
     def get_dataset_fig(self, samples, T=1.0, T_og=1.0):
-        test_data_smaller = self.sample_test_set(1000)
+        test_data_smaller = self.sample_test_set(5000)
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
