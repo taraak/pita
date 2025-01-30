@@ -196,6 +196,7 @@ class DEMLitModule(LightningModule):
         self.val_nfe = MeanMetric()
         self.test_nfe = MeanMetric()
         self.val_energy_w2 = MeanMetric()
+        self.val_energy_w1 = MeanMetric()
         self.val_dist_w2 = MeanMetric()
         self.val_num_unique_idxs = MeanMetric()
         self.val_dist_total_var = MeanMetric()
@@ -258,6 +259,8 @@ class DEMLitModule(LightningModule):
         self.init_from_prior = init_from_prior
         
         self.diffusion_scale = diffusion_scale
+
+        self.trainer_called = False
 
     def forward(self, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -452,15 +455,15 @@ class DEMLitModule(LightningModule):
         reverse_sde: VEReverseSDE,
         samples: torch.Tensor,
         logq_samples: torch.Tensor,
-        reverse_time=True,
-        return_full_trajectory=False,
-        diffusion_scale=1.0,
-        no_grad=True,
-        resampling_interval=-1,
-        num_langevin_steps=1,
+        reverse_time: bool,
+        diffusion_scale: float,
+        resampling_interval: int,
+        num_langevin_steps: int,
+        num_negative_time_steps: int,
+        start_resampling_step: int,
         batch_size=None,
-        num_negative_time_steps=-1,
-        start_resampling_step=50,
+        no_grad=True,
+        return_full_trajectory=False,
     ) -> torch.Tensor:
         trajectory, logweights, num_unique_idxs = integrate_sde(
             reverse_sde,

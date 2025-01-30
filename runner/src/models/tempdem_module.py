@@ -18,6 +18,7 @@ class tempDEMLitModule(DEMLitModule):
         annealed_test_batch_size: int,
         start_resampling_step: int,
         annealed_clipper: Clipper,
+        resampling_strategy: str,
         *args,
         **kwargs,
     ):
@@ -36,13 +37,13 @@ class tempDEMLitModule(DEMLitModule):
         num_negative_time_steps=-1,
         prior_samples = None,
         logq_prior_samples = None,
-        start_resampling_step=None,
+        start_resampling_step=0,
         return_num_unique_idxs=False,
+        resampling_strategy="systematic",
     ) -> torch.Tensor:
         
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale #TODO: should we use same diff scale?
         reverse_sde = reverse_sde or self.reverse_sde
-        start_resampling_step = start_resampling_step or self.hparams.start_resampling_step
 
         if num_negative_time_steps == -1:
             num_negative_time_steps = self.hparams.num_negative_time_steps
@@ -63,6 +64,7 @@ class tempDEMLitModule(DEMLitModule):
             batch_size=batch_size,
             num_negative_time_steps=num_negative_time_steps,
             start_resampling_step=start_resampling_step,
+            resampling_strategy=resampling_strategy,
         )
         # TODO: When returning the weights for plotting, I am not doing additional langevin steps
         if return_logweights:
@@ -79,6 +81,7 @@ class tempDEMLitModule(DEMLitModule):
                 batch_size=batch_size,
                 num_negative_time_steps=self.hparams.num_negative_time_steps, #TODO: Should we do any negative time here?
                 start_resampling_step=start_resampling_step,
+                resampling_strategy=resampling_strategy,
             )
             return samples, logweights, num_unique_idxs 
     
@@ -86,14 +89,50 @@ class tempDEMLitModule(DEMLitModule):
             return samples, num_unique_idxs
         return samples
     
+    def integrate(
+        self,
+        reverse_sde: VEReverseSDE,
+        samples: torch.Tensor,
+        logq_samples: torch.Tensor,
+        reverse_time: bool,
+        diffusion_scale: float,
+        resampling_interval: int,
+        num_langevin_steps: int,
+        num_negative_time_steps: int,
+        start_resampling_step: int,
+        resampling_strategy: str,
+        batch_size=None,
+        no_grad=True,
+        return_full_trajectory=False,
+    ) -> torch.Tensor:
+        trajectory, logweights, num_unique_idxs = integrate_sde(
+            reverse_sde,
+            samples,
+            logq_samples,
+            self.num_integration_steps,
+            self.energy_function,
+            diffusion_scale=diffusion_scale,
+            reverse_time=reverse_time,
+            no_grad=no_grad,
+            num_negative_time_steps=num_negative_time_steps,
+            num_langevin_steps=num_langevin_steps,
+            resampling_interval=resampling_interval,
+            batch_size=batch_size,
+            start_resampling_step=start_resampling_step,
+            resampling_strategy=resampling_strategy,
+        )
+        if return_full_trajectory:
+            trajectory, logweights, num_unique_idxs
+
+        return trajectory[-1], logweights, num_unique_idxs
+    
     def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
-        # if in training mode:
-        if self.training:
+        if self.trainer_called:
             super().eval_step(prefix, batch, batch_idx)
         return
 
     def eval_epoch_end(self, prefix: str):
-        if self.training:
+        if self.trainer_called:
             super().eval_epoch_end(prefix)
 
         if self.eval_count % 5 == 0:
@@ -119,6 +158,7 @@ class tempDEMLitModule(DEMLitModule):
                 prior_samples=prior_samples,
                 logq_prior_samples=logq_prior_samples,
                 num_negative_time_steps=self.hparams.num_negative_time_steps, #TODO: Should we do any negative time here?
+                resampling_strategy=self.hparams.resampling_strategy,
             )
             self.last_energies_annealed = self.annealed_energy(self.last_samples_annealed)
 
@@ -174,11 +214,6 @@ class tempDEMLitModule(DEMLitModule):
             batch_test_energies.cpu().numpy(),
             batch_annealed_energies.cpu().numpy()
         )
-        print("Energy W2", energy_w2)
-        dist_w2 = pot.emd2_1d(
-            self.annealed_energy.interatomic_dist(batch_annealed_samples).cpu().numpy().reshape(-1),
-            self.annealed_energy.interatomic_dist(batch_test_samples).cpu().numpy().reshape(-1)
-        )
         self.log(
             "test/temp_annealed/energy_w2",
             self.val_energy_w2(energy_w2),
@@ -186,8 +221,23 @@ class tempDEMLitModule(DEMLitModule):
             on_epoch=True,
             prog_bar=True,
         )
-
+        energy_w1 = pot.emd2_1d(
+            batch_test_energies.cpu().numpy(),
+            batch_annealed_energies.cpu().numpy(),
+            metric="euclidean"
+        )
+        self.log(
+            "test/temp_annealed/energy_w1",
+            self.val_energy_w1(energy_w1),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
         if self.annealed_energy.is_molecule:
+            dist_w2 = pot.emd2_1d(
+            self.annealed_energy.interatomic_dist(batch_annealed_samples).cpu().numpy().reshape(-1),
+            self.annealed_energy.interatomic_dist(batch_test_samples).cpu().numpy().reshape(-1)
+            )
             self.log(
                 "test/temp_annealed/dist_w2",
                 self.val_dist_w2(dist_w2),
@@ -227,7 +277,8 @@ class tempDEMLitModule(DEMLitModule):
                     batch_size=self.hparams.num_samples_to_generate_per_epoch,
                     prior_samples=prior_samples,
                     logq_prior_samples=logq_prior_samples,
-                    num_negative_time_steps=self.hparams.num_negative_time_steps
+                    num_negative_time_steps=self.hparams.num_negative_time_steps,
+                    resampling_strategy=self.hparams.resampling_strategy,
                 )
             final_samples.append(samples
             )
@@ -317,14 +368,28 @@ class tempDEMLitModule(DEMLitModule):
         inverse_temp = self.energy_function.temperature / self.annealed_energy.temperature
         self.temperature_schedule = self.hparams.temperature_schedule(inverse_temp)
         print("Inverse Temperature is", inverse_temp)
-        
+
+        times = torch.linspace(1, 0, self.num_integration_steps + 1)
+        t_start = times[self.hparams.start_resampling_step]
+        print(f"Resampling will start at time {t_start}")
         self.annealed_prior = self.partial_prior(
-            device=self.device, scale=(self.noise_schedule.h(1) / inverse_temp) ** 0.5
+            device=self.device, scale=(self.noise_schedule.h(t_start) / inverse_temp) ** 0.5
         )
+        
+        # self.annealed_prior = self.partial_prior(
+        #     device=self.device, scale=(self.noise_schedule.h(1) / inverse_temp) ** 0.5
+        # )
+
 
         self.hparams.annealed_clipper.energy_function=self.energy_function
 
         self.eval_count = 0
+
+        # self.annealed_reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
+        #                                 temperature_schedule=self.temperature_schedule,
+        #                                 scale_diffusion=self.hparams.scale_diffusion, 
+        #                                 clipper=self.hparams.annealed_clipper
+        #                                 )
 
 
 if __name__ == "__main__":

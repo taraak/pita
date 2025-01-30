@@ -295,6 +295,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
         wandb_logger.log_image(f"{name}", [samples_fig])
 
     def get_dataset_fig(self, samples, T=1.0, T_og=1.0):
+
+        # import pdb; pdb.set_trace()
         test_data_smaller = self.sample_test_set(5000)
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
