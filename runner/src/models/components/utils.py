@@ -64,6 +64,48 @@ def sample_cat_sys(bs, logits):
     ids[ids == logits.shape[-1]] = ids[ids == logits.shape[-1]] - 1 
     return ids, None
 
+
+def sample_birth_death_clocks(bs, accum_birth, accum_death, thresh_times, reset_transition_per_index=True):
+    device = accum_birth.device
+    # Generate random keys
+    death_mask = (accum_death >= thresh_times)
+    ids = torch.arange(bs).to(device)
+
+    # Sample candidate replacement indices according to accumulated birth weights
+    if reset_transition_per_index:
+        transition_probs = accum_birth / torch.sum(accum_birth, dim=-1, keepdim=True)
+        transition_probs = torch.nan_to_num(transition_probs, nan=0.0)
+
+        row_sums = torch.sum(transition_probs, dim=-1, keepdim=True)
+        zero_mask = (row_sums == 0.0)
+
+        # Replace zero-probability rows with uniform probabilities
+        uniform_probs = torch.ones_like(transition_probs) / transition_probs.size(-1)
+        transition_probs = torch.where(zero_mask, uniform_probs, transition_probs)
+        replace_ids = torch.vmap(lambda x: torch.multinomial(x, 1), randomness="different")(transition_probs).squeeze()
+    else:
+        transition_probs = accum_birth / torch.sum(accum_birth)
+        replace_ids = torch.multinomial(transition_probs, bs, replacement=True)
+    
+    # Replace those entries chosen for killing
+    ids = torch.where(death_mask, replace_ids, ids)
+        
+    # Sample new jump thresholds
+    new_thresh_times = torch.distributions.Exponential(1.0).sample((bs,)).to(device)
+    thresh_times = torch.where(death_mask, new_thresh_times, thresh_times)
+
+    # Reset birth and death weights in killed indices
+    if reset_transition_per_index:
+        # import pdb; pdb.set_trace()
+        accum_birth = torch.where(death_mask.unsqueeze(-1), torch.zeros_like(accum_birth), accum_birth)
+    else:
+        accum_birth = torch.where(death_mask, torch.zeros_like(accum_birth), accum_birth)
+
+    accum_death = torch.where(death_mask, torch.zeros_like(accum_death), accum_death)
+    
+    metrics = (torch.sum(death_mask),)
+    return ids, accum_birth.detach(), accum_death.detach(), thresh_times.detach(), metrics
+
 # ito density estimator for derivative of log density
 def ito_logdensity(sde, t, x, dt):
     if t.dim() == 0:
@@ -73,4 +115,4 @@ def ito_logdensity(sde, t, x, dt):
     #         - 0.5 * (sde.g(t, x)[:, None] * nabla_qt).pow(2).sum(-1) * dt).detach()
     dwt = sde.noise * np.sqrt(dt)
     return (sde.g(t, x) * (sde.nabla_logqt * dwt).sum(-1) 
-            + 0.5 * (sde.g(t, x)[:, None] * sde.nabla_logqt).pow(2).sum(-1) * dt)
+            + 0.5 * (sde.g(t, x)[:, None] * sde.nabla_logqt).pow(2).sum(-1) * dt).detach()

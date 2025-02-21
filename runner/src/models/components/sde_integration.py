@@ -317,7 +317,7 @@ def euler_maruyama_step(
         a_next = torch.zeros_like(a_next)
         x_next = x # samples are disytributed according to the prior, don't move
 
-    if resampling_interval==-1 or (step+1) % resampling_interval != 0:
+    if resampling_interval==-1 or (step+1) % resampling_interval != 0 or step < start_resampling_step:
         return x_next, a_next, logqt_next, len(x_next), accum_birth, accum_death, clock_thresholds
 
     a_next = a_next + sde.temperature_schedule.dbeta_dt(t) * logqt_next

@@ -256,44 +256,45 @@ class tempDEMLitModule(DEMLitModule):
         if self.num_samples_to_save >  self.hparams.num_eval_samples:   
             batch_size = self.hparams.num_eval_samples
             n_batches = self.num_samples_to_save // batch_size
+            print(f"Generating {n_batches} batches of annealed samples of size {batch_size}.")
+            print(f"Resampling interval is {self.hparams.resampling_interval}")
+            prior_samples = self.annealed_prior.sample(batch_size)
+            logq_prior_samples = self.annealed_prior.log_prob(prior_samples)
+
+            for i in range(n_batches):
+                start = time.time()
+                samples = self.generate_samples(
+                        reverse_sde=self.annealed_reverse_sde,
+                        return_logweights=False,
+                        diffusion_scale=self.hparams.diffusion_scale,
+                        resampling_interval=self.hparams.resampling_interval,
+                        num_langevin_steps=self.hparams.num_langevin_steps,
+                        batch_size=self.hparams.num_samples_to_generate_per_epoch,
+                        prior_samples=prior_samples,
+                        logq_prior_samples=logq_prior_samples,
+                        num_negative_time_steps=self.hparams.num_negative_time_steps,
+                        resampling_strategy=self.hparams.resampling_strategy,
+                    )
+                final_samples.append(samples
+                )
+                end = time.time()
+                print(f"batch {i} took {end - start:0.2f}s")
+
+                if i==0:
+                    self.annealed_energy.log_on_epoch_end(
+                        samples,
+                        self.annealed_energy(samples),
+                        wandb_logger,
+                        prefix="test/temp_annealed_samples",
+                    )
+
+            final_samples = torch.cat(final_samples, dim=0)
+
         else:
-            batch_size = self.num_samples_to_save
-            n_batches = 1
+            final_samples = sample_from_tensor(self.last_samples_annealed,
+                                               self.hparams.num_samples_to_save)
 
-        print(f"Generating {n_batches} batches of annealed samples of size {batch_size}.")
-        print(f"Resampling interval is {self.hparams.resampling_interval}")
-
-        prior_samples = self.annealed_prior.sample(batch_size)
-        logq_prior_samples = self.annealed_prior.log_prob(prior_samples)
-
-        for i in range(n_batches):
-            start = time.time()
-            samples = self.generate_samples(
-                    reverse_sde=self.annealed_reverse_sde,
-                    return_logweights=False,
-                    diffusion_scale=self.hparams.diffusion_scale,
-                    resampling_interval=self.hparams.resampling_interval,
-                    num_langevin_steps=self.hparams.num_langevin_steps,
-                    batch_size=self.hparams.num_samples_to_generate_per_epoch,
-                    prior_samples=prior_samples,
-                    logq_prior_samples=logq_prior_samples,
-                    num_negative_time_steps=self.hparams.num_negative_time_steps,
-                    resampling_strategy=self.hparams.resampling_strategy,
-                )
-            final_samples.append(samples
-            )
-            end = time.time()
-            print(f"batch {i} took {end - start:0.2f}s")
-
-            if i==0:
-                self.annealed_energy.log_on_epoch_end(
-                    samples,
-                    self.annealed_energy(samples),
-                    wandb_logger,
-                    prefix="test/temp_annealed_samples",
-                )
-
-        final_samples = torch.cat(final_samples, dim=0)
+        
         output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
         # append time to avoid overwriting
         path = f"{output_dir}/samples_temperature_{self.annealed_energy.temperature}_{self.num_samples_to_save}.pt"
