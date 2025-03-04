@@ -84,7 +84,6 @@ def integrate_sde(
         start_time, end_time, num_integration_steps + 1, device=x1.device
     )[:-1]
     x = x1
-    logq = logq1
 
     x1.requires_grad = True
     samples = []
@@ -103,8 +102,8 @@ def integrate_sde(
     with conditional_no_grad(no_grad):
         for step, t in enumerate(times):
             for _ in range(num_langevin_steps):
-                x, a, logq, idxs, accum_birth, accum_death, clock_thresholds = \
-                      euler_maruyama_step(sde, t, x, a, logq,
+                x, a, idxs, accum_birth, accum_death, clock_thresholds = \
+                      euler_maruyama_step(sde, t, x, a,
                                         time_range/num_integration_steps, step,
                                         resampling_interval=resampling_interval,
                                         diffusion_scale=diffusion_scale,
@@ -143,7 +142,6 @@ def euler_maruyama_step(
         t: torch.Tensor,
         x: torch.Tensor,
         a: torch.tensor, 
-        logqt: torch.Tensor,
         dt: float,
         step: int,
         batch_size: int,
@@ -158,7 +156,6 @@ def euler_maruyama_step(
 ):
     # Calculate drift and diffusion terms for num_eval_batches
     drift_xt = torch.zeros_like(x)
-    dlogqt_dt = torch.zeros_like(a)
     drift_at = torch.zeros_like(a)
     diffusion = torch.zeros_like(x)
 
@@ -168,28 +165,22 @@ def euler_maruyama_step(
         diffusion[i*batch_size:(i+1)*batch_size] = diffusion_i
         drift_xt[i*batch_size:(i+1)*batch_size] = drift_xt_i
         drift_at[i*batch_size:(i+1)*batch_size] = drift_at_i
-        dlogqt_dt[i*batch_size:(i+1)*batch_size] = ito_logdensity(sde,
-                                                                  t,
-                                                                  x[i*batch_size:(i+1)*batch_size],
-                                                                  dt)
+
     # update x, log weights, and log density
     dx = drift_xt * dt + diffusion * np.sqrt(dt)
     x_next = x + dx
     a_next = a + drift_at * dt
-    logqt_next = logqt + dlogqt_dt
 
 
-
-    # print("integrating step ", step)
-    # don't start accumulating weights until step 5
+    # don't start accumulating weights until step start_resampling_step
     if step < start_resampling_step:    
         a_next = torch.zeros_like(a_next)
         x_next = x # samples are disytributed according to the prior, don't move
 
     if resampling_interval==-1 or (step+1) % resampling_interval != 0 or step < start_resampling_step:
-        return x_next, a_next, logqt_next, len(x_next), accum_birth, accum_death, clock_thresholds
+        return x_next, a_next, len(x_next), accum_birth, accum_death, clock_thresholds
 
-    a_next = a_next + sde.temperature_schedule.dbeta_dt(t) * logqt_next
+    a_next = a_next + sde.temperature_schedule.dbeta_dt(t) #only doing constant temperature for now
 
     if resampling_strategy == 'birth_death_clock':
         ''' note, dw is correctly scaled by dt'''
@@ -221,4 +212,4 @@ def euler_maruyama_step(
 
     num_unique_idxs = len(np.unique(choice))
     
-    return x_next, a_next, logqt_next, num_unique_idxs, accum_birth, accum_death, clock_thresholds
+    return x_next, a_next, num_unique_idxs, accum_birth, accum_death, clock_thresholds
