@@ -369,11 +369,6 @@ class tempDEMLitModule(DEMLitModule):
         self.annealed_prior = self.partial_prior(
             device=self.device, scale=(self.noise_schedule.h(t_start) / inverse_temp) ** 0.5
         )
-        
-        # self.annealed_prior = self.partial_prior(
-        #     device=self.device, scale=(self.noise_schedule.h(1) / inverse_temp) ** 0.5
-        # )
-
 
         self.hparams.annealed_clipper.energy_function=self.energy_function
 

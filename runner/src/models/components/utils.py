@@ -111,8 +111,6 @@ def ito_logdensity(sde, t, x, dt):
     if t.dim() == 0:
         # repeat the same time for all points if we have a scalar time
         t = t * torch.ones(x.shape[0]).to(x.device)
-    # return ((nabla_qt * dx).sum(-1) 
-    #         - 0.5 * (sde.g(t, x)[:, None] * nabla_qt).pow(2).sum(-1) * dt).detach()
     dwt = sde.noise * np.sqrt(dt)
     return (sde.g(t, x) * (sde.nabla_logqt * dwt).sum(-1) 
             + 0.5 * (sde.g(t, x)[:, None] * sde.nabla_logqt).pow(2).sum(-1) * dt).detach()

@@ -43,3 +43,4 @@ model:
   diffusion_scale: 1.0
 
   num_samples_to_generate_per_epoch: 1000
+  
