@@ -22,7 +22,7 @@ model.noise_schedule.sigma_max=4.0 model.noise_schedule.sigma_min=0.01 model.sca
 model.num_negative_time_steps=1 model.diffusion_scale=1.0 model.num_eval_samples=50000 \
 model.annealed_clipper.max_score_norm=1000 model.annealed_test_batch_size=10000 \
 model.resampling_interval=1 model.start_resampling_step=30 model.resampling_strategy="systematic" \
-energy.temperature=${TEMPERATURE} model.annealed_energy.temperature=1.0,1.0 \
+energy.temperature=${TEMPERATURE} model.annealed_energy.temperature=1.0 \
 tags=["eval_sweep","LJ13","tempDEM","fresh_plasma","clipped","fixed_test","fixed_resampling_var_steps","start_resampling_gaussian_v2"]
 
 
