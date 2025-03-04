@@ -216,7 +216,7 @@ class tempDEMLitModule(DEMLitModule):
         )
         self.log(
             "test/temp_annealed/energy_w2",
-            self.val_energy_w2(energy_w2),
+            energy_w2,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -228,7 +228,7 @@ class tempDEMLitModule(DEMLitModule):
         )
         self.log(
             "test/temp_annealed/energy_w1",
-            self.val_energy_w1(energy_w1),
+            energy_w1,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -240,7 +240,7 @@ class tempDEMLitModule(DEMLitModule):
             )
             self.log(
                 "test/temp_annealed/dist_w2",
-                self.val_dist_w2(dist_w2),
+                dist_w2,
                 on_step=False,
                 on_epoch=True,
                 prog_bar=True,
@@ -300,11 +300,11 @@ class tempDEMLitModule(DEMLitModule):
         path = f"{output_dir}/samples_temperature_{self.annealed_energy.temperature}_{self.num_samples_to_save}.pt"
         torch.save(final_samples, path)
         print(f"Saving samples to {path}")
-        import os
-        os.makedirs(self.annealed_energy.name, exist_ok=True)
-        path2 = f"{self.annealed_energy.name}/samples_temperature_{self.annealed_energy.temperature}_{self.hparams.version}_{self.num_samples_to_save}.pt"
-        torch.save(final_samples, path2)
-        print(f"Saving samples to {path2}")
+        # import os
+        # os.makedirs(self.annealed_energy.name, exist_ok=True)
+        # path2 = f"{self.annealed_energy.name}/samples_temperature_{self.annealed_energy.temperature}_{self.hparams.version}_{self.num_samples_to_save}.pt"
+        # torch.save(final_samples, path2)
+        # print(f"Saving samples to {path2}")
 
 
     def _log_logweights(self, logweights, prefix="val"):
