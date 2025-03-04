@@ -54,10 +54,16 @@ model:
     max_score_norm: 1000
     min_log_reward: null
 
+  annealed_clipper:
+    _target_: src.models.components.clipper.Clipper
+    should_clip_scores: True
+    should_clip_log_rewards: False
+    max_score_norm: 1000
+    min_log_reward: null
 
   diffusion_scale: 1.0
-  num_samples_to_generate_per_epoch: 1000
-  num_samples_to_sample_from_buffer: 512
+  num_samples_to_generate_per_epoch: 2000
+  num_samples_to_sample_from_buffer: 1024
   
   init_from_prior: true
 
@@ -79,5 +85,8 @@ model:
     is_molecule: True
     temperature: 1.0
 
-  num_eval_samples: 4096
-  num_samples_to_save: 8192
+  num_eval_samples: 10000
+  num_samples_to_save: 10240
+  annealed_test_batch_size: 5000
+
+

@@ -13,7 +13,6 @@ eval "$(micromamba shell hook --shell bash)"
 micromamba activate ~/scratch/demenv
 
 
-TEMPERATURE=3
-NOISE_STD=0.2
-#python sample_lj13.py --temperature 4 --save_file ${SCRATCH}/lj13_samples/samples_v5_${TEMPERATURE}_${SLURM_ARRAY_TASK_ID}.npy
-python sample_lj13.py --temperature ${TEMPERATURE} --num_burnin_steps 2000 --save_file ${SCRATCH}/lj13_samples/samples_${NOISE_STD}_noise_${TEMPERATURE}_${SLURM_ARRAY_TASK_ID}.npy
+TEMPERATURE=0.9
+NOISE_STD=0.05
+python sample_lj.py --temperature ${TEMPERATURE} --num_burnin_steps 5000 --save_file ${SCRATCH}/lj13_samples/samples_${NOISE_STD}_noise_${TEMPERATURE}_${SLURM_ARRAY_TASK_ID}.npy

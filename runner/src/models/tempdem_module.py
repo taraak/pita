@@ -66,7 +66,6 @@ class tempDEMLitModule(DEMLitModule):
             start_resampling_step=start_resampling_step,
             resampling_strategy=resampling_strategy,
         )
-        # TODO: When returning the weights for plotting, I am not doing additional langevin steps
         if return_logweights:
             # reintegrate without resampling to get logweights, don't need as many samples
             _, logweights, _ = self.integrate(
@@ -79,7 +78,7 @@ class tempDEMLitModule(DEMLitModule):
                 resampling_interval=self.num_integration_steps+1,
                 num_langevin_steps=1,
                 batch_size=batch_size,
-                num_negative_time_steps=self.hparams.num_negative_time_steps, #TODO: Should we do any negative time here?
+                num_negative_time_steps=self.hparams.num_negative_time_steps,
                 start_resampling_step=start_resampling_step,
                 resampling_strategy=resampling_strategy,
             )
@@ -152,12 +151,12 @@ class tempDEMLitModule(DEMLitModule):
                 reverse_sde=self.annealed_reverse_sde,
                 return_logweights=True,
                 resampling_interval=self.hparams.resampling_interval,
-                diffusion_scale=self.hparams.diffusion_scale,  #TODO: what should the diffusion scale be?
+                diffusion_scale=self.hparams.diffusion_scale,
                 num_langevin_steps=self.hparams.num_langevin_steps,
                 batch_size=self.hparams.num_samples_to_generate_per_epoch,
                 prior_samples=prior_samples,
                 logq_prior_samples=logq_prior_samples,
-                num_negative_time_steps=self.hparams.num_negative_time_steps, #TODO: Should we do any negative time here?
+                num_negative_time_steps=self.hparams.num_negative_time_steps, 
                 resampling_strategy=self.hparams.resampling_strategy,
             )
             self.last_energies_annealed = self.annealed_energy(self.last_samples_annealed)
@@ -300,12 +299,6 @@ class tempDEMLitModule(DEMLitModule):
         path = f"{output_dir}/samples_temperature_{self.annealed_energy.temperature}_{self.num_samples_to_save}.pt"
         torch.save(final_samples, path)
         print(f"Saving samples to {path}")
-        # import os
-        # os.makedirs(self.annealed_energy.name, exist_ok=True)
-        # path2 = f"{self.annealed_energy.name}/samples_temperature_{self.annealed_energy.temperature}_{self.hparams.version}_{self.num_samples_to_save}.pt"
-        # torch.save(final_samples, path2)
-        # print(f"Saving samples to {path2}")
-
 
     def _log_logweights(self, logweights, prefix="val"):
         wandb_logger = get_wandb_logger(self.loggers)

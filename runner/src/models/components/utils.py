@@ -116,3 +116,4 @@ def ito_logdensity(sde, t, x, dt):
     dwt = sde.noise * np.sqrt(dt)
     return (sde.g(t, x) * (sde.nabla_logqt * dwt).sum(-1) 
             + 0.5 * (sde.g(t, x)[:, None] * sde.nabla_logqt).pow(2).sum(-1) * dt).detach()
+

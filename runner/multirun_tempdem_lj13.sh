@@ -19,6 +19,8 @@ micromamba activate ~/scratch/demenv
 
 export seed=62;
 
+path="/home/mila/t/tara.akhoundsadegh/feynman-kac-diffusion/runner/dem/logs/train/multiruns/2025-01-21_12-38-22/0/DEM-2/8jm2mt28/checkpoints/epoch\=239-step\=6000.ckpt"
+
 # To enable preemption re-loading, set `hydra.run.dir` or
-srun python -u src/train.py -m model=tempdem experiment=lj13_temp4 trainer=ddp model.resampling_interval=1 energy.temperature=2.0 model.annealed_energy.temperature=1.0 tags=["tempDEM","LJ13"]
+srun python -u src/train.py -m model=tempdem experiment=lj13_temp_high trainer=ddp model.resampling_interval=1 energy.temperature=2.0 model.annealed_energy.temperature=1.0 model.noise_schedule.sigma_max=4 model.noise_schedule.sigma_min=0.01 model.clipper.max_score_norm=400 model.scale_diffusion=True model.diffusion_scale=1.0 model.num_negative_time_steps=0 tags=["tempDEM","LJ13"]
 
