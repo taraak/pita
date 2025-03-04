@@ -1,0 +1,94 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["LJ13"]
+
+seed: 12345
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "lj13"
+
+defaults: 
+  - override /energy: lj13
+  - override /model/net: egnn
+
+energy:
+  temperature: 1.0
+
+model:
+  net:
+    n_layers: 5
+    hidden_nf: 128
+
+  noise_schedule:
+    _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
+    sigma_min: 0.01
+    sigma_max: 4
+
+  partial_prior:
+    _target_: src.energies.base_prior.MeanFreePrior
+    _partial_: true
+    n_particles: 13
+    spatial_dim: 3
+
+  lambda_weighter:
+    _target_: src.models.components.lambda_weighter.NoLambdaWeighter
+    _partial_: true
+
+  clipper:
+    _target_: src.models.components.clipper.Clipper
+    should_clip_scores: True
+    should_clip_log_rewards: False
+    max_score_norm: 1000
+    min_log_reward: null
+
+  annealed_clipper:
+    _target_: src.models.components.clipper.Clipper
+    should_clip_scores: True
+    should_clip_log_rewards: False
+    max_score_norm: 1000
+    min_log_reward: null
+
+  diffusion_scale: 1.0
+  num_negative_time_steps: 1
+  num_samples_to_generate_per_epoch: 2000
+  num_samples_to_sample_from_buffer: 1024
+  
+  init_from_prior: true
+
+  cfm_prior_std: 2
+  nll_integration_method: dopri5
+  logz_with_cfm: false
+  nll_with_cfm: false
+
+  num_estimator_mc_samples: 1000
+
+  annealed_energy:
+    _target_: src.energies.lennardjones_energy.LennardJonesEnergy
+    _partial_: true
+    dimensionality: 39
+    n_particles: 13
+    data_path: "../data/"
+    plot_samples_epoch_period: 1
+    data_normalization_factor: 1.0
+    is_molecule: True
+    temperature: 1.5
+
+  num_eval_samples: 50000
+  num_samples_to_save: 10240
+  
+  # Tempdem parameters
+  annealed_test_batch_size: 10000
+  resampling_interval: 1
+  start_resampling_step: 10
+  scale_diffusion: True
+  resampling_strategy: "systematic"
+
+

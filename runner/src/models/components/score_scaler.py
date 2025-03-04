@@ -1,4 +1,4 @@
-limport torch
+import torch
 from abc import ABC, abstractmethod
 
 from .noise_schedules import BaseNoiseSchedule
