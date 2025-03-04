@@ -237,7 +237,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
         x = x.view(*batch_shape, self.n_particles, self.n_spatial_dim)
-
+    
         # Compute the pairwise interatomic distances
         # removes duplicates and diagonal
         distances = x[:, None, :, :] - x[:, :, None, :]

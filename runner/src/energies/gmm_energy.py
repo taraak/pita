@@ -9,6 +9,7 @@ from lightning.pytorch.loggers import WandbLogger
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.replay_buffer import ReplayBuffer
 from src.utils.logging_utils import fig_to_image
+import numpy as np
 
 
 class GMM(BaseEnergyFunction):
@@ -28,9 +29,8 @@ class GMM(BaseEnergyFunction):
         should_unnormalize=False,
         data_normalization_factor=50,
         train_set_size=100000,
-        test_set_size=5000,
-        val_set_size=5000,
-        temperature=1.0,
+        test_set_size=10000,
+        val_set_size=10000,
     ):
         use_gpu = device != "cpu"
         torch.manual_seed(0)  # seed of 0 for GMM problem
@@ -45,8 +45,6 @@ class GMM(BaseEnergyFunction):
             use_gpu=use_gpu,
             true_expectation_estimation_n_samples=true_expectation_estimation_n_samples,
         )
-
-        self.temperature = temperature
 
         self.curr_epoch = 0
         self.device = device
@@ -80,11 +78,10 @@ class GMM(BaseEnergyFunction):
         val_samples = self.gmm.sample((self.val_set_size,))
         return val_samples
 
-    def __call__(self, samples: torch.Tensor, T=1.0) -> torch.Tensor:
+    def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
             samples = self.unnormalize(samples)
-
-        return (self.gmm.log_prob(samples) / self.temperature)
+        return (self.gmm.log_prob(samples))
 
     @property
     def dimensionality(self):
@@ -188,7 +185,7 @@ class GMM(BaseEnergyFunction):
 
     def get_dataset_fig(
         self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40), color="blue", T=1.0, cmap=None,
-        title=None
+        title=None, is_display_fig=False
 
     ):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
@@ -200,8 +197,6 @@ class GMM(BaseEnergyFunction):
             ax=axs[0],
             n_contour_levels=50,
             grid_width_n_points=200,
-            T=T,
-            temperature=self.temperature
         )
 
         # plot dataset samples
@@ -229,4 +224,112 @@ class GMM(BaseEnergyFunction):
 
         self.gmm.to(self.device)
 
+        if is_display_fig:
+            return fig
         return fig_to_image(fig)
+    
+
+
+
+def product_of_gaussians(mu1, sigma1, mu2, sigma2, log_weights):
+    var1 = sigma1 ** 2
+    var2 = sigma2 ** 2
+
+    denom = var1 + var2
+    mu_prod = (mu1 * var2 + mu2 * var1) / denom
+    var_prod = (var1 * var2) / denom
+    std_prod = var_prod**0.5
+
+    diff = mu1 - mu2
+
+    log_weights = (log_weights -
+                   0.5 * torch.log(2 * np.pi * torch.prod(denom)) +
+                   torch.sum(-diff**2 / (2 * denom), dim=-1))
+    
+
+    return mu_prod, std_prod, log_weights
+
+
+def gmm_product(gmm1, gmm2):
+    means_1 = gmm1.locs
+    scale_trils_1 = gmm1.scale_trils
+    weights_1 = gmm1.cat_probs
+
+    means_2 = gmm2.locs
+    scale_trils_2 = gmm2.scale_trils
+    weights_2 = gmm2.cat_probs
+
+    K_1 = means_1.shape[0]
+    K_2 = means_2.shape[0]
+
+    new_weights = []
+    new_means = []
+    new_stds = []
+
+    for i in range(K_1):
+        for j in range(K_2):
+            mu1, sigma1 = means_1[i], torch.diagonal(scale_trils_1[i], dim1=-2, dim2=-1)
+            mu2, sigma2 = means_2[j], torch.diagonal(scale_trils_2[i], dim1=-2, dim2=-1)
+            log_weights1, log_weights2 = weights_1[i], weights_2[j]
+
+            # Product of two Gaussians
+            mu_prod, std_prod, z = product_of_gaussians(mu1, sigma1, mu2, sigma2,
+                                                        log_weights1 + log_weights2)
+
+            # New weight
+            new_weights.append(z)
+            new_means.append(mu_prod)
+            new_stds.append(std_prod)
+
+    # Stack results into tensors
+    device = gmm1.device
+    new_weights = torch.stack(new_weights).to(device)
+    new_means = torch.stack(new_means).to(device)
+    new_stds = torch.stack(new_stds).to(device)
+
+    # drop modes with small logprob
+    mask = torch.softmax(new_weights, dim=-1)>1e-4
+    new_weights = new_weights[mask]
+    new_means = new_means[mask]
+    new_stds = new_stds[mask]
+    
+    product_gmm = gmm.GMM(
+        dim=gmm1.dim,
+        n_mixes=new_weights.shape[0],
+        mean=new_means,
+        scale=new_stds,
+        cat_probs=new_weights,
+        loc_scaling=1.0,
+        log_var_scaling=1.0,
+        use_gpu=True,
+        true_expectation_estimation_n_samples=int(1e5),
+    )
+    return product_gmm
+
+
+class GMMTempWrapper(GMM):
+    def __init__(self, gmm, beta):
+        super().__init__(
+            dimensionality=gmm.dimensionality,
+            n_mixes=gmm.gmm.n_mixes,
+            loc_scaling=1.0,
+            log_var_scaling=1.0,
+            mean=gmm.gmm.locs,
+            scale=torch.diagonal(gmm.gmm.scale_trils, dim1=-2, dim2=-1),
+            cat_probs=gmm.gmm.cat_probs,
+            device=gmm.device,
+            should_unnormalize=gmm.should_unnormalize,
+        )
+
+        g_prod = gmm.gmm
+        for _ in range(beta-1):
+            g_prod = gmm_product(self.gmm, g_prod)
+        self.gmm = g_prod
+
+
+        self._test_set = self.setup_test_set()
+        self._val_set = self.setup_val_set()
+
+
+    def __call__(self, samples: torch.Tensor) -> torch.Tensor:
+        return super().__call__(samples)

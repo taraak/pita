@@ -49,10 +49,10 @@ def plot_contours(log_prob_func: LogProbFunc,
     x_points_dim2 = x_points[:, 1].reshape((grid_width_n_points, grid_width_n_points)).numpy()
 
     if n_contour_levels:
-        ax.contour(x_points_dim1, x_points_dim2, -(-log_p_x)**0.5, levels=20, cmap="ocean")
+        ax.contour(x_points_dim1, x_points_dim2, -(-log_p_x)**0.5, levels=20, cmap="gist_yarg", alpha=0.3) #ocean gist_yarg
         # ax.contour(x_points_dim1, x_points_dim2, -(-log_p_x), levels=20, cmap="ocean")
     else:
-        ax.contour(x_points_dim1, x_points_dim2, log_p_x, cmap="ocean")
+        ax.contour(x_points_dim1, x_points_dim2, log_p_x, cmap="gist_yarg", alpha=0.3)
 
 
 def plot_marginal_pair(samples: torch.Tensor,
