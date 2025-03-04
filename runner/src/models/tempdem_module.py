@@ -42,7 +42,7 @@ class tempDEMLitModule(DEMLitModule):
         resampling_strategy="systematic",
     ) -> torch.Tensor:
         
-        diffusion_scale = diffusion_scale or self.hparams.diffusion_scale #TODO: should we use same diff scale?
+        diffusion_scale = diffusion_scale or self.hparams.diffusion_scale
         reverse_sde = reverse_sde or self.reverse_sde
 
         if num_negative_time_steps == -1:
