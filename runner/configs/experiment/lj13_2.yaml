@@ -15,7 +15,7 @@ logger:
     tags: ${tags}
     group: "lj13-2"
 
-defaults: 
+defaults:
   - override /energy: lj13_2
   - override /model/net: egnn
 
@@ -26,9 +26,8 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.01 
-    sigma_max: 5 
-
+    sigma_min: 0.01
+    sigma_max: 5
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -56,7 +55,6 @@ model:
 
   # num_samples_to_sample_from_buffer: 5120
   diffusion_scale: 0.7
-
 
   # this can be max 1000 cause test set is 1000
   num_samples_to_generate_per_epoch: 1000

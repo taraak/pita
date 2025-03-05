@@ -5,24 +5,21 @@ import numpy as np
 import PIL
 import torch
 from bgflow import MultiDoubleWellPotential
+from bgflow.distribution.energy.base import Energy
+from bgflow.utils import compute_distances, distance_vectors, distances_from_vectors
 from hydra.utils import get_original_cwd
 from lightning.pytorch.loggers import WandbLogger
-
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.replay_buffer import ReplayBuffer
 from src.utils.data_utils import remove_mean
 
 
-from bgflow.distribution.energy.base import Energy
-from bgflow.utils import distance_vectors, distances_from_vectors, compute_distances
-
-
 class MultiDoubleWellPotential(Energy):
-    """Energy for a many particle system with pair wise double-well interactions.
-    The energy of the double-well is given via
+    """Energy for a many particle system with pair wise double-well interactions. The energy of the
+    double-well is given via.
 
     .. math::
-        E_{DW}(d) = a \cdot (d-d_{\text{offset})^4 + b \cdot (d-d_{\text{offset})^2 + c.
+        E_{DW}(d) = a \\cdot (d-d_{\text{offset})^4 + b \\cdot (d-d_{\text{offset})^2 + c.
 
     Parameters
     ----------
@@ -52,13 +49,16 @@ class MultiDoubleWellPotential(Energy):
         x = x.view(-1, self._n_particles, self._n_dimensions)
         diff = x[:, :, None, :] - x[:, None, :, :]
         distances = torch.norm(diff, dim=-1)
-        distances = distances[:, torch.triu(torch.ones((self._n_particles, self._n_particles)), diagonal=1) == 1]
+        distances = distances[
+            :, torch.triu(torch.ones((self._n_particles, self._n_particles)), diagonal=1) == 1
+        ]
         dists = distances.reshape(-1, self._n_particles * (self._n_particles - 1) // 2)
 
         dists = dists - self._offset
 
-        energies = self._a * dists ** 4 + self._b * dists ** 2 + self._c
+        energies = self._a * dists**4 + self._b * dists**2 + self._c
         return energies.sum(-1, keepdim=True)
+
 
 class MultiDoubleWellEnergy(BaseEnergyFunction):
     def __init__(
@@ -162,9 +162,7 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
 
         else:
             all_data = np.load(self.data_path, allow_pickle=True)
-            data = all_data[0][
-                -self.test_set_size - self.val_set_size : -self.test_set_size
-            ]
+            data = all_data[0][-self.test_set_size - self.val_set_size : -self.test_set_size]
             del all_data
 
         data = remove_mean(torch.tensor(data), self.n_particles, self.n_spatial_dim).to(
@@ -181,8 +179,7 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         distances = x[:, None, :, :] - x[:, :, None, :]
         distances = distances[
             :,
-            torch.triu(torch.ones((self.n_particles, self.n_particles)), diagonal=1)
-            == 1,
+            torch.triu(torch.ones((self.n_particles, self.n_particles)), diagonal=1) == 1,
         ]
         dist = torch.linalg.norm(distances, dim=-1)
         return dist
@@ -205,7 +202,7 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
         wandb_logger: WandbLogger,
-        unprioritized_buffer_samples = None,
+        unprioritized_buffer_samples=None,
         cfm_samples=None,
         replay_buffer=None,
         prefix: str = "",
@@ -227,9 +224,7 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
             if unprioritized_buffer_samples is not None:
                 cfm_samples_fig = self.get_dataset_fig(cfm_samples)
 
-                wandb_logger.log_image(
-                    f"{prefix}cfm_generated_samples", [cfm_samples_fig]
-                )
+                wandb_logger.log_image(f"{prefix}cfm_generated_samples", [cfm_samples_fig])
 
         self.curr_epoch += 1
 
@@ -292,6 +287,4 @@ class MultiDoubleWellEnergy(BaseEnergyFunction):
         axs[1].legend()
 
         fig.canvas.draw()
-        return PIL.Image.frombytes(
-            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-        )
+        return PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())

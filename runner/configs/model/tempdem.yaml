@@ -15,11 +15,11 @@ scheduler:
 
 defaults:
   - net:
-    - mlp
+      - mlp
   - noise_schedule:
-    - geometric
+      - geometric
   - temperature_schedule:
-    - constant
+      - constant
 
 partial_buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
@@ -91,5 +91,5 @@ resampling_interval: -1
 num_eval_samples: 1024
 scale_diffusion: false
 annealed_test_batch_size: 5000
-start_resampling_step : 50
-resampling_strategy: 'systematic'
+start_resampling_step: 50
+resampling_strategy: "systematic"

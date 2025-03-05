@@ -15,10 +15,9 @@ defaults:
 #     setup:
 #       - "micromamba activate ${oc.env:MICROMAMBA_ENV}"
 
-
 hydra:
   launcher:
-    partition: short-unkillable 
+    partition: short-unkillable
     cpus_per_task: 6
     mem_gb: 128
     gres: gpu:h100:4

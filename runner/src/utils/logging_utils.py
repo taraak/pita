@@ -1,10 +1,8 @@
-import PIL
-
 from typing import Any, Dict
 
+import PIL
 from lightning_utilities.core.rank_zero import rank_zero_only
 from omegaconf import OmegaConf
-
 from src.utils import pylogger
 
 log = pylogger.RankedLogger(__name__, rank_zero_only=True)
@@ -64,6 +62,4 @@ def log_hyperparameters(object_dict: Dict[str, Any]) -> None:
 def fig_to_image(fig):
     fig.canvas.draw()
 
-    return PIL.Image.frombytes(
-        "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-    )
+    return PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())

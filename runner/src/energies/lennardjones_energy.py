@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -8,13 +9,11 @@ from bgflow import Energy
 from bgflow.utils import distance_vectors, distances_from_vectors
 from hydra.utils import get_original_cwd
 from lightning.pytorch.loggers import WandbLogger
-
+from scipy.interpolate import CubicSpline
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.replay_buffer import ReplayBuffer
 from src.utils.data_utils import remove_mean
 
-from scipy.interpolate import CubicSpline
-from functools import partial
 
 def sample_from_array(array, size):
     idx = np.random.choice(array.shape[0], size=size)
@@ -32,15 +31,18 @@ def lennard_jones_energy_torch(r, eps=1.0, rm=1.0):
 def cubic_spline(x_new, x, c):
     x, c = x.to(x_new.device), c.to(x_new.device)
     intervals = torch.bucketize(x_new, x) - 1
-    intervals = torch.clamp(intervals, 0, len(x) - 2) # Ensure valid intervals
+    intervals = torch.clamp(intervals, 0, len(x) - 2)  # Ensure valid intervals
     # Calculate the difference from the left breakpoint of the interval
     dx = x_new - x[intervals]
     # Evaluate the cubic spline at x new
-    y_new = (c[0, intervals] * dx ** 3 + \
-             c[1, intervals]* dx**2 + \
-             c[2, intervals]* dx +\
-             c[3, intervals])
+    y_new = (
+        c[0, intervals] * dx**3
+        + c[1, intervals] * dx**2
+        + c[2, intervals] * dx
+        + c[3, intervals]
+    )
     return y_new
+
 
 class LennardJonesPotential(Energy):
     def __init__(
@@ -54,11 +56,11 @@ class LennardJonesPotential(Energy):
         two_event_dims=True,
         energy_factor=1.0,
         range_min=0.65,
-        range_max=2.,
+        range_max=2.0,
         interpolation=1000,
         temperature=1.0,
     ):
-        """Energy for a Lennard-Jones cluster
+        """Energy for a Lennard-Jones cluster.
 
         Parameters
         ----------
@@ -98,15 +100,12 @@ class LennardJonesPotential(Energy):
 
         self.range_min = range_min
         self.range_max = range_max
-    
-        #fit spline cubic on these ranges
+
+        # fit spline cubic on these ranges
         interpolate_points = torch.linspace(range_min, range_max, interpolation)
         es = lennard_jones_energy_torch(interpolate_points, self._eps, self._rm)
         coeffs = CubicSpline(np.array(interpolate_points), np.array(es)).c
-        self.splines = partial(cubic_spline,
-                               x=interpolate_points,
-                               c=torch.tensor(coeffs).float())
-
+        self.splines = partial(cubic_spline, x=interpolate_points, c=torch.tensor(coeffs).float())
 
     def _energy(self, x, smooth=False):
         batch_shape = x.shape[: -len(self.event_shape)]
@@ -121,18 +120,13 @@ class LennardJonesPotential(Energy):
         if smooth:
             filter = dists < self.range_min
             lj_energies = lj_energies * ~filter + filter * self.splines(dists).squeeze(-1)
-            
-            
+
             # lj_energies[dists < self.range_min] = self.splines(dists[dists < self.range_min]).squeeze(-1)
             # lj_energies = torch.clip(lj_energies, -1e4, 1e4)
-        lj_energies = (
-            lj_energies.view(*batch_shape, -1).sum(dim=-1) * self._energy_factor
-        )
+        lj_energies = lj_energies.view(*batch_shape, -1).sum(dim=-1) * self._energy_factor
 
         if self.oscillator:
-            osc_energies = 0.5 * self._remove_mean(x).pow(2).sum(dim=(-2, -1)).view(
-                *batch_shape
-            )
+            osc_energies = 0.5 * self._remove_mean(x).pow(2).sum(dim=(-2, -1)).view(*batch_shape)
             lj_energies = lj_energies + osc_energies * self._oscillator_scale
 
         return lj_energies[:, None]
@@ -147,7 +141,7 @@ class LennardJonesPotential(Energy):
 
     def _log_prob(self, x, smooth=False, T=1.0):
         E = -self._energy(x, smooth=smooth)
-        return (E/self._temperature)*T
+        return (E / self._temperature) * T
 
 
 class LennardJonesEnergy(BaseEnergyFunction):
@@ -178,13 +172,18 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
-
-        self.data_path_train = (data_path 
-                                + f"LJ{self.n_particles}_temp_{self.temperature}/train_split_LJ{self.n_particles}-1000.npy")
-        self.data_path_val = (data_path 
-                              + f"LJ{self.n_particles}_temp_{self.temperature}/val_split_LJ{self.n_particles}-1000.npy")
-        self.data_path_test = (data_path 
-                               + f"LJ{self.n_particles}_temp_{self.temperature}/test_split_LJ{self.n_particles}-1000.npy")
+        self.data_path_train = (
+            data_path
+            + f"LJ{self.n_particles}_temp_{self.temperature}/train_split_LJ{self.n_particles}-1000.npy"
+        )
+        self.data_path_val = (
+            data_path
+            + f"LJ{self.n_particles}_temp_{self.temperature}/val_split_LJ{self.n_particles}-1000.npy"
+        )
+        self.data_path_test = (
+            data_path
+            + f"LJ{self.n_particles}_temp_{self.temperature}/test_split_LJ{self.n_particles}-1000.npy"
+        )
 
         if self.n_particles == 13:
             self.name = "LJ13_efm"
@@ -237,14 +236,13 @@ class LennardJonesEnergy(BaseEnergyFunction):
     def interatomic_dist(self, x):
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
         x = x.view(*batch_shape, self.n_particles, self.n_spatial_dim)
-    
+
         # Compute the pairwise interatomic distances
         # removes duplicates and diagonal
         distances = x[:, None, :, :] - x[:, :, None, :]
         distances = distances[
             :,
-            torch.triu(torch.ones((self.n_particles, self.n_particles)), diagonal=1)
-            == 1,
+            torch.triu(torch.ones((self.n_particles, self.n_particles)), diagonal=1) == 1,
         ]
         dist = torch.linalg.norm(distances, dim=-1)
         return dist
@@ -254,7 +252,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
         wandb_logger: WandbLogger,
-        unprioritized_buffer_samples = None,
+        unprioritized_buffer_samples=None,
         cfm_samples=None,
         replay_buffer=None,
         prefix: str = "",
@@ -276,9 +274,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
             if cfm_samples is not None:
                 cfm_samples_fig = self.get_dataset_fig(cfm_samples)
 
-                wandb_logger.log_image(
-                    f"{prefix}cfm_generated_samples", [cfm_samples_fig]
-                )
+                wandb_logger.log_image(f"{prefix}cfm_generated_samples", [cfm_samples_fig])
 
         self.curr_epoch += 1
 
@@ -295,7 +291,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         wandb_logger.log_image(f"{name}", [samples_fig])
 
     def get_dataset_fig(self, samples, T=1.0, T_og=1.0):
-
         # import pdb; pdb.set_trace()
         test_data_smaller = self.sample_test_set(5000)
 
@@ -304,15 +299,15 @@ class LennardJonesEnergy(BaseEnergyFunction):
         dist_samples = self.interatomic_dist(samples).detach().cpu()
         dist_test = self.interatomic_dist(test_data_smaller).detach().cpu()
 
-        _, bins, _= axs[0].hist(
+        _, bins, _ = axs[0].hist(
             dist_test.view(-1),
             bins=100,
             density=True,
-            histtype='step',
+            histtype="step",
             linewidth=4,
             color="g",
-        );
-        
+        )
+
         # axs[0].hist(
         #     dist_samples.view(-1),
         #     bins=100,
@@ -321,10 +316,10 @@ class LennardJonesEnergy(BaseEnergyFunction):
         #     histtype="step",
         #     linewidth=4,
         # )
-        
+
         axs[0].hist(
             dist_samples.view(-1),
-            bins=bins, #100,
+            bins=bins,  # 100,
             alpha=0.5,
             density=True,
             histtype="step",
@@ -346,7 +341,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
             min_energy = energy_test.min().item() - 10
             max_energy = energy_test.max().item() + 10
-            
+
         elif self.n_particles == 55:
             min_energy = -380
             max_energy = -180
@@ -364,7 +359,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         )
         axs[1].hist(
             energy_samples.cpu(),
-            bins=bins, #100
+            bins=bins,  # 100
             density=True,
             alpha=0.4,
             range=(min_energy, max_energy),
@@ -377,6 +372,4 @@ class LennardJonesEnergy(BaseEnergyFunction):
         axs[1].legend()
 
         fig.canvas.draw()
-        return PIL.Image.frombytes(
-            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-        )
+        return PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())

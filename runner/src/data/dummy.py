@@ -19,7 +19,8 @@ class DummyDataModule(LightningDataModule):
 
     def get_dataloader(self, size):
         return DataLoader(
-            np.arange(size * self.batch_size * self.trainer.world_size)[:, None], batch_size=self.batch_size
+            np.arange(size * self.batch_size * self.trainer.world_size)[:, None],
+            batch_size=self.batch_size,
         )
 
     def train_dataloader(self):

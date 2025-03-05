@@ -2,7 +2,7 @@
 #
 defaults:
   - override /hydra/launcher: submitit_slurm
-  
+
 hydra:
   launcher:
     partition: long

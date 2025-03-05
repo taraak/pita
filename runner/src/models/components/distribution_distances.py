@@ -9,14 +9,16 @@ from .optimal_transport import wasserstein
 
 
 def compute_distances(pred, true):
-    """computes distances between vectors."""
+    """Computes distances between vectors."""
     mse = torch.nn.functional.mse_loss(pred, true).item()
     me = math.sqrt(mse)
     mae = torch.mean(torch.abs(pred - true)).item()
     return mse, me, mae
 
 
-def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor, list], energy_function):
+def compute_distribution_distances(
+    pred: torch.Tensor, true: Union[torch.Tensor, list], energy_function
+):
     """computes distances between distributions.
     pred: [batch, times, dims] tensor
     true: [batch, times, dims] tensor or list[batch[i], dims] of length times
@@ -42,9 +44,7 @@ def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor,
     dists = []
     to_return = []
     names = []
-    filtered_names = [
-        name for name in NAMES if not is_jagged or not name.endswith("MMD")
-    ]
+    filtered_names = [name for name in NAMES if not is_jagged or not name.endswith("MMD")]
     ts = len(pred) if pred_is_jagged else pred.shape[1]
     for t in np.arange(ts):
         if pred_is_jagged:
@@ -60,16 +60,14 @@ def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor,
 
         # if energy_function.is_molecule:
         #     eq_emd2 = eot(a.reshape(-1, energy_function.n_particles, energy_function.n_spatial_dim).cpu(),
-        #                 b.reshape(-1, energy_function.n_particles, energy_function.n_spatial_dim).cpu()) 
+        #                 b.reshape(-1, energy_function.n_particles, energy_function.n_spatial_dim).cpu())
 
         if not pred_is_jagged and not is_jagged:
             mmd_linear = linear_mmd2(a, b).item()
             mmd_poly = poly_mmd2(a, b, d=2, alpha=1.0, c=2.0).item()
             mmd_rbf = mix_rbf_mmd2(a, b, sigma_list=[0.01, 0.1, 1, 10, 100]).item()
         mean_dists = compute_distances(torch.mean(a, dim=0), torch.mean(b, dim=0))
-        median_dists = compute_distances(
-            torch.median(a, dim=0)[0], torch.median(b, dim=0)[0]
-        )
+        median_dists = compute_distances(torch.median(a, dim=0)[0], torch.median(b, dim=0)[0])
         if pred_is_jagged or is_jagged:
             dists.append((w1, w2, *mean_dists, *median_dists))
         else:
@@ -78,9 +76,7 @@ def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor,
             #         (w1, w2, mmd_linear, mmd_poly, mmd_rbf, *mean_dists, *median_dists, eq_emd2)
             #     )
             # else:
-            dists.append(
-                (w1, w2, mmd_linear, mmd_poly, mmd_rbf, *mean_dists, *median_dists)
-            )
+            dists.append((w1, w2, mmd_linear, mmd_poly, mmd_rbf, *mean_dists, *median_dists))
         # For multipoint datasets add timepoint specific distances
         if ts > 1:
             names.extend([f"t{t+1}/{name}" for name in filtered_names])
@@ -91,9 +87,9 @@ def compute_distribution_distances(pred: torch.Tensor, true: Union[torch.Tensor,
     return names, to_return
 
 
-
-from scipy.optimize import linear_sum_assignment
 import ot as pot
+from scipy.optimize import linear_sum_assignment
+
 
 def find_rigid_alignment(A, B):
     """
@@ -139,11 +135,13 @@ def find_rigid_alignment(A, B):
     t = t.T
     return R, t.squeeze()
 
+
 def ot(x0, x1):
     dists = torch.cdist(x0, x1)
     _, col_ind = linear_sum_assignment(dists)
     x1 = x1[col_ind]
     return x1
+
 
 def eot(x0, x1):
     M = []

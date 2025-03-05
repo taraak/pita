@@ -1,26 +1,16 @@
-import torch
 import numpy as np
+import torch
 from src.energies.base_energy_function import BaseEnergyFunction
-from src.models.components.noise_schedules import BaseNoiseSchedule
 from src.models.components.clipper import Clipper
+from src.models.components.noise_schedules import BaseNoiseSchedule
 
 
 def wrap_for_richardsons(score_estimator):
     def _fxn(t, x, energy_function, noise_schedule, num_mc_samples):
-        bigger_samples = score_estimator(
-            t,
-            x,
-            energy_function,
-            noise_schedule,
-            num_mc_samples
-        )
+        bigger_samples = score_estimator(t, x, energy_function, noise_schedule, num_mc_samples)
 
         smaller_samples = score_estimator(
-            t,
-            x,
-            energy_function,
-            noise_schedule,
-            int(num_mc_samples / 2)
+            t, x, energy_function, noise_schedule, int(num_mc_samples / 2)
         )
 
         return (2 * bigger_samples) - smaller_samples
@@ -62,13 +52,9 @@ def estimate_grad_Rt(
         t = t.unsqueeze(0).repeat(len(x))
 
     grad_fxn = torch.func.grad(log_expectation_reward, argnums=1)
-    vmapped_fxn = torch.vmap(
-        grad_fxn, in_dims=(0, 0, None, None, None), randomness="different"
-    )
+    vmapped_fxn = torch.vmap(grad_fxn, in_dims=(0, 0, None, None, None), randomness="different")
 
     return vmapped_fxn(t, x, energy_function, noise_schedule, num_mc_samples)
-
-
 
 
 def estimate_Rt(

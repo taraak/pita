@@ -32,7 +32,7 @@ class EGNN_dynamics(nn.Module):
             attention=attention,
             tanh=tanh,
             agg=agg,
-            has_virtual=add_virtual
+            has_virtual=add_virtual,
         )
 
         self._n_particles = n_particles
@@ -120,9 +120,9 @@ class EGNN(nn.Module):
         tanh=False,
         coords_range=15,
         agg="sum",
-        has_virtual=False
+        has_virtual=False,
     ):
-        super(EGNN, self).__init__()
+        super().__init__()
         self.has_virtual = has_virtual
         if out_node_nf is None:
             out_node_nf = in_node_nf
@@ -136,8 +136,8 @@ class EGNN(nn.Module):
         # self.add_module("gcl_0", E_GCL(in_node_nf, self.hidden_nf, self.hidden_nf, edges_in_d=in_edge_nf, act_fn=act_fn, recurrent=False, coords_weight=coords_weight))
         # Encoder
         if self.has_virtual:
-            self.virtual_embedding = nn.Embedding(2, self.hidden_nf//2)
-            self.embedding = nn.Linear(in_node_nf, self.hidden_nf//2)
+            self.virtual_embedding = nn.Embedding(2, self.hidden_nf // 2)
+            self.embedding = nn.Linear(in_node_nf, self.hidden_nf // 2)
         else:
             self.embedding = nn.Linear(in_node_nf, self.hidden_nf)
         self.embedding_out = nn.Linear(self.hidden_nf, out_node_nf)
@@ -162,8 +162,9 @@ class EGNN(nn.Module):
     def forward(self, h, x, edges, edge_attr=None, node_mask=None, edge_mask=None):
         # Edit Emiel: Remove velocity as input
         if self.has_virtual:
-            h = torch.cat([self.embedding(h[:, 1:]),
-                           self.virtual_embedding(h[:, 0].long())], dim=-1)
+            h = torch.cat(
+                [self.embedding(h[:, 1:]), self.virtual_embedding(h[:, 0].long())], dim=-1
+            )
         else:
             h = self.embedding(h)
         for i in range(0, self.n_layers):
@@ -185,6 +186,7 @@ class EGNN(nn.Module):
 
 class E_GCL(nn.Module):
     """Graph Neural Net with global state and fixed number of nodes per graph.
+
     Args:
           hidden_dim: Number of hidden units.
           num_nodes: Maximum number of nodes (for self-attentive pooling).
@@ -208,7 +210,7 @@ class E_GCL(nn.Module):
         coords_range=1,
         agg="sum",
     ):
-        super(E_GCL, self).__init__()
+        super().__init__()
         input_edge = input_nf * 2
         self.recurrent = recurrent
         self.attention = attention
@@ -279,9 +281,7 @@ class E_GCL(nn.Module):
             out = x + out
         return out, agg
 
-    def coord_model(
-        self, coord, edge_index, coord_diff, radial, edge_feat, node_mask, edge_mask
-    ):
+    def coord_model(self, coord, edge_index, coord_diff, radial, edge_feat, node_mask, edge_mask):
         # print("coord_model", coord_diff, radial, edge_feat)
         row, col = edge_index
         if self.tanh:
@@ -298,9 +298,7 @@ class E_GCL(nn.Module):
             if node_mask is not None:
                 # raise Exception('This part must be debugged before use')
                 agg = unsorted_segment_sum(trans, row, num_segments=coord.size(0))
-                M = unsorted_segment_sum(
-                    node_mask[col], row, num_segments=coord.size(0)
-                )
+                M = unsorted_segment_sum(node_mask[col], row, num_segments=coord.size(0))
                 agg = agg / (M - 1)
             else:
                 agg = unsorted_segment_mean(trans, row, num_segments=coord.size(0))

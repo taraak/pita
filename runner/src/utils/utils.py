@@ -3,7 +3,6 @@ from importlib.util import find_spec
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from omegaconf import DictConfig
-
 from src.utils import pylogger, rich_utils
 
 log = pylogger.RankedLogger(__name__, rank_zero_only=True)
@@ -95,9 +94,7 @@ def task_wrapper(task_func: Callable) -> Callable:
     return wrap
 
 
-def get_metric_value(
-    metric_dict: Dict[str, Any], metric_name: Optional[str]
-) -> Optional[float]:
+def get_metric_value(metric_dict: Dict[str, Any], metric_name: Optional[str]) -> Optional[float]:
     """Safely retrieves value of the metric logged in LightningModule.
 
     :param metric_dict: A dict containing metric values.

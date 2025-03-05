@@ -1,15 +1,15 @@
 from typing import Optional
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
-from fab.target_distributions import gmm
-from fab.utils.plotting import plot_contours, plot_marginal_pair
 from lightning.pytorch.loggers import WandbLogger
-
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.replay_buffer import ReplayBuffer
 from src.utils.logging_utils import fig_to_image
-import numpy as np
+
+from fab.target_distributions import gmm
+from fab.utils.plotting import plot_contours, plot_marginal_pair
 
 
 class GMM(BaseEnergyFunction):
@@ -57,7 +57,7 @@ class GMM(BaseEnergyFunction):
         self.test_set_size = test_set_size
         self.val_set_size = val_set_size
 
-        self.name="gmm"
+        self.name = "gmm"
 
         super().__init__(
             dimensionality=dimensionality,
@@ -81,7 +81,7 @@ class GMM(BaseEnergyFunction):
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
             samples = self.unnormalize(samples)
-        return (self.gmm.log_prob(samples))
+        return self.gmm.log_prob(samples)
 
     @property
     def dimensionality(self):
@@ -92,7 +92,7 @@ class GMM(BaseEnergyFunction):
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
         wandb_logger: WandbLogger,
-        unprioritized_buffer_samples = None,
+        unprioritized_buffer_samples=None,
         cfm_samples=None,
         replay_buffer=None,
         prefix: str = "",
@@ -104,11 +104,8 @@ class GMM(BaseEnergyFunction):
             prefix += "/"
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
-            
             if unprioritized_buffer_samples is not None:
-                buffer_samples, _, _ = replay_buffer.sample(
-                    self.plotting_buffer_sample_size
-                )
+                buffer_samples, _, _ = replay_buffer.sample(self.plotting_buffer_sample_size)
 
                 if self.should_unnormalize:
                     # Don't unnormalize CFM samples since they're in the
@@ -116,32 +113,23 @@ class GMM(BaseEnergyFunction):
                     buffer_samples = self.unnormalize(buffer_samples)
                     latest_samples = self.unnormalize(latest_samples)
 
-                    unprioritized_buffer_samples = self.unnormalize(
-                        unprioritized_buffer_samples
-                    )
+                    unprioritized_buffer_samples = self.unnormalize(unprioritized_buffer_samples)
 
                 samples_fig = self.get_dataset_fig(buffer_samples, latest_samples)
 
                 wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 
             if cfm_samples is not None:
-                cfm_samples_fig = self.get_dataset_fig(
-                    unprioritized_buffer_samples, cfm_samples
-                )
+                cfm_samples_fig = self.get_dataset_fig(unprioritized_buffer_samples, cfm_samples)
 
-                wandb_logger.log_image(
-                    f"{prefix}cfm_generated_samples", [cfm_samples_fig]
-                )
+                wandb_logger.log_image(f"{prefix}cfm_generated_samples", [cfm_samples_fig])
 
             if latest_samples is not None:
                 fig, ax = plt.subplots()
                 ax.scatter(*latest_samples.detach().cpu().T)
-                
-                wandb_logger.log_image(
-                    f"{prefix}generated_samples_scatter", [fig_to_image(fig)]
-                )
-                self.get_single_dataset_fig(latest_samples, "dem_generated_samples")
 
+                wandb_logger.log_image(f"{prefix}generated_samples_scatter", [fig_to_image(fig)])
+                self.get_single_dataset_fig(latest_samples, "dem_generated_samples")
 
         self.curr_epoch += 1
 
@@ -160,9 +148,7 @@ class GMM(BaseEnergyFunction):
         samples_fig = self.get_single_dataset_fig(samples, name)
         wandb_logger.log_image(f"{name}", [samples_fig])
 
-    def get_single_dataset_fig(
-        self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40), T=1.0
-    ):
+    def get_single_dataset_fig(self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40), T=1.0):
         fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 
         self.gmm.to("cpu")
@@ -172,8 +158,8 @@ class GMM(BaseEnergyFunction):
             ax=ax,
             n_contour_levels=50,
             grid_width_n_points=200,
-            T = T,
-            temperature=self.temperature
+            T=T,
+            temperature=self.temperature,
         )
 
         plot_marginal_pair(samples, ax=ax, bounds=plotting_bounds)
@@ -184,9 +170,15 @@ class GMM(BaseEnergyFunction):
         return fig_to_image(fig)
 
     def get_dataset_fig(
-        self, samples, gen_samples=None, plotting_bounds=(-1.4 * 40, 1.4 * 40), color="blue", T=1.0, cmap=None,
-        title=None, is_display_fig=False
-
+        self,
+        samples,
+        gen_samples=None,
+        plotting_bounds=(-1.4 * 40, 1.4 * 40),
+        color="blue",
+        T=1.0,
+        cmap=None,
+        title=None,
+        is_display_fig=False,
     ):
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -215,7 +207,9 @@ class GMM(BaseEnergyFunction):
                 grid_width_n_points=200,
             )
             # plot generated samples
-            plot_marginal_pair(gen_samples, ax=axs[1], bounds=plotting_bounds, color=color, cmap=cmap)
+            plot_marginal_pair(
+                gen_samples, ax=axs[1], bounds=plotting_bounds, color=color, cmap=cmap
+            )
             axs[1].set_title("Generated samples")
 
         # delete subplot
@@ -227,13 +221,11 @@ class GMM(BaseEnergyFunction):
         if is_display_fig:
             return fig
         return fig_to_image(fig)
-    
-
 
 
 def product_of_gaussians(mu1, sigma1, mu2, sigma2, log_weights):
-    var1 = sigma1 ** 2
-    var2 = sigma2 ** 2
+    var1 = sigma1**2
+    var2 = sigma2**2
 
     denom = var1 + var2
     mu_prod = (mu1 * var2 + mu2 * var1) / denom
@@ -242,10 +234,11 @@ def product_of_gaussians(mu1, sigma1, mu2, sigma2, log_weights):
 
     diff = mu1 - mu2
 
-    log_weights = (log_weights -
-                   0.5 * torch.log(2 * np.pi * torch.prod(denom)) +
-                   torch.sum(-diff**2 / (2 * denom), dim=-1))
-    
+    log_weights = (
+        log_weights
+        - 0.5 * torch.log(2 * np.pi * torch.prod(denom))
+        + torch.sum(-(diff**2) / (2 * denom), dim=-1)
+    )
 
     return mu_prod, std_prod, log_weights
 
@@ -273,8 +266,9 @@ def gmm_product(gmm1, gmm2):
             log_weights1, log_weights2 = weights_1[i], weights_2[j]
 
             # Product of two Gaussians
-            mu_prod, std_prod, z = product_of_gaussians(mu1, sigma1, mu2, sigma2,
-                                                        log_weights1 + log_weights2)
+            mu_prod, std_prod, z = product_of_gaussians(
+                mu1, sigma1, mu2, sigma2, log_weights1 + log_weights2
+            )
 
             # New weight
             new_weights.append(z)
@@ -288,11 +282,11 @@ def gmm_product(gmm1, gmm2):
     new_stds = torch.stack(new_stds).to(device)
 
     # drop modes with small logprob
-    mask = torch.softmax(new_weights, dim=-1)>1e-4
+    mask = torch.softmax(new_weights, dim=-1) > 1e-4
     new_weights = new_weights[mask]
     new_means = new_means[mask]
     new_stds = new_stds[mask]
-    
+
     product_gmm = gmm.GMM(
         dim=gmm1.dim,
         n_mixes=new_weights.shape[0],
@@ -322,14 +316,12 @@ class GMMTempWrapper(GMM):
         )
 
         g_prod = gmm.gmm
-        for _ in range(beta-1):
+        for _ in range(beta - 1):
             g_prod = gmm_product(self.gmm, g_prod)
         self.gmm = g_prod
 
-
         self._test_set = self.setup_test_set()
         self._val_set = self.setup_val_set()
-
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         return super().__call__(samples)

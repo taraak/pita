@@ -5,7 +5,7 @@
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-defaults: 
+defaults:
   - override /energy: nine
 
 tags: ["PISGMM"]
@@ -43,4 +43,3 @@ model:
   diffusion_scale: 1.0
 
   num_samples_to_generate_per_epoch: 1000
-  

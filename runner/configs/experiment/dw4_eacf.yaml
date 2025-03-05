@@ -15,7 +15,7 @@ logger:
     tags: ${tags}
     group: "dw4"
 
-defaults: 
+defaults:
   - override /energy: dw4_eacf
   - override /model/net: egnn
 
@@ -54,7 +54,7 @@ model:
   # num_samples_to_sample_from_buffer: 5120
   diffusion_scale: 1
   num_samples_to_generate_per_epoch: 1000
-  
+
   init_from_prior: true
 
   eval_batch_size: 1000

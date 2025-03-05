@@ -1,11 +1,10 @@
 from typing import Optional
+
 import torch
 
 
 class ScalingWrapper(torch.nn.Module):
-    """
-    (Tries to) normalize data and blah blah blah
-    """
+    """(Tries to) normalize data and blah blah blah."""
 
     def __init__(
         self,

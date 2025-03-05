@@ -5,10 +5,9 @@
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-defaults: 
+defaults:
   - override /energy: many_well
   - override /model/net: mlp
-
 
 tags: ["many_well"]
 

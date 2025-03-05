@@ -13,8 +13,8 @@ def earth_mover_distance(
     return_matrix=False,
     metric="sqeuclidean",
 ):
-    """
-    Returns the earth mover's distance between two point clouds
+    """Returns the earth mover's distance between two point clouds.
+
     Parameters
     ----------
     cloud1 : 2-D array
@@ -43,9 +43,7 @@ def earth_mover_distance(
         weights2 = weights2.astype("float64")
         q_weights = weights2 / weights2.sum()
 
-    pairwise_dist = np.ascontiguousarray(
-        pairwise_distances(p, Y=q, metric=metric, n_jobs=-1)
-    )
+    pairwise_dist = np.ascontiguousarray(pairwise_distances(p, Y=q, metric=metric, n_jobs=-1))
 
     result = pot.emd2(
         p_weights, q_weights, pairwise_dist, numItermax=1e7, return_matrix=return_matrix
@@ -58,8 +56,9 @@ def earth_mover_distance(
 
 
 def interpolate_with_ot(p0, p1, tmap, interp_frac, size):
-    """
-    Interpolate between p0 and p1 at fraction t_interpolate knowing a transport map from p0 to p1
+    """Interpolate between p0 and p1 at fraction t_interpolate knowing a transport map from p0 to
+    p1.
+
     Parameters
     ----------
     p0 : 2-D array
@@ -106,8 +105,9 @@ def interpolate_with_ot(p0, p1, tmap, interp_frac, size):
 
 
 def interpolate_per_point_with_ot(p0, p1, tmap, interp_frac):
-    """
-    Interpolate between p0 and p1 at fraction t_interpolate knowing a transport map from p0 to p1
+    """Interpolate between p0 and p1 at fraction t_interpolate knowing a transport map from p0 to
+    p1.
+
     Parameters
     ----------
     p0 : 2-D array
@@ -149,9 +149,6 @@ def interpolate_per_point_with_ot(p0, p1, tmap, interp_frac):
     p = p / p.sum(axis=0)
     choices = np.array([np.random.choice(I, p=p[i]) for i in range(I)])
     return np.asarray(
-        [
-            p0[i] * (1 - interp_frac) + p1[j] * interp_frac
-            for i, j in enumerate(choices)
-        ],
+        [p0[i] * (1 - interp_frac) + p1[j] * interp_frac for i, j in enumerate(choices)],
         dtype=np.float64,
     )

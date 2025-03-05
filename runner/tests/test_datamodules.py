@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 import torch
-
 from src.data.mnist_datamodule import MNISTDataModule
 
 

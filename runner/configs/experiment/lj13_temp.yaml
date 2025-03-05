@@ -15,7 +15,7 @@ logger:
     tags: ${tags}
     group: "lj13"
 
-defaults: 
+defaults:
   - override /energy: lj13
   - override /model/net: egnn
 
@@ -49,12 +49,11 @@ model:
     max_score_norm: 20
     min_log_reward: null
 
-
   # num_samples_to_sample_from_buffer: 5120
   diffusion_scale: 0.9
   num_samples_to_generate_per_epoch: 1000
   num_samples_to_sample_from_buffer: 512
-  
+
   init_from_prior: true
 
   cfm_prior_std: 2

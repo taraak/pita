@@ -1,4 +1,3 @@
-
 # @package _global_
 
 # to execute this experiment run:
@@ -16,7 +15,7 @@ logger:
     tags: ${tags}
     group: "lj55"
 
-defaults: 
+defaults:
   - override /energy: lj55
   - override /model/net: egnn
 
@@ -35,7 +34,7 @@ model:
 
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
-    sigma_min: 0.5 
+    sigma_min: 0.5
     sigma_max: 4
 
   partial_prior:
@@ -54,7 +53,7 @@ model:
     should_clip_log_rewards: False
     max_score_norm: 20
     min_log_reward: null
-    
+
   diffusion_scale: 0.5
 
   num_init_samples: 1024
@@ -68,10 +67,8 @@ model:
 
   nll_integration_method: dopri5
 
-
   exact_hessian: false
   resampling_interval: 10
   num_samples_to_generate_per_epoch_energy: 64
 
   num_samples_to_save: 5000
-  

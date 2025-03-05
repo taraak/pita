@@ -8,15 +8,14 @@ import ot as pot
 import torch
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
+from src.energies.base_energy_function import BaseEnergyFunction
+from src.utils.data_utils import remove_mean
+from src.utils.logging_utils import fig_to_image
 from torchcfm.conditional_flow_matching import (
     ConditionalFlowMatcher,
     ExactOptimalTransportConditionalFlowMatcher,
 )
 from torchmetrics import MeanMetric
-
-from src.energies.base_energy_function import BaseEnergyFunction
-from src.utils.data_utils import remove_mean
-from src.utils.logging_utils import fig_to_image
 
 from .components.clipper import Clipper
 from .components.cnf import CNF
@@ -53,10 +52,7 @@ def t_stratified_loss(batch_t, batch_loss, num_bins=5, loss_name=None):
 
 
 def get_wandb_logger(loggers):
-    """
-    Gets the wandb logger if it is the
-    list of loggers otherwise returns None.
-    """
+    """Gets the wandb logger if it is the list of loggers otherwise returns None."""
     wandb_logger = None
     for logger in loggers:
         if isinstance(logger, WandbLogger):
@@ -182,9 +178,7 @@ class CFMLitModule(LightningModule):
         x1 = samples
         x1 = self.energy_function.unnormalize(x1)
 
-        t, xt, ut = self.conditional_flow_matcher.sample_location_and_conditional_flow(
-            x0, x1
-        )
+        t, xt, ut = self.conditional_flow_matcher.sample_location_and_conditional_flow(x0, x1)
 
         if self.energy_function.is_molecule and self.cfm_sigma != 0:
             xt = remove_mean(
@@ -235,9 +229,7 @@ class CFMLitModule(LightningModule):
             )
             self.last_energies = self.energy_function(self.last_samples)
         else:
-            self.last_samples = self.generate_samples(
-                diffusion_scale=self.diffusion_scale
-            )
+            self.last_samples = self.generate_samples(diffusion_scale=self.diffusion_scale)
             self.last_energies = self.energy_function(self.last_samples)
 
         self.buffer.add(self.last_samples, self.last_energies)
@@ -253,9 +245,7 @@ class CFMLitModule(LightningModule):
 
         _, generated_energies = self.buffer.get_last_n_inserted(self.eval_batch_size)
 
-        energy_w2 = pot.emd2_1d(
-            val_energies.cpu().numpy(), generated_energies.cpu().numpy()
-        )
+        energy_w2 = pot.emd2_1d(val_energies.cpu().numpy(), generated_energies.cpu().numpy())
 
         self.log(
             f"val/energy_w2",
@@ -266,9 +256,7 @@ class CFMLitModule(LightningModule):
         )
 
     def compute_log_z(self, cnf, prior, samples, prefix, name):
-        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
-            cnf, prior, samples
-        )
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(cnf, prior, samples)
         # this is stupid we should fix the normalization in the energy function
         logz = self.energy_function(self.energy_function.normalize(samples)) + nll
         logz_metric = getattr(self, f"{prefix}_{name}logz")
@@ -283,9 +271,7 @@ class CFMLitModule(LightningModule):
 
     def compute_and_log_nll(self, cnf, prior, samples, prefix, name):
         cnf.nfe = 0.0
-        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(
-            cnf, prior, samples
-        )
+        nll, forwards_samples, logdetjac, log_p_1 = self.compute_nll(cnf, prior, samples)
         nfe_metric = getattr(self, f"{prefix}_{name}nfe")
         nll_metric = getattr(self, f"{prefix}_{name}nll")
         logdetjac_metric = getattr(self, f"{prefix}_{name}nll_logdetjac")
@@ -336,31 +322,22 @@ class CFMLitModule(LightningModule):
         # update and log metrics
         loss_metric = self.val_loss if prefix == "val" else self.test_loss
         loss_metric(loss)
-        self.log(
-            f"{prefix}/loss", loss_metric, on_step=True, on_epoch=True, prog_bar=True
-        )
+        self.log(f"{prefix}/loss", loss_metric, on_step=True, on_epoch=True, prog_bar=True)
         forwards_samples = self.compute_and_log_nll(
             self.cfm_cnf, self.cfm_prior, batch, prefix, ""
         )
         backwards_samples = self.cfm_cnf.generate(x1)[-1]
-        to_log = {
-            "data_0": batch,
-            "gen_0": backwards_samples,
-            "gen_1_cfm": forwards_samples
-        }
+        to_log = {"data_0": batch, "gen_0": backwards_samples, "gen_1_cfm": forwards_samples}
         iter_samples, _, _ = self.buffer.sample(self.eval_batch_size)
 
         # backwards_samples = self.generate_cfm_samples(self.eval_batch_size)
-        self.compute_log_z(
-            self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, ""
-        )
+        self.compute_log_z(self.cfm_cnf, self.cfm_prior, backwards_samples, prefix, "")
 
         self.eval_step_outputs.append(to_log)
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         batch = self.energy_function.sample_val_set(self.eval_batch_size)
         self.eval_step("val", batch, batch_idx)
-
 
     def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
         batch = self.energy_function.sample_test_set(self.eval_batch_size)
@@ -431,9 +408,7 @@ class CFMLitModule(LightningModule):
             self.cfm_net = torch.compile(self.cfm_net)
 
         if self.nll_with_cfm:
-            self.cfm_prior = self.partial_prior(
-                device=self.device, scale=self.cfm_prior_std
-            )
+            self.cfm_prior = self.partial_prior(device=self.device, scale=self.cfm_prior_std)
 
     def configure_optimizers(self) -> Dict[str, Any]:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.

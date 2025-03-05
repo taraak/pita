@@ -1,4 +1,0 @@
-- experiment=lj55
-- trainer=gpu
-- model.debug_use_train_data=true
-- model.nll_with_cfm=false

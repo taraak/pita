@@ -1,15 +1,15 @@
-"""Exponential moving average wrapper for torch.nn.Module"""
+"""Exponential moving average wrapper for torch.nn.Module."""
 import torch
 
 
 class EMAWrapper(torch.nn.Module):
     """Implements exponential moving average model wrapper.
 
-    Wraps a model where `ema.update_ema()` can be manually called to update ema
-    weights which are separately saved.
+    Wraps a model where `ema.update_ema()` can be manually called to update ema weights which are
+    separately saved.
 
-    with `ema.eval()` activates the EMA weights of the model for eval mode and
-    backs up the current weights.
+    with `ema.eval()` activates the EMA weights of the model for eval mode and backs up the current
+    weights.
 
     with `ema.train()` restores current weights.
     """
@@ -49,10 +49,8 @@ class EMAWrapper(torch.nn.Module):
         super().train(use_training_mode)
 
     def _get_decay(self, num_updates: int) -> float:
-        """decay warmup magic from meta."""
-        return min(
-            self.decay, (1 + num_updates) / (self.warmup_denominator + num_updates)
-        )
+        """Decay warmup magic from meta."""
+        return min(self.decay, (1 + num_updates) / (self.warmup_denominator + num_updates))
 
     def update_ema(self) -> None:
         """Update the shadow params with a new EMA update."""
@@ -74,9 +72,8 @@ class EMAWrapper(torch.nn.Module):
             param.data.copy_(shadow.data)
 
     def backup(self) -> None:
-        """Create a backup of the model current params by creating a new copy
-        or copying in-place.
-        """
+        """Create a backup of the model current params by creating a new copy or copying in-
+        place."""
         if len(self.backup_params) > 0:
             for p, b in zip(self.model.parameters(), self.backup_params):
                 b.data.copy_(p.data)
@@ -84,6 +81,6 @@ class EMAWrapper(torch.nn.Module):
             self.backup_params = [param.clone() for param in self.model.parameters()]
 
     def restore_to_model(self) -> None:
-        """Move the backup parameters into the current model's parameters in-place"""
+        """Move the backup parameters into the current model's parameters in-place."""
         for param, backup in zip(self.model.parameters(), self.backup_params):
             param.data.copy_(backup.data)

@@ -15,7 +15,7 @@ logger:
     tags: ${tags}
     group: "dw4_efm"
 
-defaults: 
+defaults:
   - override /energy: dw4
   - override /model/net: egnn
 
@@ -36,7 +36,7 @@ model:
   noise_schedule:
     _target_: src.models.components.noise_schedules.GeometricNoiseSchedule
     sigma_min: 0.01 #0.00001 #0.01
-    sigma_max: 3       #5
+    sigma_max: 3 #5
   # noise_schedule:
   #   _target_: src.models.components.noise_schedules.LinearNoiseSchedule
   #   beta: 3
@@ -62,7 +62,7 @@ model:
   # num_samples_to_sample_from_buffer: 5120
   diffusion_scale: 1
   num_samples_to_generate_per_epoch: 1000
-  
+
   init_from_prior: true
 
   eval_batch_size: 1000

@@ -1,11 +1,13 @@
 from typing import Any, Optional
+
+import PIL
 import torch
 import wandb
-import PIL
-from .dem_module import *
 from src.models.components.sdes import VEReverseSDE
-from src.models.components.utils import sample_from_tensor
 from src.models.components.temperature_schedules import BaseInverseTempSchedule
+from src.models.components.utils import sample_from_tensor
+
+from .dem_module import *
 
 
 class tempDEMLitModule(DEMLitModule):
@@ -23,25 +25,24 @@ class tempDEMLitModule(DEMLitModule):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        
+
     def generate_samples(
         self,
         reverse_sde: VEReverseSDE,
         num_samples: Optional[int] = None,
         return_full_trajectory: bool = False,
-        diffusion_scale = None,
+        diffusion_scale=None,
         resampling_interval=None,
         return_logweights=False,
         num_langevin_steps=1,
-        batch_size = None,
+        batch_size=None,
         num_negative_time_steps=-1,
-        prior_samples = None,
-        logq_prior_samples = None,
+        prior_samples=None,
+        logq_prior_samples=None,
         start_resampling_step=0,
         return_num_unique_idxs=False,
         resampling_strategy="systematic",
     ) -> torch.Tensor:
-        
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale
         reverse_sde = reverse_sde or self.reverse_sde
 
@@ -58,7 +59,7 @@ class tempDEMLitModule(DEMLitModule):
             logq_samples=logq_prior_samples.clone(),
             reverse_time=True,
             return_full_trajectory=return_full_trajectory,
-            diffusion_scale=diffusion_scale, 
+            diffusion_scale=diffusion_scale,
             resampling_interval=resampling_interval,
             num_langevin_steps=num_langevin_steps,
             batch_size=batch_size,
@@ -74,20 +75,20 @@ class tempDEMLitModule(DEMLitModule):
                 logq_samples=logq_prior_samples.clone()[:batch_size],
                 reverse_time=True,
                 return_full_trajectory=return_full_trajectory,
-                diffusion_scale=diffusion_scale, 
-                resampling_interval=self.num_integration_steps+1,
+                diffusion_scale=diffusion_scale,
+                resampling_interval=self.num_integration_steps + 1,
                 num_langevin_steps=1,
                 batch_size=batch_size,
                 num_negative_time_steps=self.hparams.num_negative_time_steps,
                 start_resampling_step=start_resampling_step,
                 resampling_strategy=resampling_strategy,
             )
-            return samples, logweights, num_unique_idxs 
-    
+            return samples, logweights, num_unique_idxs
+
         if return_num_unique_idxs:
             return samples, num_unique_idxs
         return samples
-    
+
     def integrate(
         self,
         reverse_sde: VEReverseSDE,
@@ -124,7 +125,7 @@ class tempDEMLitModule(DEMLitModule):
             trajectory, logweights, num_unique_idxs
 
         return trajectory[-1], logweights, num_unique_idxs
-    
+
     def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
         if self.trainer_called:
             super().eval_step(prefix, batch, batch_idx)
@@ -140,12 +141,13 @@ class tempDEMLitModule(DEMLitModule):
             prior_samples = self.annealed_prior.sample(self.hparams.num_eval_samples)
             logq_prior_samples = self.annealed_prior.log_prob(prior_samples)
 
-
-            self.annealed_reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
-                                            temperature_schedule=self.temperature_schedule,
-                                            scale_diffusion=self.hparams.scale_diffusion, 
-                                            clipper=self.hparams.annealed_clipper
-                                            )
+            self.annealed_reverse_sde = VEReverseSDE(
+                self.net,
+                self.hparams.noise_schedule,
+                temperature_schedule=self.temperature_schedule,
+                scale_diffusion=self.hparams.scale_diffusion,
+                clipper=self.hparams.annealed_clipper,
+            )
 
             self.last_samples_annealed, logweights, num_unique_idxs = self.generate_samples(
                 reverse_sde=self.annealed_reverse_sde,
@@ -156,12 +158,14 @@ class tempDEMLitModule(DEMLitModule):
                 batch_size=self.hparams.num_samples_to_generate_per_epoch,
                 prior_samples=prior_samples,
                 logq_prior_samples=logq_prior_samples,
-                num_negative_time_steps=self.hparams.num_negative_time_steps, 
+                num_negative_time_steps=self.hparams.num_negative_time_steps,
                 resampling_strategy=self.hparams.resampling_strategy,
             )
             self.last_energies_annealed = self.annealed_energy(self.last_samples_annealed)
 
-            print(f"Generated {self.last_samples_annealed.shape[0]} annealed samples at temperature {self.annealed_energy.temperature}.")
+            print(
+                f"Generated {self.last_samples_annealed.shape[0]} annealed samples at temperature {self.annealed_energy.temperature}."
+            )
 
             self.annealed_energy.log_on_epoch_end(
                 self.last_samples_annealed,
@@ -172,46 +176,51 @@ class tempDEMLitModule(DEMLitModule):
 
             self._log_energy_mean(self.last_energies_annealed, prefix="val/temp_annealed")
 
-            if self.hparams.resampling_interval!=-1:
+            if self.hparams.resampling_interval != -1:
                 self._log_logweights(logweights, prefix="val")
                 self._log_std_logweights(logweights, prefix="val")
                 self._log_num_unique_idxs(num_unique_idxs, prefix="val")
-                self.logger.experiment.log({
-                    "1D Array Plot": wandb.plot.line_series(
-                        xs=torch.linspace(1, 0, len(num_unique_idxs)).tolist(),  # X-axis: indices or time points
-                        ys=[num_unique_idxs],                 # Y-axis: values
-                        keys=["Value"],                       # Line legend
-                        title="Number of Unique Indices",     # Plot title
-                        xname="Time",                         # X-axis title
-            )
-        })
-                
-            
-        self.eval_count +=1
+                self.logger.experiment.log(
+                    {
+                        "1D Array Plot": wandb.plot.line_series(
+                            xs=torch.linspace(
+                                1, 0, len(num_unique_idxs)
+                            ).tolist(),  # X-axis: indices or time points
+                            ys=[num_unique_idxs],  # Y-axis: values
+                            keys=["Value"],  # Line legend
+                            title="Number of Unique Indices",  # Plot title
+                            xname="Time",  # X-axis title
+                        )
+                    }
+                )
 
+        self.eval_count += 1
 
     def on_test_epoch_end(self) -> None:
         wandb_logger = get_wandb_logger(self.loggers)
         super().on_test_epoch_end()
 
         # Compute metrics for the annealed energy
-        batch_annealed_samples = sample_from_tensor(self.last_samples_annealed,
-                                                    self.hparams.annealed_test_batch_size)
+        batch_annealed_samples = sample_from_tensor(
+            self.last_samples_annealed, self.hparams.annealed_test_batch_size
+        )
         batch_annealed_energies = self.annealed_energy(batch_annealed_samples)
-        batch_test_samples = self.annealed_energy.sample_test_set(self.hparams.annealed_test_batch_size)
+        batch_test_samples = self.annealed_energy.sample_test_set(
+            self.hparams.annealed_test_batch_size
+        )
         batch_test_energies = self.annealed_energy(batch_test_samples)
 
         names, dists = compute_distribution_distances(
             self.annealed_energy.unnormalize(batch_annealed_samples)[:, None],
-            batch_test_samples[:, None], self.annealed_energy
+            batch_test_samples[:, None],
+            self.annealed_energy,
         )
         names = [f"test/temp_annealed/{name}" for name in names]
         d = dict(zip(names, dists))
         self.log_dict(d, sync_dist=True)
 
         energy_w2 = pot.emd2_1d(
-            batch_test_energies.cpu().numpy(),
-            batch_annealed_energies.cpu().numpy()
+            batch_test_energies.cpu().numpy(), batch_annealed_energies.cpu().numpy()
         )
         self.log(
             "test/temp_annealed/energy_w2",
@@ -223,7 +232,7 @@ class tempDEMLitModule(DEMLitModule):
         energy_w1 = pot.emd2_1d(
             batch_test_energies.cpu().numpy(),
             batch_annealed_energies.cpu().numpy(),
-            metric="euclidean"
+            metric="euclidean",
         )
         self.log(
             "test/temp_annealed/energy_w1",
@@ -234,8 +243,14 @@ class tempDEMLitModule(DEMLitModule):
         )
         if self.annealed_energy.is_molecule:
             dist_w2 = pot.emd2_1d(
-            self.annealed_energy.interatomic_dist(batch_annealed_samples).cpu().numpy().reshape(-1),
-            self.annealed_energy.interatomic_dist(batch_test_samples).cpu().numpy().reshape(-1)
+                self.annealed_energy.interatomic_dist(batch_annealed_samples)
+                .cpu()
+                .numpy()
+                .reshape(-1),
+                self.annealed_energy.interatomic_dist(batch_test_samples)
+                .cpu()
+                .numpy()
+                .reshape(-1),
             )
             self.log(
                 "test/temp_annealed/dist_w2",
@@ -247,12 +262,14 @@ class tempDEMLitModule(DEMLitModule):
 
         if self.annealed_energy.is_molecule:
             self._log_dist_w2(prefix="test/temp_annealed", energy_function=self.annealed_energy)
-            self._log_dist_total_var(prefix="test/temp_annealed", energy_function=self.annealed_energy)
+            self._log_dist_total_var(
+                prefix="test/temp_annealed", energy_function=self.annealed_energy
+            )
 
         # Generate annealed samples to save
         final_samples = []
 
-        if self.num_samples_to_save >  self.hparams.num_eval_samples:   
+        if self.num_samples_to_save > self.hparams.num_eval_samples:
             batch_size = self.hparams.num_eval_samples
             n_batches = self.num_samples_to_save // batch_size
             print(f"Generating {n_batches} batches of annealed samples of size {batch_size}.")
@@ -263,23 +280,22 @@ class tempDEMLitModule(DEMLitModule):
             for i in range(n_batches):
                 start = time.time()
                 samples = self.generate_samples(
-                        reverse_sde=self.annealed_reverse_sde,
-                        return_logweights=False,
-                        diffusion_scale=self.hparams.diffusion_scale,
-                        resampling_interval=self.hparams.resampling_interval,
-                        num_langevin_steps=self.hparams.num_langevin_steps,
-                        batch_size=self.hparams.num_samples_to_generate_per_epoch,
-                        prior_samples=prior_samples,
-                        logq_prior_samples=logq_prior_samples,
-                        num_negative_time_steps=self.hparams.num_negative_time_steps,
-                        resampling_strategy=self.hparams.resampling_strategy,
-                    )
-                final_samples.append(samples
+                    reverse_sde=self.annealed_reverse_sde,
+                    return_logweights=False,
+                    diffusion_scale=self.hparams.diffusion_scale,
+                    resampling_interval=self.hparams.resampling_interval,
+                    num_langevin_steps=self.hparams.num_langevin_steps,
+                    batch_size=self.hparams.num_samples_to_generate_per_epoch,
+                    prior_samples=prior_samples,
+                    logq_prior_samples=logq_prior_samples,
+                    num_negative_time_steps=self.hparams.num_negative_time_steps,
+                    resampling_strategy=self.hparams.resampling_strategy,
                 )
+                final_samples.append(samples)
                 end = time.time()
                 print(f"batch {i} took {end - start:0.2f}s")
 
-                if i==0:
+                if i == 0:
                     self.annealed_energy.log_on_epoch_end(
                         samples,
                         self.annealed_energy(samples),
@@ -290,10 +306,10 @@ class tempDEMLitModule(DEMLitModule):
             final_samples = torch.cat(final_samples, dim=0)
 
         else:
-            final_samples = sample_from_tensor(self.last_samples_annealed,
-                                               self.hparams.num_samples_to_save)
+            final_samples = sample_from_tensor(
+                self.last_samples_annealed, self.hparams.num_samples_to_save
+            )
 
-        
         output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
         # append time to avoid overwriting
         path = f"{output_dir}/samples_temperature_{self.annealed_energy.temperature}_{self.num_samples_to_save}.pt"
@@ -311,33 +327,25 @@ class tempDEMLitModule(DEMLitModule):
         integration_times = torch.linspace(1, 0, logweights.shape[0])
         axs.plot(integration_times, logweights)
 
-        #limit yaxis
+        # limit yaxis
         axs.set_xlabel("Integration time")
         fig.canvas.draw()
-        img = PIL.Image.frombytes(
-            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-        )
-        wandb_logger.log_image(
-            f"{prefix}/annealing_logweights", [img]
-        )
+        img = PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+        wandb_logger.log_image(f"{prefix}/annealing_logweights", [img])
 
     def _log_std_logweights(self, logweights, prefix="val"):
-        wandb_logger= get_wandb_logger(self.loggers)
+        wandb_logger = get_wandb_logger(self.loggers)
         if wandb_logger is None:
             return
-        
+
         fig, axs = plt.subplots(1, 1, figsize=(8, 4))
         std_logweights = logweights.std(dim=1).cpu().numpy()
         integration_times = torch.linspace(1, 0, std_logweights.shape[0])
         axs.plot(integration_times, std_logweights)
         axs.set_xlabel("Integration time")
         fig.canvas.draw()
-        img = PIL.Image.frombytes(
-            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-        )
-        wandb_logger.log_image(
-            f"{prefix}/std_logweights", [img]
-        )
+        img = PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+        wandb_logger.log_image(f"{prefix}/std_logweights", [img])
 
     def _log_num_unique_idxs(self, num_unique_idxs, prefix="val"):
         wandb_logger = get_wandb_logger(self.loggers)
@@ -348,12 +356,8 @@ class tempDEMLitModule(DEMLitModule):
         axs.plot(integration_times, num_unique_idxs)
         axs.set_xlabel("Integration time")
         fig.canvas.draw()
-        img = PIL.Image.frombytes(
-            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-        )
-        wandb_logger.log_image(
-            f"{prefix}/num_unique_idxs", [img]
-        )
+        img = PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+        wandb_logger.log_image(f"{prefix}/num_unique_idxs", [img])
 
     def setup(self, stage: str) -> None:
         super().setup(stage)
@@ -370,13 +374,13 @@ class tempDEMLitModule(DEMLitModule):
             device=self.device, scale=(self.noise_schedule.h(t_start) / inverse_temp) ** 0.5
         )
 
-        self.hparams.annealed_clipper.energy_function=self.energy_function
+        self.hparams.annealed_clipper.energy_function = self.energy_function
 
         self.eval_count = 0
 
         # self.annealed_reverse_sde = VEReverseSDE(self.net, self.hparams.noise_schedule,
         #                                 temperature_schedule=self.temperature_schedule,
-        #                                 scale_diffusion=self.hparams.scale_diffusion, 
+        #                                 scale_diffusion=self.hparams.scale_diffusion,
         #                                 clipper=self.hparams.annealed_clipper
         #                                 )
 

@@ -33,18 +33,14 @@ class PISNN(torch.nn.Module):
 
             def _fn(t, x):
                 grad_fxn = torch.vmap(torch.func.grad(self.energy_function.__call__))
-                grad = torch.clip(
-                    grad_fxn(x), -self.lgv_clip, self.lgv_clip
-                )
+                grad = torch.clip(grad_fxn(x), -self.lgv_clip, self.lgv_clip)
                 f = torch.clip(self.f_func(t, x), -self.nn_clip, self.nn_clip)
                 return f - self.lgv_coef(t) * grad
 
         elif f_format == "nn_grad":
 
             def _fn(t, x):
-                x_dot = torch.clip(
-                    self.energy_function.score(x), -self.lgv_clip, self.lgv_clip
-                )
+                x_dot = torch.clip(self.energy_function.score(x), -self.lgv_clip, self.lgv_clip)
                 f_x = torch.clip(self.f_func(t, x), -self.nn_clip, self.nn_clip)
                 return f_x * x_dot
 
@@ -52,13 +48,9 @@ class PISNN(torch.nn.Module):
             self.grad_net = copy.deepcopy(self.f_func)
 
             def _fn(t, x):
-                x_dot = torch.clip(
-                    self.energy_function(x), -self.lgv_clip, self.lgv_clip
-                )
+                x_dot = torch.clip(self.energy_function(x), -self.lgv_clip, self.lgv_clip)
                 f_x = torch.clip(self.f_func(t, x), -self.nn_clip, self.nn_clip)
-                f_x_dot = torch.clip(
-                    self.grad_net(t, x_dot), -self.nn_clip, self.nn_clip
-                )
+                f_x_dot = torch.clip(self.grad_net(t, x_dot), -self.nn_clip, self.nn_clip)
                 return f_x + f_x_dot
 
         else:

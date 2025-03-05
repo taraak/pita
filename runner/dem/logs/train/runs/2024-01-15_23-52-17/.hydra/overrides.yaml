@@ -1,3 +1,0 @@
-- experiment=gmm
-- trainer=gpu
-- logger=csv

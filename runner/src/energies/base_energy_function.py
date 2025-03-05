@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-import torch
 import numpy as np
+import torch
 from pytorch_lightning.loggers import WandbLogger
-
 from src.models.components.replay_buffer import ReplayBuffer
 
 
@@ -62,20 +61,16 @@ class BaseEnergyFunction(ABC):
         x = (x + 1) / 2
         return x * (maxs - mins) + mins
 
-    def sample_test_set(
-        self, num_points: int, normalize: bool = False
-    ) -> Optional[torch.Tensor]:
+    def sample_test_set(self, num_points: int, normalize: bool = False) -> Optional[torch.Tensor]:
         if self.test_set is None:
             return None
-    
+
         outs = self.test_set[:num_points]
         if normalize:
             outs = self.normalize(outs)
         return outs
 
-    def sample_train_set(
-        self, num_points: int, normalize: bool = False
-    ) -> Optional[torch.Tensor]:
+    def sample_train_set(self, num_points: int, normalize: bool = False) -> Optional[torch.Tensor]:
         if self.train_set is None:
             self._train_set = self.setup_train_set()
         outs = self.train_set[:num_points]
@@ -84,12 +79,10 @@ class BaseEnergyFunction(ABC):
 
         return outs
 
-    def sample_val_set(
-        self, num_points: int, normalize: bool = False
-    ) -> Optional[torch.Tensor]:
+    def sample_val_set(self, num_points: int, normalize: bool = False) -> Optional[torch.Tensor]:
         if self.val_set is None:
             return None
-        
+
         outs = self.val_set[:num_points]
         if normalize:
             outs = self.normalize(outs)

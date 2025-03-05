@@ -15,9 +15,9 @@ scheduler:
 
 defaults:
   - net:
-    - mlp
+      - mlp
   - noise_schedule:
-    - geometric
+      - geometric
 
 partial_buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer

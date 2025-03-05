@@ -15,7 +15,7 @@ logger:
     tags: ${tags}
     group: "lj13"
 
-defaults: 
+defaults:
   - override /energy: lj13
   - override /model/net: egnn
 
@@ -60,7 +60,7 @@ model:
   num_negative_time_steps: 1
   num_samples_to_generate_per_epoch: 2000
   num_samples_to_sample_from_buffer: 1024
-  
+
   init_from_prior: true
 
   cfm_prior_std: 2
@@ -83,12 +83,10 @@ model:
 
   num_eval_samples: 50000
   num_samples_to_save: 10240
-  
+
   # Tempdem parameters
   annealed_test_batch_size: 10000
   resampling_interval: 1
   start_resampling_step: 10
   scale_diffusion: True
   resampling_strategy: "systematic"
-
-

@@ -1,12 +1,12 @@
-  _target_: src.energies.many_well_energy.ManyWell
+_target_: src.energies.many_well_energy.ManyWell
 
-  dimensionality: 32
+dimensionality: 32
 
-  device: ${trainer.accelerator}
+device: ${trainer.accelerator}
 
-  plot_samples_epoch_period: 1
+plot_samples_epoch_period: 1
 
-  should_unnormalize: true
-  data_normalization_factor: 3
+should_unnormalize: true
+data_normalization_factor: 3
 
-  test_set_size: 1024
+test_set_size: 1024

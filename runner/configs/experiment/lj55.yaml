@@ -15,7 +15,7 @@ logger:
     tags: ${tags}
     group: "lj55"
 
-defaults: 
+defaults:
   - override /energy: lj55
   - override /model/net: egnn
   # - override /model/net: energy_net
@@ -55,7 +55,7 @@ model:
     should_clip_log_rewards: False
     max_score_norm: 20 #20
     min_log_reward: null
-    
+
   diffusion_scale: 0.5
 
   num_init_samples: 1024
@@ -68,4 +68,3 @@ model:
   logz_with_cfm: false
 
   nll_integration_method: dopri5
-

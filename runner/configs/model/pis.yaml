@@ -30,7 +30,7 @@ tnet:
 
 defaults:
   - noise_schedule:
-    - geometric
+      - geometric
 
 buffer:
   _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer

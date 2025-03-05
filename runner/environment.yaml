@@ -58,7 +58,7 @@ dependencies:
       - hydra-submitit-launcher
       - scikit-learn
       - scipy
-      - matplotlib<3.10 #3.10 gives 
+      - matplotlib<3.10 #3.10 gives
       #AttributeError: 'FigureCanvasInterAgg' object has no attribute 'tostring_rgb'. Did you mean: 'tostring_argb'?
       - -e ../fab
       - -e .

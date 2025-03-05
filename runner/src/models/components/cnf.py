@@ -96,7 +96,7 @@ class CNF(torch.nn.Module):
             # forward drift too.
             shaped_t = torch.ones(x.shape[0], device=x.device) * t
             if self.is_diffusion:
-                return - 0.5 * self.vf(shaped_t, x) * self.noise_schedule.g(t) ** 2
+                return -0.5 * self.vf(shaped_t, x) * self.noise_schedule.g(t) ** 2
             else:
                 return self.vf(shaped_t, x)
 
@@ -110,7 +110,7 @@ class CNF(torch.nn.Module):
             div = hutch_trace(x, dx, torch.randn_like(x))
 
         self.nfe += 1
-        #print(div.mean())
+        # print(div.mean())
         return torch.cat([dx.detach(), div[:, None].detach()], dim=-1)
 
     def integrate(self, x):
@@ -120,9 +120,7 @@ class CNF(torch.nn.Module):
 
         time = torch.linspace(start_time, end_time, self.num_steps + 1, device=x.device)
         try:
-            return odeint(
-                self, x, t=time, method=method, atol=self.atol, rtol=self.rtol
-            )
+            return odeint(self, x, t=time, method=method, atol=self.atol, rtol=self.rtol)
 
         except (RuntimeError, AssertionError) as e:
             print(e)

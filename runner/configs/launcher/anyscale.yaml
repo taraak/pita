@@ -5,9 +5,9 @@ defaults:
 
 hydra:
   launcher:
-    ray: 
+    ray:
       remote:
         num_gpus: 0.5
         runtime_env:
           env_vars:
-              WANDB_API_KEY: ${oc.env:WANDB_API_KEY}
+            WANDB_API_KEY: ${oc.env:WANDB_API_KEY}

@@ -1,6 +1,7 @@
 import math
-import torch
 from typing import Dict
+
+import torch
 from torch.distributions import constraints
 
 
@@ -24,7 +25,7 @@ class MeanFreePrior(torch.distributions.Distribution):
     arg_constraints: Dict[str, constraints.Constraint] = {}
 
     def __init__(self, n_particles, spatial_dim, scale, device="cpu"):
-        super(MeanFreePrior, self).__init__()
+        super().__init__()
         self.n_particles = n_particles
         self.spatial_dim = spatial_dim
         self.dim = n_particles * spatial_dim

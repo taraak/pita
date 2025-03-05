@@ -6,7 +6,6 @@ import PIL
 import torch
 from hydra.utils import get_original_cwd
 from lightning.pytorch.loggers import WandbLogger
-
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.replay_buffer import ReplayBuffer
 from src.utils.data_utils import remove_mean
@@ -56,18 +55,14 @@ class LennardJonesPotential:
     def _energy(self, x: torch.Tensor):
         if isinstance(self.rm, float):
             r = torch.ones(self._n_particles, device=self.device) * self.rm
-        senders, receivers = self._get_senders_and_receivers_fully_connected(
-            self._n_particles
-        )
+        senders, receivers = self._get_senders_and_receivers_fully_connected(self._n_particles)
         vectors = x[senders] - x[receivers]
         d = torch.linalg.norm(vectors, ord=2, dim=-1)
         term_inside_sum = (r[receivers] / d) ** 12 - 2 * (r[receivers] / d) ** 6
         energy = self.eps / (2 * self.tau) * term_inside_sum.sum()
 
         centre_of_mass = x.mean(dim=0)
-        harmonic_potential = (
-            self.harmonic_potential_coef * (x - centre_of_mass).pow(2).sum()
-        )
+        harmonic_potential = self.harmonic_potential_coef * (x - centre_of_mass).pow(2).sum()
         return energy + harmonic_potential
 
     def _log_prob(self, x: torch.Tensor):
@@ -160,8 +155,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         distances = x[:, None, :, :] - x[:, :, None, :]
         distances = distances[
             :,
-            torch.triu(torch.ones((self.n_particles, self.n_particles)), diagonal=1)
-            == 1,
+            torch.triu(torch.ones((self.n_particles, self.n_particles)), diagonal=1) == 1,
         ]
         dist = torch.linalg.norm(distances, dim=-1)
         return dist
@@ -193,9 +187,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
             if unprioritized_buffer_samples is not None:
                 cfm_samples_fig = self.get_dataset_fig(cfm_samples)
 
-                wandb_logger.log_image(
-                    f"{prefix}cfm_generated_samples", [cfm_samples_fig]
-                )
+                wandb_logger.log_image(f"{prefix}cfm_generated_samples", [cfm_samples_fig])
 
         self.curr_epoch += 1
 
@@ -272,6 +264,4 @@ class LennardJonesEnergy(BaseEnergyFunction):
         # plt.show()
 
         fig.canvas.draw()
-        return PIL.Image.frombytes(
-            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-        )
+        return PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
