@@ -9,7 +9,7 @@
 
 ## Description
 
-This is the repository for the temperature annealing experiment of [Feynman-Kac Correctors in Diffusion: Annealing, Guidance, and Product of Experts](https://arxiv.org/pdf/2503.02819).
+This is the repository for the **temperature annealing** experiment of [Feynman-Kac Correctors in Diffusion: Annealing, Guidance, and Product of Experts](https://arxiv.org/pdf/2503.02819).
 It is built on the repository of [Iterated Denoising Energy Matching for Sampling from Boltzmann Densities](https://github.com/jarridrb/DEM/tree/main)
 
 For this experiment, we propose a weighted simulation scheme based on the celebrated Feynman-Kac formula for amortized sampling of Boltzmann distributions using iDEM, 
