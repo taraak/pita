@@ -10,9 +10,9 @@
 ## Description
 
 This is the repository for the temperature annealing experiment of [Feynman-Kac Correctors in Diffusion: Annealing, Guidance, and Product of Experts](https://arxiv.org/pdf/2503.02819).
-It is built on the repository of ....
+It is built on the repository of [Iterated Denoising Energy Matching for Sampling from Boltzmann Densities](https://github.com/jarridrb/DEM/tree/main)
 
-For this experiment we propose a weighted simulation scheme based on the celebrated Feynman-Kac formula for amortized sampling of Boltzmann distributions using iDEM, 
+For this experiment, we propose a weighted simulation scheme based on the celebrated Feynman-Kac formula for amortized sampling of Boltzmann distributions using iDEM, 
 via inference-time temperature annealing.
 
 We experiment on a 2D GMM task, using the ground truth score in [this notebook](https://github.com/necludov/feynman-kac-diffusion/blob/boltzmann_sampling_public/runner/notebooks/gmm_temp_annealed_birth_death.ipynb) as well as the LJ13 -- the 13-particle Lennard-Jones potential (39 dimensions total).
@@ -41,7 +41,8 @@ Note that the hydra configs interpolate using some environment variables set in 
 an example `.env.example` file for convenience. Note that to use wandb we require that you set WANDB_ENTITY in your
 `.env` file.
 
-We have also provided a checkpoint for the pre-trained DEM model tranined at temperature 2.0 and used in the experiments in the paper [here](https://github.com/necludov/feynman-kac-diffusion/blob/boltzmann_sampling_public/runner/pretrained_dem_ckpts/epoch_179.ckpt)
+We have also provided a checkpoint for the pre-trained DEM model tranined at temperature 2.0 and used in the experiments in the paper [here](https://github.com/necludov/feynman-kac-diffusion/blob/boltzmann_sampling_public/runner/pretrained_dem_ckpts/epoch_179.ckpt).
+
 To run an experiment, e.g., LJ-13 inference, with temperature annealed to 1.5 you can run on the command line
 
 ```bash
