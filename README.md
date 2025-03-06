@@ -25,8 +25,8 @@ First, we install dependencies
 
 ```bash
 # clone project
-git clone git@github.com:jarridrb/DEM.git
-cd DEM
+git clone git@github.com:necludov/feynman-kac-diffusion.git
+cd runner
 
 # create micromamba environment
 micromamba create -f environment.yaml
