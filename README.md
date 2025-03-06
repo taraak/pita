@@ -46,7 +46,7 @@ We have also provided a checkpoint for the pre-trained DEM model tranined at tem
 To run an experiment, e.g., LJ-13 inference, with temperature annealed to 1.5 you can run on the command line
 
 ```bash
-python runner/src/eval.py ckpt_path=runner/pretrained_dem_ckpts/epoch_179.ckpt experiment=lj13_tempdem_1.5
+python runner/src/eval.py model=tempdem ckpt_path=runner/pretrained_dem_ckpts/epoch_179.ckpt experiment=lj13_tempdem_1.5
 ```
 
 We include [a config](https://github.com/necludov/feynman-kac-diffusion/blob/boltzmann_sampling_public/runner/configs/experiment/lj13_tempdem_1.5.yaml) for annealing to temperature 1.5 as an example.
