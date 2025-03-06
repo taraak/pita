@@ -49,10 +49,13 @@ To run an experiment, e.g., LJ-13 inference, with temperature annealed to 1.5 yo
 python runner/src/eval.py ckpt_path=runner/pretrained_dem_ckpts/epoch_179.ckpt experiment=lj13_tempdem_1.5
 ```
 
-We include configs for annealing to temperature 1.5 as an exmaple (point to config). The Feynman-Kac Correctors can be turned on and off by changing the **resampling_interval** parameter 
-(-1 indicates no resampling, 1 indicates resampling at every step which is what is used for the results in the paper). For the **tempered noise** and **target score SDEs** the **scale_diffusion** parameter has
-to be set to 1 and -1 respectively. Finally **start_resampling_step** indicates at what integration step to start using FKC. This value is adjusted based on the noise schedule and the variance of 
-the weights. We recommend a values between 10 to 30 for temperatures we tried. 
+We include configs for annealing to temperature 1.5 as an example (point to config). 
+- the Feynman-Kac Correctors can be turned on and off by changing the **resampling_interval** parameter 
+(-1 indicates no resampling, 1 indicates resampling at every step which is what is used for the results in the paper).
+- for the **tempered noise** and **target score SDEs** the **scale_diffusion** parameter has
+to be set to 1 and -1 respectively.
+- the **start_resampling_step** indicates at what integration step to start using FKC. This value is adjusted based on the noise schedule and the variance of 
+the weights. We recommend values between 10 to 30 for the temperatures we tried. 
 
 ## Citations
 
