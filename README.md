@@ -32,9 +32,6 @@ cd temperature_annealing
 micromamba create -f environment.yaml
 micromamba activate dem
 
-# install requirements
-pip install -r requirements.txt
-
 ```
 
 Note that the hydra configs interpolate using some environment variables set in the file `.env`. We provide
