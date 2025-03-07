@@ -30,7 +30,7 @@ cd temperature_annealing
 
 # create micromamba environment
 micromamba create -f environment.yaml
-micromamba activate dem
+micromamba activate fkc_temp_annealing
 
 ```
 
