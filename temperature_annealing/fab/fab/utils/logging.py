@@ -1,10 +1,11 @@
 import abc
-from typing import Any, Dict, List, Mapping, Union
+import pathlib
 import pickle
-import wandb
+from typing import Any, Dict, List, Mapping, Union
+
 import numpy as np
 import pandas as pd
-import pathlib
+import wandb
 
 LoggingData = Mapping[str, Any]
 
@@ -22,12 +23,13 @@ class Logger(abc.ABC):
         """Closes the logger, not expecting any further write."""
 
 
-
 class ListLogger(Logger):
     """Manually save the data to the class in a dict. Currently only supports scalar history
     inputs."""
-    def __init__(self, save: bool = True, save_path: str = "/tmp/logging_hist.pkl",
-                 save_period: int = 100):
+
+    def __init__(
+        self, save: bool = True, save_path: str = "/tmp/logging_hist.pkl", save_period: int = 100
+    ):
         self.save = save
         self.save_path = save_path
         if save:
@@ -61,7 +63,7 @@ class ListLogger(Logger):
 
         self.iter += 1
         if self.save and (self.iter + 1) % self.save_period == 0:
-            pickle.dump(self.history, open(self.save_path, "wb")) # overwrite with latest version
+            pickle.dump(self.history, open(self.save_path, "wb"))  # overwrite with latest version
 
     def close(self) -> None:
         if self.save:
@@ -82,10 +84,9 @@ class WandbLogger(Logger):
 
 
 class PandasLogger(Logger):
-    def __init__(self,
-                 save: bool = True,
-                 save_path: str ="/logging_history.csv",
-                 save_period: int = 100):
+    def __init__(
+        self, save: bool = True, save_path: str = "/logging_history.csv", save_period: int = 100
+    ):
         self.save_path = save_path
         self.save = save
         self.save_period = save_period
@@ -100,5 +101,4 @@ class PandasLogger(Logger):
 
     def close(self) -> None:
         if self.save:
-            self.dataframe.to_csv(open(self.save_path, "w")) # overwrite with latest version
-
+            self.dataframe.to_csv(open(self.save_path, "w"))  # overwrite with latest version

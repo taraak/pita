@@ -1,55 +1,54 @@
-from typing import Mapping, Any, Callable
+from typing import Any, Callable, Mapping
+
 import torch
 
+from fab.sampling_methods.base import (
+    Point,
+    create_point,
+    get_grad_intermediate_log_prob,
+    get_intermediate_log_prob,
+)
 from fab.types_ import LogProbFunc
-from fab.sampling_methods.base import Point, get_intermediate_log_prob, \
-    get_grad_intermediate_log_prob, create_point
-
 
 TransitionTargetLogProbFn = Callable[[Point], torch.Tensor]
 
 
 class TransitionOperator(torch.nn.Module):
-    def __init__(self,
-                 n_ais_intermediate_distributions: int,
-                 dim: int,
-                 base_log_prob: LogProbFunc,
-                 target_log_prob: LogProbFunc,
-                 p_target: bool = True,
-                 alpha: float = None,
-                 ):
+    def __init__(
+        self,
+        n_ais_intermediate_distributions: int,
+        dim: int,
+        base_log_prob: LogProbFunc,
+        target_log_prob: LogProbFunc,
+        p_target: bool = True,
+        alpha: float = None,
+    ):
         self.dim = dim
         self.target_log_prob = target_log_prob
         self.base_log_prob = base_log_prob
         self.alpha = alpha
         self.n_ais_intermediate_distributions = n_ais_intermediate_distributions
         self.p_target = p_target
-        super(TransitionOperator, self).__init__()
-
+        super().__init__()
 
     def create_new_point(self, x: torch.Tensor) -> Point:
         """Create a new instance of a `Point` given an x (sample). See the `Point` definition
-        for further details. """
-        return create_point(x, self.base_log_prob, self.target_log_prob,
-                            with_grad=self.uses_grad_info)
-
+        for further details."""
+        return create_point(
+            x, self.base_log_prob, self.target_log_prob, with_grad=self.uses_grad_info
+        )
 
     def intermediate_target_log_prob(self, point: Point, beta: float) -> torch.Tensor:
         with torch.no_grad():
             # We do not backprop through MCMC/AIS. So do not include these gradients.
-            return get_intermediate_log_prob(point, beta,
-                                             alpha=self.alpha,
-                                             p_target=self.p_target)
+            return get_intermediate_log_prob(point, beta, alpha=self.alpha, p_target=self.p_target)
 
     def grad_intermediate_target_log_prob(self, point: Point, beta: float) -> torch.Tensor:
         with torch.no_grad():
             # We do not backprop through MCMC/AIS. So do not include second order grads through the
             # intermediate log prob grad.
             return get_grad_intermediate_log_prob(
-                point,
-                beta,
-                alpha=self.alpha,
-                p_target=self.p_target
+                point, beta, alpha=self.alpha, p_target=self.p_target
             )
 
     @property
@@ -61,7 +60,6 @@ class TransitionOperator(torch.nn.Module):
     def get_logging_info(self) -> Mapping[str, Any]:
         """Returns a dictionary of relevant information for logging."""
         raise NotImplementedError
-
 
     def transition(self, point: Point, i: int, beta: float) -> Point:
         """

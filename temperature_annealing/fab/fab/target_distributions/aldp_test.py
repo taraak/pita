@@ -1,33 +1,35 @@
-import torch
-import numpy as np
+import tempfile
 
+import mdtraj
+import numpy as np
+import torch
+from openmmtools.testsystems import AlanineDipeptideVacuum
 from simtk import openmm as mm
 from simtk import unit
 from simtk.openmm import app
-from openmmtools.testsystems import AlanineDipeptideVacuum
-import mdtraj
-import tempfile
 
 from fab.target_distributions.aldp import AldpBoltzmann
-
 
 
 def test_aldp():
     # Generate a trajectory for coordinate transform
     temperature = 1000
     testsystem = AlanineDipeptideVacuum(constraints=None)
-    vacuum_sim = app.Simulation(testsystem.topology,
-                                testsystem.system,
-                                mm.LangevinIntegrator(temperature * unit.kelvin, 1.0 / unit.picosecond,
-                                                      1.0 * unit.femtosecond),
-                                platform=mm.Platform.getPlatformByName('CPU'))
+    vacuum_sim = app.Simulation(
+        testsystem.topology,
+        testsystem.system,
+        mm.LangevinIntegrator(
+            temperature * unit.kelvin, 1.0 / unit.picosecond, 1.0 * unit.femtosecond
+        ),
+        platform=mm.Platform.getPlatformByName("CPU"),
+    )
     vacuum_sim.context.setPositions(testsystem.positions)
     vacuum_sim.minimizeEnergy()
     tmp_dir = tempfile.gettempdir()
-    data_path = tmp_dir + '/aldp.h5'
+    data_path = tmp_dir + "/aldp.h5"
     vacuum_sim.reporters.append(mdtraj.reporters.HDF5Reporter(data_path, 10))
     vacuum_sim.step(10000)
-    del(vacuum_sim)
+    del vacuum_sim
 
     # Create distribution with data_path specified
     aldp_boltz = AldpBoltzmann(data_path)
@@ -85,6 +87,3 @@ def test_aldp():
     print(logp)
     print("Log prob Boltzmann distribution")
     print(logp + log_det)
-
-    
-

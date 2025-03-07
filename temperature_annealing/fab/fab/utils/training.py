@@ -1,8 +1,8 @@
 import os
 
-import yaml
 import numpy as np
 import torch
+import yaml
 
 
 def load_config(path):
@@ -12,11 +12,11 @@ def load_config(path):
     :return: Dict with parameter
     """
 
-    with open(path, 'r') as stream:
+    with open(path) as stream:
         return yaml.load(stream, yaml.FullLoader)
 
 
-def get_latest_checkpoint(dir_path, key=''):
+def get_latest_checkpoint(dir_path, key=""):
     """
     Get path to latest checkpoint in directory
     :param dir_path: Path to directory to search for checkpoints
@@ -25,8 +25,11 @@ def get_latest_checkpoint(dir_path, key=''):
     """
     if not os.path.exists(dir_path):
         return None
-    checkpoints = [os.path.join(dir_path, f) for f in os.listdir(dir_path) if
-                   os.path.isfile(os.path.join(dir_path, f)) and key in f and ".pt" in f]
+    checkpoints = [
+        os.path.join(dir_path, f)
+        for f in os.listdir(dir_path)
+        if os.path.isfile(os.path.join(dir_path, f)) and key in f and ".pt" in f
+    ]
     if len(checkpoints) == 0:
         return None
     checkpoints.sort()
@@ -36,6 +39,7 @@ def get_latest_checkpoint(dir_path, key=''):
 class DatasetIterator:
     """Create an iterator that returns batches of data. This is useful for iterating through
     a dataset and performing multiple forward passes without overloading the GPU."""
+
     def __init__(self, batch_size: int, dataset: torch.Tensor, device):
         self.batch_size = batch_size
         self.n_splits = int(np.ceil(dataset.shape[0] / batch_size))  # roundup

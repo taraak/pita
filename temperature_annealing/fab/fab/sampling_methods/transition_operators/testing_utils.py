@@ -1,18 +1,17 @@
 from typing import NamedTuple
 
-import torch
 import numpy as np
-
+import torch
 
 torch.autograd.set_detect_anomaly(True)
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from fab.target_distributions.gmm import GMM
-from fab.sampling_methods.transition_operators import TransitionOperator
-from fab.utils.plotting import plot_history
-from fab.utils.logging import ListLogger
 from fab.sampling_methods.base import create_point
+from fab.sampling_methods.transition_operators import TransitionOperator
+from fab.target_distributions.gmm import GMM
+from fab.utils.logging import ListLogger
+from fab.utils.plotting import plot_history
 
 
 class TransitionOperatorTestConfig(NamedTuple):
@@ -27,35 +26,36 @@ class TransitionOperatorTestConfig(NamedTuple):
     base_scale = base_scale * target_scale
     target = GMM(dim=dim, n_mixes=3, loc_scaling=target_scale)
     learnt_sampler = torch.distributions.MultivariateNormal(
-        loc=torch.zeros(dim), scale_tril=base_scale * torch.eye(dim))
+        loc=torch.zeros(dim), scale_tril=base_scale * torch.eye(dim)
+    )
 
 
 def test_transition_operator(
-        transition_operator: TransitionOperator,
-        config: TransitionOperatorTestConfig = TransitionOperatorTestConfig(),
-        n_iterations: int = 20,
-        n_samples: int = 1000,
-        ) -> None:
-
+    transition_operator: TransitionOperator,
+    config: TransitionOperatorTestConfig = TransitionOperatorTestConfig(),
+    n_iterations: int = 20,
+    n_samples: int = 1000,
+) -> None:
     logger = ListLogger()
     torch.manual_seed(config.seed)
     # instantiate base and target distribution
     n_intermediate_plots = 4  # plots of samples over different HMC iterations
     n_plots = 2 + n_intermediate_plots
-    fig, axs = plt.subplots(n_plots, figsize=(3, n_plots*3), sharex=True, sharey=True)
+    fig, axs = plt.subplots(n_plots, figsize=(3, n_plots * 3), sharex=True, sharey=True)
     plot_number_iterator = iter(range(n_plots))
-    plot_iter = np.linspace(0, n_iterations-1, n_intermediate_plots, dtype="int")
+    plot_iter = np.linspace(0, n_iterations - 1, n_intermediate_plots, dtype="int")
     for i in tqdm(range(n_iterations)):
-        x = config.learnt_sampler.sample((n_samples, ))  # initialise the chain
-        point = create_point(x=x,
-                             log_q_fn=config.learnt_sampler.log_prob,
-                             log_p_fn=config.target.log_prob,
-                             with_grad=transition_operator.uses_grad_info
-                             )
+        x = config.learnt_sampler.sample((n_samples,))  # initialise the chain
+        point = create_point(
+            x=x,
+            log_q_fn=config.learnt_sampler.log_prob,
+            log_p_fn=config.target.log_prob,
+            with_grad=transition_operator.uses_grad_info,
+        )
         for j in range(config.n_ais_intermediate_distributions):
             # here we just aim for the target distribution rather than interpolating between,
             # as we are just testing the transition operator, and not AIS.
-            point = transition_operator.transition(point, j + 1, config.beta_space[j+1])
+            point = transition_operator.transition(point, j + 1, config.beta_space[j + 1])
         transition_operator_info = transition_operator.get_logging_info()
         logger.write(transition_operator_info)
         if i in plot_iter:
@@ -79,4 +79,3 @@ def test_transition_operator(
 
     plot_history(logger.history)
     plt.show()
-

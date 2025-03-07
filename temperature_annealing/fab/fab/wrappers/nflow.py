@@ -1,4 +1,3 @@
-
 from typing import Tuple
 
 import torch
@@ -6,12 +5,13 @@ from nflows import flows
 
 from fab.trainable_distributions import TrainableDistribution
 
+
 class WrappedNFlowsModel(TrainableDistribution):
     """Wraps the distribution from nflows library
     (https://github.com/bayesiains/nflows) to work in this fab library."""
 
     def __init__(self, normalising_flow: flows.Flow):
-        super(WrappedNFlowsModel, self).__init__()
+        super().__init__()
         self._nf_model = normalising_flow
 
     def sample_and_log_prob(self, shape: Tuple[int, ...]) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -27,5 +27,4 @@ class WrappedNFlowsModel(TrainableDistribution):
 
     @property
     def event_shape(self) -> Tuple[int, ...]:
-
         return self._nf_model.sample(1).shape[1:]  # kill first dimension which is the batch.

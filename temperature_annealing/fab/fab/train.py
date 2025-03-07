@@ -1,28 +1,31 @@
-from typing import Callable, Any, Optional, List
+import os
+import pathlib
+from time import time
+from typing import Any, Callable, List, Optional
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch.optim.optimizer
 from tqdm import tqdm
-import numpy as np
-import matplotlib.pyplot as plt
 
-from fab.utils.logging import Logger, ListLogger
 from fab.types_ import Model
-import pathlib
-import os
-from time import time
+from fab.utils.logging import ListLogger, Logger
 
 lr_scheduler = Any  # a learning rate schedular from torch.optim.lr_scheduler
 Plotter = Callable[[Model], List[plt.Figure]]
 
+
 class Trainer:
-    def __init__(self,
-                 model: Model,
-                 optimizer: torch.optim.Optimizer,
-                 optim_schedular: Optional[lr_scheduler] = None,
-                 logger: Logger = ListLogger(),
-                 plot: Optional[Plotter] = None,
-                 max_gradient_norm: Optional[float] = 5.0,
-                 save_path: str = ""):
+    def __init__(
+        self,
+        model: Model,
+        optimizer: torch.optim.Optimizer,
+        optim_schedular: Optional[lr_scheduler] = None,
+        logger: Logger = ListLogger(),
+        plot: Optional[Plotter] = None,
+        max_gradient_norm: Optional[float] = 5.0,
+        save_path: str = "",
+    ):
         self.model = model
         self.optimizer = optimizer
         self.optim_schedular = optim_schedular
@@ -38,11 +41,12 @@ class Trainer:
         checkpoint_path = os.path.join(self.checkpoints_dir, f"iter_{i}/")
         pathlib.Path(checkpoint_path).mkdir(exist_ok=False)
         self.model.save(os.path.join(checkpoint_path, "model.pt"))
-        torch.save(self.optimizer.state_dict(),
-                   os.path.join(checkpoint_path, 'optimizer.pt'))
+        torch.save(self.optimizer.state_dict(), os.path.join(checkpoint_path, "optimizer.pt"))
         if self.optim_schedular:
-            torch.save(self.optim_schedular.state_dict(),
-                       os.path.join(self.checkpoints_dir, 'scheduler.pt'))
+            torch.save(
+                self.optim_schedular.state_dict(),
+                os.path.join(self.checkpoints_dir, "scheduler.pt"),
+            )
 
     def make_and_save_plots(self, i, save):
         figures = self.plot(self.model)
@@ -54,23 +58,25 @@ class Trainer:
             plt.close(figure)
 
     def perform_eval(self, i, eval_batch_size, batch_size):
-        eval_info = self.model.get_eval_info(outer_batch_size=eval_batch_size,
-                                             inner_batch_size=batch_size)
+        eval_info = self.model.get_eval_info(
+            outer_batch_size=eval_batch_size, inner_batch_size=batch_size
+        )
         eval_info.update(step=i)
         self.logger.write(eval_info)
 
-
-    def run(self,
-            n_iterations: int,
-            batch_size: int,
-            eval_batch_size: Optional[int] = None,
-            n_eval: Optional[int] = None,
-            n_plot: Optional[int] = None,
-            n_checkpoints: Optional[int] = None,
-            save: bool = True,
-            tlimit: Optional[float] = None,
-            start_time: Optional[float] = None,
-            start_iter: Optional[int] = 0) -> None:
+    def run(
+        self,
+        n_iterations: int,
+        batch_size: int,
+        eval_batch_size: Optional[int] = None,
+        n_eval: Optional[int] = None,
+        n_plot: Optional[int] = None,
+        n_checkpoints: Optional[int] = None,
+        save: bool = True,
+        tlimit: Optional[float] = None,
+        start_time: Optional[float] = None,
+        start_iter: Optional[int] = 0,
+    ) -> None:
         if save:
             pathlib.Path(self.plots_dir).mkdir(exist_ok=True)
             pathlib.Path(self.checkpoints_dir).mkdir(exist_ok=True)
@@ -82,8 +88,9 @@ class Trainer:
         if n_plot is not None:
             plot_iter = list(np.linspace(1, n_iterations, n_plot, dtype="int"))
         if tlimit is not None:
-            assert n_checkpoints is not None, "Time limited specified but not checkpoints are " \
-                                          "being saved."
+            assert n_checkpoints is not None, (
+                "Time limited specified but not checkpoints are " "being saved."
+            )
         if start_time is not None:
             start_time = time()
 
@@ -101,8 +108,9 @@ class Trainer:
             loss = self.model.loss(batch_size)
             if not torch.isnan(loss) and not torch.isinf(loss):
                 loss.backward()
-                grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(),
-                                                           self.max_gradient_norm)
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.max_gradient_norm
+                )
                 if torch.isfinite(grad_norm):
                     self.optimizer.step()
                 else:
@@ -114,13 +122,14 @@ class Trainer:
 
             self.optimizer.zero_grad()
             info = self.model.get_iter_info()
-            info.update(loss=loss.cpu().detach().item(),
-                        step=i)
+            info.update(loss=loss.cpu().detach().item(), step=i)
             info.update(grad_norm=grad_norm.cpu().detach().item())
             self.logger.write(info)
             if "ess_ais" in info.keys():
-                pbar.set_description(f"loss: {loss.cpu().detach().item()}, ess base: {info['ess_base']},"
-                                     f"ess ais: {info['ess_ais']}")
+                pbar.set_description(
+                    f"loss: {loss.cpu().detach().item()}, ess base: {info['ess_base']},"
+                    f"ess ais: {info['ess_ais']}"
+                )
             else:
                 pbar.set_description(f"loss: {loss.cpu().detach().item()}")
             if n_eval is not None:
@@ -135,20 +144,21 @@ class Trainer:
                 if i in checkpoint_iter:
                     self.save_checkpoint(i)
 
-
             max_it_time = max(max_it_time, time() - it_start_time)
 
             # End job if necessary
             if tlimit is not None:
                 time_past = (time() - start_time) / 3600
-                if (time_past + max_it_time/3600) > tlimit:
+                if (time_past + max_it_time / 3600) > tlimit:
                     # self.perform_eval(i, eval_batch_size, batch_size)
                     # self.make_and_save_plots(i, save)
                     if i not in checkpoint_iter:
                         self.save_checkpoint(i)
                     self.logger.close()
-                    print(f"\nEnding training at iteration {i}, after training for {time_past:.2f} "
-                          f"hours as timelimit {tlimit:.2f} hours has been reached.\n")
+                    print(
+                        f"\nEnding training at iteration {i}, after training for {time_past:.2f} "
+                        f"hours as timelimit {tlimit:.2f} hours has been reached.\n"
+                    )
                     return
 
         if tlimit is None:

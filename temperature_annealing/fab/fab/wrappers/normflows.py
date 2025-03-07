@@ -5,12 +5,13 @@ from normflows import NormalizingFlow
 
 from fab.trainable_distributions import TrainableDistribution
 
+
 class WrappedNormFlowModel(TrainableDistribution):
     """Wraps the distribution from normflows library
     (https://github.com/VincentStimper/normalizing-flows) to work in this fab library."""
 
     def __init__(self, normalising_flow: NormalizingFlow):
-        super(WrappedNormFlowModel, self).__init__()
+        super().__init__()
         self._nf_model = normalising_flow
 
     def sample_and_log_prob(self, shape: Tuple[int, ...]) -> Tuple[torch.Tensor, torch.Tensor]:

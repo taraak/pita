@@ -1,27 +1,44 @@
-from typing import Optional, Dict
-from fab.types_ import LogProbFunc
 from math import sqrt
+from typing import Dict, Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
+
 from fab.target_distributions.base import TargetDistribution
-from fab.utils.numerical import MC_estimate_true_expectation, quadratic_function, \
-    importance_weighted_expectation, effective_sample_size_over_p, setup_quadratic_function
+from fab.types_ import LogProbFunc
+from fab.utils.numerical import (
+    MC_estimate_true_expectation,
+    effective_sample_size_over_p,
+    importance_weighted_expectation,
+    quadratic_function,
+    setup_quadratic_function,
+)
 
 
 class GMM(nn.Module, TargetDistribution):
-    def __init__(self, dim, n_mixes, loc_scaling, log_var_scaling=0.1, seed=0,
-                 n_test_set_samples=1000, use_gpu=True,
-                 true_expectation_estimation_n_samples=int(1e7),
-                 mean=None, scale=None, cat_probs=None):
-        super(GMM, self).__init__()
+    def __init__(
+        self,
+        dim,
+        n_mixes,
+        loc_scaling,
+        log_var_scaling=0.1,
+        seed=0,
+        n_test_set_samples=1000,
+        use_gpu=True,
+        true_expectation_estimation_n_samples=int(1e7),
+        mean=None,
+        scale=None,
+        cat_probs=None,
+    ):
+        super().__init__()
         self.seed = seed
         self.n_mixes = n_mixes
         self.dim = dim
         self.n_test_set_samples = n_test_set_samples
 
         if mean is None:
-            mean = (torch.rand((n_mixes, dim)) - 0.5)*2 * loc_scaling
+            mean = (torch.rand((n_mixes, dim)) - 0.5) * 2 * loc_scaling
         if scale is None:
             log_var = torch.ones((n_mixes, dim)) * log_var_scaling
             self.register_buffer("scale_trils", torch.diag_embed(f.softplus(log_var)))
@@ -30,7 +47,7 @@ class GMM(nn.Module, TargetDistribution):
 
         if cat_probs is None:
             self.register_buffer("cat_probs", torch.ones(n_mixes))
-        else: 
+        else:
             self.register_buffer("cat_probs", cat_probs)
         self.register_buffer("locs", mean)
         self.expectation_function = quadratic_function
@@ -54,18 +71,18 @@ class GMM(nn.Module, TargetDistribution):
     @property
     def distribution(self):
         mix = torch.distributions.Categorical(logits=self.cat_probs)
-        com = torch.distributions.MultivariateNormal(self.locs,
-                                                     scale_tril=self.scale_trils,
-                                                     validate_args=False)
-        return torch.distributions.MixtureSameFamily(mixture_distribution=mix,
-                                                     component_distribution=com,
-                                                     validate_args=False)
-    
+        com = torch.distributions.MultivariateNormal(
+            self.locs, scale_tril=self.scale_trils, validate_args=False
+        )
+        return torch.distributions.MixtureSameFamily(
+            mixture_distribution=mix, component_distribution=com, validate_args=False
+        )
+
     def convolve(self, var_t, t, var_exploding=True, mean_coeff=None):
         """Convolve the current distribution with a Gaussian with covariance sigma_t."""
         # this is actually standard deviation
         var_t = var_t.to(self.device)
-        var_trils = torch.ones((self.n_mixes, self.dim)).to(self.device) * var_t 
+        var_trils = torch.ones((self.n_mixes, self.dim)).to(self.device) * var_t
         if var_exploding:
             # exploding path
             self.scale_trils = torch.sqrt(self.scale_trils**2 + torch.diag_embed(var_trils))
@@ -75,14 +92,14 @@ class GMM(nn.Module, TargetDistribution):
             self.scale_trils = torch.sqrt(self.scale_trils**2 + torch.diag_embed(var_trils))
             # self.scale_trils = torch.sqrt(self.scale_trils **2 * (1 - var_t) + torch.diag_embed(var_trils))
             # self.scale_trils * torch.sqrt(1 - t) + torch.diag_embed(var_trils)
-    
+
     def reset(self):
         self.locs = self.original_locs.clone()
         self.scale_trils = self.original_scale_trils.clone()
 
     @property
     def test_set(self) -> torch.Tensor:
-        return self.sample((self.n_test_set_samples, ))
+        return self.sample((self.n_test_set_samples,))
 
     def log_prob(self, x: torch.Tensor):
         log_prob = self.distribution.log_prob(x)
@@ -99,15 +116,18 @@ class GMM(nn.Module, TargetDistribution):
         return self.distribution.sample(shape)
 
     def evaluate_expectation(self, samples, log_w):
-        expectation = importance_weighted_expectation(self.expectation_function,
-                                                         samples, log_w)
+        expectation = importance_weighted_expectation(self.expectation_function, samples, log_w)
         true_expectation = self.true_expectation.to(expectation.device)
         bias_normed = (expectation - true_expectation) / true_expectation
         return bias_normed
 
-    def performance_metrics(self, samples: torch.Tensor, log_w: torch.Tensor,
-                            log_q_fn: Optional[LogProbFunc] = None,
-                            batch_size: Optional[int] = None) -> Dict:
+    def performance_metrics(
+        self,
+        samples: torch.Tensor,
+        log_w: torch.Tensor,
+        log_q_fn: Optional[LogProbFunc] = None,
+        batch_size: Optional[int] = None,
+    ) -> Dict:
         bias_normed = self.evaluate_expectation(samples, log_w)
         bias_no_correction = self.evaluate_expectation(samples, torch.ones_like(log_w))
         if log_q_fn:
@@ -121,37 +141,44 @@ class GMM(nn.Module, TargetDistribution):
                 "bias_normed": torch.abs(bias_normed).cpu().item(),
                 "bias_no_correction": torch.abs(bias_no_correction).cpu().item(),
                 "ess_over_p": ess_over_p.detach().cpu().item(),
-                "kl_forward": kl_forward.detach().cpu().item()
-                            }
+                "kl_forward": kl_forward.detach().cpu().item(),
+            }
         else:
-            summary_dict = {"bias_normed": bias_normed.cpu().item(),
-                            "bias_no_correction": torch.abs(bias_no_correction).cpu().item()}
+            summary_dict = {
+                "bias_normed": bias_normed.cpu().item(),
+                "bias_no_correction": torch.abs(bias_no_correction).cpu().item(),
+            }
         return summary_dict
 
 
 def save_gmm_as_numpy(target: GMM):
     """Save params of GMM problem."""
     import pickle
+
     x_shift, A, b = setup_quadratic_function(torch.ones(target.dim), seed=0)
-    params = {"mean": target.locs.numpy(),
-              "scale_tril": target.scale_trils.numpy(),
-              "true_expectation": target.true_expectation.numpy(),
-              "expectation_x_shift": x_shift.numpy(),
-              "expectation_A": A.numpy(),
-              "expectation_b": b.numpy()
-              }
+    params = {
+        "mean": target.locs.numpy(),
+        "scale_tril": target.scale_trils.numpy(),
+        "true_expectation": target.true_expectation.numpy(),
+        "expectation_x_shift": x_shift.numpy(),
+        "expectation_A": A.numpy(),
+        "expectation_b": b.numpy(),
+    }
     with open("gmm_problem.pkl", "wb") as f:
         pickle.dump(params, f)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import matplotlib.pyplot as plt
+
     from fab.utils.plotting import plot_contours
+
     torch.manual_seed(0)
     loc_scaling = 40
     target = GMM(dim=2, n_mixes=40, loc_scaling=40.0)
-    save_gmm_as_numpy(target) # Used for evaluating CRAFT
-    plotting_bounds = (-loc_scaling * 1.4, loc_scaling* 1.4)
-    plot_contours(target.log_prob, bounds=plotting_bounds, n_contour_levels=50,
-                  grid_width_n_points=200)
+    save_gmm_as_numpy(target)  # Used for evaluating CRAFT
+    plotting_bounds = (-loc_scaling * 1.4, loc_scaling * 1.4)
+    plot_contours(
+        target.log_prob, bounds=plotting_bounds, n_contour_levels=50, grid_width_n_points=200
+    )
     plt.show()

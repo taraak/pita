@@ -1,6 +1,7 @@
 from typing import Tuple
 
 import torch
+
 from fab.types_ import Distribution
 
 

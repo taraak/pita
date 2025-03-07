@@ -12,7 +12,7 @@
 This is the repository for the **temperature annealing** experiment of [Feynman-Kac Correctors in Diffusion: Annealing, Guidance, and Product of Experts](https://arxiv.org/pdf/2503.02819).
 It is built on the repository of [Iterated Denoising Energy Matching for Sampling from Boltzmann Densities](https://github.com/jarridrb/DEM/tree/main)
 
-For this experiment, we propose a weighted simulation scheme based on the celebrated Feynman-Kac formula for amortized sampling of Boltzmann distributions using iDEM, 
+For this experiment, we propose a weighted simulation scheme based on the celebrated Feynman-Kac formula for amortized sampling of Boltzmann distributions using iDEM,
 via inference-time temperature annealing.
 
 We experiment on a 2D GMM task, using the ground truth score in [this notebook](https://github.com/necludov/feynman-kac-diffusion/blob/boltzmann_sampling_public/runner/notebooks/gmm_temp_annealed_birth_death.ipynb) as well as the LJ13 -- the 13-particle Lennard-Jones potential (39 dimensions total).
@@ -47,12 +47,12 @@ python src/eval.py model=tempdem ckpt_path=pretrained_dem_ckpts/epoch_179.ckpt e
 ```
 
 We include [a config](https://github.com/necludov/feynman-kac-diffusion/blob/boltzmann_sampling_public/runner/configs/experiment/lj13_tempdem_1.5.yaml) for annealing to temperature 1.5 as an example.
-- the Feynman-Kac Correctors can be turned on and off by changing the **resampling_interval** parameter 
+- the Feynman-Kac Correctors can be turned on and off by changing the **resampling_interval** parameter
 (-1 indicates no resampling, 1 indicates resampling at every step which is what is used for the results in the paper).
 - for the **tempered noise** and **target score SDEs** the **scale_diffusion** parameter has
 to be set to 1 and -1 respectively.
-- the **start_resampling_step** indicates at what integration step to start using FKC. This value is adjusted based on the noise schedule and the variance of 
-the weights. We recommend values between 10 to 30 for the temperatures we tried. 
+- the **start_resampling_step** indicates at what integration step to start using FKC. This value is adjusted based on the noise schedule and the variance of
+the weights. We recommend values between 10 to 30 for the temperatures we tried.
 
 ## Citations
 
@@ -77,4 +77,3 @@ We will try our best to improve readability and answer questions!
 ## Licences
 
 This repo is licensed under the [MIT License](https://opensource.org/license/mit/).
-
