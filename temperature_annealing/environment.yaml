@@ -63,5 +63,5 @@ dependencies:
       - scipy
       - matplotlib<3.10 #3.10 gives
       #AttributeError: 'FigureCanvasInterAgg' object has no attribute 'tostring_rgb'. Did you mean: 'tostring_argb'?
-      - -e ../fab
-      - -e .
+      - -e fab
+      - -e runner/
