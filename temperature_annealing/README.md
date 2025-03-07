@@ -26,7 +26,7 @@ First, we install dependencies
 ```bash
 # clone project
 git clone git@github.com:necludov/feynman-kac-diffusion.git
-cd temperature_annealing
+cd temperature_annealing/runner
 
 # create micromamba environment
 micromamba create -f environment.yaml
@@ -38,9 +38,9 @@ Note that the hydra configs interpolate using some environment variables set in 
 an example `.env.example` file for convenience. Note that to use wandb we require that you set WANDB_ENTITY in your
 `.env` file.
 
-We have also provided a checkpoint for the pre-trained DEM model tranined at temperature 2.0 and used in the experiments in the paper [here](https://github.com/necludov/feynman-kac-diffusion/blob/boltzmann_sampling_public/runner/pretrained_dem_ckpts/epoch_179.ckpt).
+We have also provided a checkpoint for the pre-trained DEM model trained at temperature 2.0 and used in the experiments in the paper [here](https://github.com/necludov/feynman-kac-diffusion/blob/boltzmann_sampling_public/runner/pretrained_dem_ckpts/epoch_179.ckpt).
 
-To run an experiment, e.g., LJ-13 inference, with temperature annealed to 1.5, from the temperature_annealing folder, you can run on the command line
+To run an experiment, e.g., LJ-13 inference, with temperature annealed to 1.5, from the `temperature_annealing/runner` folder, you can run on the command line
 
 ```bash
 python src/eval.py model=tempdem ckpt_path=pretrained_dem_ckpts/epoch_179.ckpt experiment=lj13_tempdem_1.5
