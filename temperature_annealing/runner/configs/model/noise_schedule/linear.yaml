@@ -1,2 +1,0 @@
-_target_: src.models.components.noise_schedules.LinearNoiseSchedule
-beta: 1.0

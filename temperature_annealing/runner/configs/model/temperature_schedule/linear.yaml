@@ -1,2 +1,0 @@
-_target_: src.models.components.temperature_schedules.LinearInvTempSchedule
-_partial_: true
