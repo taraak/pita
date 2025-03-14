@@ -1,0 +1,12 @@
+_target_: src.energies.lennardjones_energy_eacf.LennardJonesEnergy
+
+dimensionality: 39
+n_particles: 13
+data_path: "../data/all_data_LJ13.npy"
+data_path_train: "../data/holdout_data_LJ13.npy"
+
+device: ${trainer.accelerator}
+
+plot_samples_epoch_period: 1
+
+data_normalization_factor: 1.0

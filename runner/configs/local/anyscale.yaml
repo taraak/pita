@@ -1,0 +1,10 @@
+# @package _global_
+
+defaults:
+  - override /launcher: anyscale
+  #launcher: anyscale
+
+paths:
+  data_dir: /mnt/user_storage/dem/data/
+  log_dir: /mnt/user_storage/dem/logs/
+  root_dir: /mnt/user_storage/active_inference/

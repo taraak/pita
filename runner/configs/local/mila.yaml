@@ -1,0 +1,5 @@
+# @package _global_
+
+paths:
+  data_dir: ${oc.env:SCRATCH}/dem/data/
+  log_dir: ${oc.env:SCRATCH}/dem/logs/
