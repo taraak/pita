@@ -172,7 +172,7 @@ cython_debug/
 *.sv?
 slurm*.out
 
-data/
+#data/
 runner/run_gpu.sh
 runner/configs/launcher/mila_cluster.yaml
 *.zip
