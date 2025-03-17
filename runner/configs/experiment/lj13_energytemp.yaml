@@ -17,7 +17,7 @@ logger:
 
 defaults:
   - override /energy: lj13
-  - override /model/net: egnn
+  - override /model/net: egnn_temp
   - override /model/noise_schedule: elucidating
 
 
@@ -46,7 +46,7 @@ model:
   diffusion_scale: 1.0
   num_negative_time_steps: 1
   num_samples_to_generate_per_epoch: 2000
-  num_samples_to_sample_from_buffer: 1024
+  num_samples_to_sample_from_buffer: 512
 
   init_from_prior: true
 
@@ -61,7 +61,8 @@ model:
 
   # energytemp parameters
   test_batch_size: 10000
-  num_eval_samples: 10000
+  num_eval_samples: 1024
+  inference_batch_size: 128
   resampling_interval: 1
   start_resampling_step: 10
   scale_diffusion: False

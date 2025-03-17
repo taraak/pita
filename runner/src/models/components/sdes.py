@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from src.models.components.temperature_schedules import ConstantInvTempSchedule
-from src.models.components.utils import compute_laplacian, compute_divergence_forloop
+from src.models.components.utils import compute_laplacian_exact, compute_divergence_forloop
 
 
 class SDE(torch.nn.Module):
@@ -35,7 +35,7 @@ class VEReverseSDE(torch.nn.Module):
         self.noise_schedule = noise_schedule
         self.pin_energy = pin_energy
 
-    def f(self, t, x, beta, gamma, resampling_interval=-1):
+    def f(self, t, x, beta, gamma, energy_function, resampling_interval=-1):
         if t.dim() == 0:
             # repeat the same time for all points if we have a scalar time
             t = t * torch.ones(x.shape[0]).to(x.device)
@@ -53,7 +53,8 @@ class VEReverseSDE(torch.nn.Module):
             else:
                 bt = -nabla_Ut * self.g(t).pow(2).unsqueeze(-1) / 2
 
-            drift_X = gamma * (-nabla_Ut * self.g(t).pow(2).unsqueeze(-1) / 2 + bt)
+            drift_X = (gamma * (-nabla_Ut * self.g(t).pow(2).unsqueeze(-1) / 2 + bt)).detach()
+            print("drift_X", drift_X.shape)
 
             drift_A = torch.zeros(x.shape[0]).to(x.device)
 
@@ -61,22 +62,38 @@ class VEReverseSDE(torch.nn.Module):
                 return drift_X.detach(), drift_A.detach()
 
             Ut = self.energy_net.forward_energy(
-                h_t, x, beta, pin=self.pin_energy, t=t
+                h_t = h_t,
+                x = x,
+                beta = beta,
+                pin = self.pin_energy,
+                energy_function = energy_function,
+                t = t,
             )
 
             if self.score_net is not None:
                 div_bt = compute_divergence_forloop(
                     bt,
                     x,
-                )
+                ).detach()
             else:
-                laplacian_Ut = compute_divergence_forloop(
-                    nabla_Ut,
+                # laplacian_Ut = compute_divergence_forloop(
+                #     nabla_Ut,
+                #     x,
+                # ).detach()
+                
+                laplacian_Ut = compute_laplacian_exact(
+                    self.energy_net,
+                    t,
                     x,
-                )
+                    beta,
+                ).detach()
+                                
                 div_bt = -laplacian_Ut * (self.g(t).pow(2) / 2)
 
             dUt_dt = torch.autograd.grad(Ut.sum(), t, create_graph=True)[0]
+
+            print("dUt_dt", dUt_dt.shape)
+            print("div_bt", div_bt.shape)
 
             drift_A = (
                 gamma**2 * (-nabla_Ut * bt).sum(-1)
@@ -89,6 +106,20 @@ class VEReverseSDE(torch.nn.Module):
     def g(self, t):
         g = self.noise_schedule.g(t)
         return g
+
+
+    def diffusion(self, t, x, diffusion_scale):
+        if t.dim() == 0:
+            # repeat the same time for all points if we have a scalar time
+            t = t * torch.ones(x.shape[0]).to(x.device)
+
+        diffusion = ( 
+            diffusion_scale
+            * self.g(t)[:, None]
+            * torch.randn_like(x).to(x.device)
+            )
+        return diffusion
+
     
 
 class RegVEReverseSDE(VEReverseSDE):

@@ -1,33 +1,26 @@
 from torch import nn
 import torch
+from src.energies.base_energy_function import BaseEnergyFunction
+from typing import Optional
 
 
 class EnergyNet(nn.Module):
-    def __init__(self, score_net: nn.Module, target, noise_schedule, prior=None):
+    def __init__(self, score_net: nn.Module):
         super(EnergyNet, self).__init__()
         self.score_net = score_net
-        self.prior = prior
-        self.noise_schedule = noise_schedule
-        self.energy_function = {}
         self.c = nn.Parameter(torch.tensor(0.0))
-        self.target = target
 
     def forward_energy(
         self,
         h_t: torch.Tensor,
         x: torch.Tensor,
-        beta,
-        pin=False,
-        gamma=1.0,
-        t=None,
+        beta: torch.Tensor,
+        pin: Optional[bool] = False,
+        energy_function: Optional[BaseEnergyFunction] = None,
+        t: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        U_0 = -self.target(x) * gamma  # this should be beta
-        U_0 = torch.clamp(U_0, max=1e3, min=-1e3)
-
         beta = beta * torch.ones(x.shape[0]).to(x.device)
         beta = beta.unsqueeze(1)
-
-        # h_t = self.noise_schedule.h(t).to(device)
 
         c_s = 1 / (1 + h_t)  # 1 / (1 + sigma^2)
         c_in = 1 / (1 + h_t) ** 0.5  # 1 / sqrt(1 + sigma^2)
@@ -47,6 +40,9 @@ class EnergyNet(nn.Module):
 
         if pin:
             assert t is not None
+            assert energy_function is not None
+            U_0 = -energy_function(x)
+            U_0 = torch.clamp(U_0, max=1e3, min=-1e3)
             return (1 - t) ** 3 * U_0 + (1 - (1 - t) ** 3) * E_theta
         return E_theta
 
