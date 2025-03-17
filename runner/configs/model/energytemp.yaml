@@ -1,4 +1,4 @@
-_target_: src.models.tempdem_module.energyTempModule
+_target_: src.models.energytemp_module.energyTempModule
 
 optimizer:
   _target_: torch.optim.Adam

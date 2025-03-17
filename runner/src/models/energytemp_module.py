@@ -6,6 +6,7 @@ import wandb
 from src.models.components.sdes import VEReverseSDE
 from src.models.components.temperature_schedules import BaseInverseTempSchedule
 from src.models.components.utils import sample_from_tensor
+import math 
 
 from .dem_module import *
 
@@ -13,9 +14,9 @@ from .dem_module import *
 class energyTempModule(DEMLitModule):
     def __init__(
         self,
-        lower_inverse_temperature: float,
-        upper_inverse_temperature: float,
-        num_inverse_temperatures: int,
+        lower_temperature: float,
+        higher_temperature: float,
+        d_temp: float,
         num_eval_samples: int,
         scale_diffusion: bool,
         test_batch_size: int,
@@ -41,6 +42,7 @@ class energyTempModule(DEMLitModule):
         num_negative_time_steps=-1,
         start_resampling_step=0,
         return_num_unique_idxs=False,
+        resample_at_end=False,
     ) -> torch.Tensor:
         diffusion_scale = diffusion_scale or self.hparams.diffusion_scale
         reverse_sde = reverse_sde or self.reverse_sde
@@ -181,8 +183,8 @@ class energyTempModule(DEMLitModule):
 
 
     def on_train_epoch_end(self) -> None:
-        for inverse_temp in self.inverse_temperatures:
-            inverse_lower_temp = inverse_temp + self.d_inverse_temp
+        for temp_index, inverse_temp in enumerate(self.inverse_temperatures[:-1]):
+            inverse_lower_temp = self.inverse_temperatures[temp_index+1]
             "Lightning hook that is called when a training epoch ends."
             self.last_samples[inverse_lower_temp]= self.generate_samples(
                 reverse_sde=self.reverse_sde,
@@ -194,10 +196,10 @@ class energyTempModule(DEMLitModule):
                 annealing_factor= (inverse_lower_temp/ inverse_temp),
                 resample_at_end = False,
             )
-            self.last_energies[inverse_lower_temp] = self.energy_function(self.last_samples[inverse_temp])
+            self.last_energies[temp_index] = self.energy_function(self.last_samples[temp_index])
 
-            self.buffers[inverse_lower_temp].add(self.last_samples[inverse_lower_temp],
-                                                 self.last_energies[inverse_lower_temp])
+            self.buffers[temp_index].add(self.last_samples[temp_index],
+                                                 self.last_energies[temp_index])
     
 
     def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
@@ -207,25 +209,25 @@ class energyTempModule(DEMLitModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-
-        for inverse_temp in self.inverse_temperatures:
-            energy_function = self.energy_functions[inverse_temp]
+        for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
+            energy_function = self.energy_functions[temp_index]
 
             if prefix == "test":
                 true_x0_samples = energy_function.sample_test_set(self.eval_batch_size)
             elif prefix == "val":
                 true_x0_samples = energy_function.sample_val_set(self.eval_batch_size)
 
-            generated_x0_samples = self.last_samples[inverse_temp]
+            generated_x0_samples = self.last_samples[temp_index]
 
             # generate samples noise --> data if needed
             if generated_x0_samples is None or self.eval_batch_size > len(generated_x0_samples):
                 generated_x0_samples = self.generate_samples(
                     reverse_sde=self.reverse_sde,
+                    prior=self.priors[temp_index],
                     num_samples=self.eval_batch_size,
                     resampling_interval=self.hparams.resampling_interval,
                     inverse_temp=inverse_temp,
-                    resample_at_end=False
+                    resample_at_end=False,
                 )
 
             # sample eval_batch_size from generated samples from dem to match dimenstions
@@ -255,14 +257,9 @@ class energyTempModule(DEMLitModule):
 
             self.eval_step_outputs.append(to_log)
     
-    def _log_energy_w2(self, inverse_temp, anneal=True, prefix="val", test_generated_samples=None):
-        if anneal:
-            inverse_lower_temp = inverse_temp + self.d_inverse_temp
-        else:
-            inverse_lower_temp = inverse_temp
-
-        energy_function = self.energy_functions[inverse_lower_temp]
-        buffer = self.buffers[inverse_lower_temp]
+    def _log_energy_w2(self, temp_index, prefix="val", test_generated_samples=None):
+        energy_function = self.energy_functions[temp_index]
+        buffer = self.buffers[temp_index]
         if "test" in prefix:
             data_set = energy_function.sample_test_set(self.eval_batch_size)
             assert test_generated_samples is not None
@@ -285,14 +282,9 @@ class energyTempModule(DEMLitModule):
             prog_bar=True,
         )
 
-    def _log_dist_w2(self, inverse_temp, anneal=True, prefix="val", test_generated_samples=None):
-        if anneal:
-            inverse_lower_temp = inverse_temp + self.d_inverse_temp
-        else:
-            inverse_lower_temp = inverse_temp
-
-        energy_function = self.energy_functions[inverse_lower_temp]
-        buffer = self.buffers[inverse_lower_temp]
+    def _log_dist_w2(self, temp_index, prefix="val", test_generated_samples=None):
+        energy_function = self.energy_functions[temp_index]
+        buffer = self.buffers[temp_index]
         if "test" in prefix:
             data_set = energy_function.sample_test_set(self.test_batch_size)
             assert test_generated_samples is not None
@@ -317,24 +309,21 @@ class energyTempModule(DEMLitModule):
 
     def eval_epoch_end(self, prefix: str):
         wandb_logger = get_wandb_logger(self.loggers)
-        for inverse_temp in self.inverse_temperatures:
-            self._log_energy_w2(prefix="val", inverse_temp=inverse_temp)
+        for temp_index, inverse_temp in enumerate(self.inverse_temperatures[:-1]):
+            inverse_lower_temp = self.inverse_temperatures[temp_index+1]
 
-
-            anneal= True
-            if anneal:
-                inverse_lower_temp = inverse_temp + self.d_inverse_temp
-            else:
-                inverse_lower_temp = inverse_temp
-            energy_function = self.energy_functions[inverse_lower_temp]
+            self._log_energy_w2(prefix="val",
+                                temp_index=temp_index+1)
+            energy_function = self.energy_functions[temp_index]
 
             if energy_function.is_molecule:
-                self._log_dist_w2(prefix="val")
+                self._log_dist_w2(prefix="val",
+                                  temp_index=temp_index+1)
 
             # generate samples without annealing for visualization 
             samples, logweights, num_unique_idxs = self.generate_samples(
                 reverse_sde=self.reverse_sde,
-                prior = self.priors[inverse_temp],
+                prior = self.priors[temp_index],
                 num_samples=self.hparams.num_eval_samples,
                 return_logweights=True,
                 return_num_unique_idxs=True,
@@ -357,9 +346,9 @@ class energyTempModule(DEMLitModule):
             self._log_energy_mean(samples_energy, prefix="val/temp_annealed")
 
             if self.hparams.resampling_interval != -1:
-                self._log_logweights(logweights, prefix=fr"val / $\beta$= {inverse_temp}")
-                self._log_std_logweights(logweights, prefix=fr"val / $\beta$= {inverse_temp}")
-                self._log_num_unique_idxs(num_unique_idxs, prefix=fr"val / $\beta$= {inverse_temp}")
+                self._log_logweights(logweights, prefix=fr"val / $\beta$= {inverse_temp}, $\gamma$= {inverse_lower_temp}")
+                self._log_std_logweights(logweights, prefix=fr"val / $\beta$= {inverse_temp}, $\gamma$= {inverse_lower_temp}")
+                self._log_num_unique_idxs(num_unique_idxs, prefix=fr"val / $\beta$= {inverse_temp}, $\gamma$= {inverse_lower_temp}")
                 self.logger.experiment.log(
                     {
                         "1D Array Plot": wandb.plot.line_series(
@@ -368,7 +357,7 @@ class energyTempModule(DEMLitModule):
                             ).tolist(), 
                             ys=[num_unique_idxs],
                             keys=["Number of Unique Indices"],
-                            title=fr"val / $\beta$= {inverse_temp}",
+                            title=fr"val / $\beta$= {inverse_temp}, $\gamma$= {inverse_lower_temp}",
                             xname="Time", 
                         )
                     }
@@ -377,9 +366,9 @@ class energyTempModule(DEMLitModule):
     def on_test_epoch_end(self) -> None:
         wandb_logger = get_wandb_logger(self.loggers)
 
-        for inverse_temp in self.inverse_temperatures:
+        for temp_index, inverse_temp in enumerate(self.inverse_temperatures[:-1]):
+            inverse_lower_temp = self.inverse_temperatures[temp_index + 1]
             final_samples = []
-            inverse_lower_temp = inverse_temp + self.d_inverse_temp
 
             batch_size = self.hparams.num_eval_samples
             n_batches = self.num_samples_to_save // batch_size
@@ -390,7 +379,7 @@ class energyTempModule(DEMLitModule):
                 start = time.time()
                 samples = self.generate_samples(
                     reverse_sde=self.reverse_sde,
-                    prior = self.priors[inverse_lower_temp],
+                    prior = self.priors[temp_index + 1],
                     num_samples=self.hparams.num_samples_to_save,
                     batch_size=self.hparams.num_samples_to_generate_per_epoch,
                     resampling_interval=self.hparams.resampling_interval,
@@ -471,9 +460,15 @@ class energyTempModule(DEMLitModule):
         self.last_samples = {}
         self.last_energies = {}
 
-        self.inverse_temperatures = torch.linspace(self.hparams.lower_inverse_temperature,
-                                                   self.hparams.upper_inverse_temperature,
-                                                   self.hparams.num_inverse_temperatures)
+
+        temperatures = torch.arange(
+            self.hparams.lower_temperature, self.hparams.higher_temperature, self.hparams.d_temp
+        )
+        self.inverse_temperatures = torch.flip(torch.round(self.hparams.higher_temperature / temperatures,
+                                                           decimals=2).to(self.device), dims=(0,))
+
+
+        print("Inverse Temperatures: ", self.inverse_temperatures)
         
 
         self.reverse_sde = VEReverseSDE(energy_net=self.net,
@@ -482,13 +477,14 @@ class energyTempModule(DEMLitModule):
                                         pin_energy=True
                                         )
         
-        for inverse_temp in self.inverse_temperatures:
-            self.energy_functions[inverse_temp] = self.hparams.energy_function(device=self.device, temperature=1/inverse_temp)
-            self.priors[inverse_temp] = self.partial_prior(device=self.device,
+        for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
+            self.energy_functions[temp_index] = self.hparams.energy_function(device=self.device,
+                                                                               temperature=1/inverse_temp)
+            self.priors[temp_index] = self.partial_prior(device=self.device,
                                                            scale=(self.noise_schedule.h(1) / inverse_temp) ** 0.5)
-            self.buffers[inverse_temp] = self.partial_buffer(device=self.device)
-            self.last_samples[inverse_temp] = None
-            self.last_energies[inverse_temp] = None
+            self.buffers[temp_index] = self.partial_buffer(device=self.device)
+            self.last_samples[temp_index] = None
+            self.last_energies[temp_index] = None
 
 
 

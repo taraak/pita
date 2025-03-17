@@ -172,17 +172,18 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
+
         self.data_path_train = (
             data_path
-            + f"LJ{self.n_particles}_temp_{self.temperature}/train_split_LJ{self.n_particles}-1000.npy"
+            + f"LJ{self.n_particles}_temp_{self.temperature:0.1f}/train_split_LJ{self.n_particles}-1000.npy"
         )
         self.data_path_val = (
             data_path
-            + f"LJ{self.n_particles}_temp_{self.temperature}/val_split_LJ{self.n_particles}-1000.npy"
+            + f"LJ{self.n_particles}_temp_{self.temperature:0.1f}/val_split_LJ{self.n_particles}-1000.npy"
         )
         self.data_path_test = (
             data_path
-            + f"LJ{self.n_particles}_temp_{self.temperature}/test_split_LJ{self.n_particles}-1000.npy"
+            + f"LJ{self.n_particles}_temp_{self.temperature:0.1f}/test_split_LJ{self.n_particles}-1000.npy"
         )
 
         if self.n_particles == 13:

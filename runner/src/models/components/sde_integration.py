@@ -98,6 +98,8 @@ def integrate_sde(
     logweights = []
     num_unique_idxs = []
 
+    a = torch.zeros(x.shape[0], device=x.device)
+
     with conditional_no_grad(no_grad):
         for step, t in enumerate(times):
             for _ in range(num_langevin_steps):
@@ -113,7 +115,6 @@ def integrate_sde(
                         diffusion_scale=diffusion_scale,
                         batch_size=batch_size,
                         start_resampling_step=start_resampling_step,
-                        resampling_strategy=resampling_strategy,
                         inverse_temperature=inverse_temperature,
                         annealing_factor=annealing_factor,
                     )

@@ -7,4 +7,3 @@ plot_samples_epoch_period: 1
 data_normalization_factor: 1.0
 is_molecule: True
 smooth: False
-temperature: 1.0

@@ -16,7 +16,7 @@ logger:
     group: "lj13"
 
 defaults:
-  # - override /energy: lj13
+  - override /energy: lj13
   - override /model/net: egnn
   - override /model/noise_schedule: elucidating
 
@@ -57,16 +57,6 @@ model:
 
   num_estimator_mc_samples: 1000
 
-  enery:
-    _target_: src.energies.lennardjones_energy.LennardJonesEnergy
-    _partial_: true
-    dimensionality: 39
-    n_particles: 13
-    data_path: "../data/"
-    plot_samples_epoch_period: 1
-    data_normalization_factor: 1.0
-    is_molecule: True
-
   num_samples_to_save: 10240
 
   # energytemp parameters
@@ -76,5 +66,7 @@ model:
   start_resampling_step: 10
   scale_diffusion: False
 
-  lower_inverse_temperature: 0.5
+  lower_temperature: 0.2
+  higher_temperature: 1.2
+  d_temp: 0.1
   
