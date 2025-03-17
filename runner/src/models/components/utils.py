@@ -32,7 +32,7 @@ def compute_divergence_forloop(nabla_Ut, x):
 
 def compute_laplacian_exact(model, t, xt, beta):
     def func_wrap(t, xt):
-        return model(t.unsqueeze(0), xt.unsqueeze(0), beta).squeeze()
+        return model.forward_energy(t.unsqueeze(0), xt.unsqueeze(0), beta).squeeze()
 
     # Calculate the Hessian matrix of the model output with respect to the input
     hessian_matrix = vmap(hessian(func_wrap, argnums=1))(t, xt)

@@ -87,7 +87,9 @@ class VEReverseSDE(torch.nn.Module):
                     x,
                     beta,
                 ).detach()
-                                
+
+
+                print("laplacian", laplacian_Ut.shape)    
                 div_bt = -laplacian_Ut * (self.g(t).pow(2) / 2)
 
             dUt_dt = torch.autograd.grad(Ut.sum(), t, create_graph=True)[0]

@@ -256,7 +256,7 @@ class energyTempModule(DEMLitModule):
             ln_sigmat = torch.randn(len(generated_x0_samples)).to(generated_x0_samples.device) * P_std + P_mean
             ht = torch.exp(2 * ln_sigmat)
 
-            loss = self.get_loss(ht, true_x0_samples).mean(-1)
+            loss = self.get_loss(ht, true_x0_samples, inverse_temp).mean(-1)
 
             # update and log metrics
             loss_metric = self.val_loss if prefix == "val" else self.test_loss
