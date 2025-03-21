@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from src.models.components.temperature_schedules import ConstantInvTempSchedule
-from src.models.components.utils import compute_laplacian_exact, compute_divergence_forloop
+from src.models.components.utils import compute_laplacian_exact, compute_divergence_forloop, compute_divergence_exact
 
 
 class SDE(torch.nn.Module):
@@ -48,17 +48,16 @@ class VEReverseSDE(torch.nn.Module):
             nabla_Ut = self.energy_net(h_t, x, beta)
 
             if self.score_net is not None:
-                model_out = self.score_net(h_t, x, beta)
-                bt = -model_out * self.g(t).pow(2).unsqueeze(-1) / 2
+                s_t = self.score_net(h_t, x, beta)
+                bt = s_t * self.g(t).pow(2).unsqueeze(-1) / 2
             else:
                 bt = -nabla_Ut * self.g(t).pow(2).unsqueeze(-1) / 2
 
             drift_X = (gamma * (-nabla_Ut * self.g(t).pow(2).unsqueeze(-1) / 2 + bt)).detach()
-            print("drift_X", drift_X.shape)
 
             drift_A = torch.zeros(x.shape[0]).to(x.device)
 
-            if resampling_interval == -1 or t[0] > 0.9:
+            if resampling_interval == -1:
                 return drift_X.detach(), drift_A.detach()
 
             Ut = self.energy_net.forward_energy(
@@ -71,10 +70,13 @@ class VEReverseSDE(torch.nn.Module):
             )
 
             if self.score_net is not None:
-                div_bt = compute_divergence_forloop(
-                    bt,
+                div_st = compute_divergence_exact(
+                    self.score_net,
+                    t,
                     x,
-                ).detach()
+                    beta,
+                ).detach() 
+                div_bt = div_st * self.g(t).pow(2) / 2
             else:
                 # laplacian_Ut = compute_divergence_forloop(
                 #     nabla_Ut,
@@ -87,15 +89,9 @@ class VEReverseSDE(torch.nn.Module):
                     x,
                     beta,
                 ).detach()
-
-
-                print("laplacian", laplacian_Ut.shape)    
                 div_bt = -laplacian_Ut * (self.g(t).pow(2) / 2)
 
             dUt_dt = torch.autograd.grad(Ut.sum(), t, create_graph=True)[0]
-
-            print("dUt_dt", dUt_dt.shape)
-            print("div_bt", div_bt.shape)
 
             drift_A = (
                 gamma**2 * (-nabla_Ut * bt).sum(-1)

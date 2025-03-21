@@ -51,4 +51,5 @@ class EnergyNet(nn.Module):
     ) -> torch.Tensor:
         U = self.forward_energy(h_t, x, beta, pin, t=t)
         nabla_U = torch.autograd.grad(U.sum(), x, create_graph=True)[0]
+        # nabla_U = self.score_net(h_t, x, beta)
         return nabla_U

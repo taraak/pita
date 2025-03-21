@@ -168,7 +168,7 @@ class energyTempModule(DEMLitModule):
     
 
     def get_loss(self, ht: torch.Tensor, x0: torch.Tensor, inverse_temp) -> torch.Tensor:
-        print("computing loss")
+        x0.requires_grad = True
         z = torch.randn_like(x0)
         xt = x0 + z * ht[:, None] ** 0.5
 
@@ -179,7 +179,7 @@ class energyTempModule(DEMLitModule):
                 self.energy_function.n_spatial_dim,
             )
 
-        predicted_scores = -self.energy_function.forward(ht, xt, inverse_temp)
+        predicted_scores = -self.net.forward(ht, xt, inverse_temp)
         epsilon = -z
 
         lambda_t = (ht + 1) / ht
@@ -191,7 +191,25 @@ class energyTempModule(DEMLitModule):
 
 
     def on_train_epoch_end(self) -> None:
+        print("On train epoch end")
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures[:-1]):
+            if temp_index == 0:
+                self.last_samples[temp_index] = self.generate_samples(
+                    reverse_sde=self.reverse_sde,
+                    return_logweights=False,
+                    prior = self.priors[temp_index],
+                    energy_function = self.energy_functions[temp_index],
+                    num_samples=self.num_samples_to_generate_per_epoch,
+                    batch_size=self.hparams.inference_batch_size,
+                    resampling_interval=self.hparams.resampling_interval,
+                    inverse_temp = inverse_temp,
+                    annealing_factor= 1.0,
+                    resample_at_end = False,
+                )
+                self.last_energies[temp_index] = self.energy_function(self.last_samples[temp_index])
+                self.buffers[temp_index].add(self.last_samples[temp_index],
+                                                 self.last_energies[temp_index])
+                
             inverse_lower_temp = self.inverse_temperatures[temp_index+1]
             "Lightning hook that is called when a training epoch ends."
             self.last_samples[temp_index+1]= self.generate_samples(
@@ -201,15 +219,18 @@ class energyTempModule(DEMLitModule):
                 energy_function = self.energy_functions[temp_index+1],
                 num_samples=self.num_samples_to_generate_per_epoch,
                 batch_size=self.hparams.inference_batch_size,
-                resampling_interval=self.resampling_interval,
+                resampling_interval=self.hparams.resampling_interval,
                 inverse_temp = inverse_temp,
                 annealing_factor= (inverse_lower_temp/ inverse_temp),
                 resample_at_end = False,
             )
-            self.last_energies[temp_index] = self.energy_function(self.last_samples[temp_index])
+            self.last_energies[temp_index+1] = self.energy_function(self.last_samples[temp_index+1])
 
-            self.buffers[temp_index].add(self.last_samples[temp_index],
-                                                 self.last_energies[temp_index])
+            self.buffers[temp_index+1].add(self.last_samples[temp_index+1],
+                                                 self.last_energies[temp_index+1])
+            
+        
+        print("On train epoch end end")
     
 
     def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
@@ -232,6 +253,7 @@ class energyTempModule(DEMLitModule):
             generated_x0_samples = self.last_samples[temp_index]
 
             # generate samples noise --> data if needed
+
             if generated_x0_samples is None or self.hparams.num_eval_samples > len(generated_x0_samples):
                 generated_x0_samples = self.generate_samples(
                     reverse_sde=self.reverse_sde,
@@ -256,7 +278,8 @@ class energyTempModule(DEMLitModule):
             ln_sigmat = torch.randn(len(generated_x0_samples)).to(generated_x0_samples.device) * P_std + P_mean
             ht = torch.exp(2 * ln_sigmat)
 
-            loss = self.get_loss(ht, true_x0_samples, inverse_temp).mean(-1)
+            with torch.enable_grad():
+                loss = self.get_loss(ht, true_x0_samples, inverse_temp).mean(-1)
 
             # update and log metrics
             loss_metric = self.val_loss if prefix == "val" else self.test_loss
@@ -290,7 +313,7 @@ class energyTempModule(DEMLitModule):
         energy_w2 = pot.emd2_1d(energies.cpu().numpy(), generated_energies.cpu().numpy())
 
         self.log(
-            f"{prefix}/annealed_samples/energy_w2",
+            f"{prefix}/energy_w2",
             self.val_energy_w2(energy_w2),
             on_step=False,
             on_epoch=True,
@@ -307,7 +330,7 @@ class energyTempModule(DEMLitModule):
         else:
             if len(self.buffer) < self.hparams.num_eval_samples:
                 return
-            data_set = energy_function.sample_val_set(self.hparams.um_eval_samples)
+            data_set = energy_function.sample_val_set(self.hparams.num_eval_samples)
             generated_samples, _ = buffer.get_last_n_inserted(self.hparams.num_eval_samples)
 
         dist_w2 = pot.emd2_1d(
@@ -315,7 +338,7 @@ class energyTempModule(DEMLitModule):
             energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1),
         )
         self.log(
-            f"{prefix}/annealed_samples/dist_w2",
+            f"{prefix}/dist_w2",
             self.val_dist_w2(dist_w2),
             on_step=False,
             on_epoch=True,
@@ -323,6 +346,9 @@ class energyTempModule(DEMLitModule):
         )
 
     def eval_epoch_end(self, prefix: str):
+        if len(self.eval_step_outputs) == 0:
+            return
+        
         wandb_logger = get_wandb_logger(self.loggers)
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures[:-1]):
             inverse_lower_temp = self.inverse_temperatures[temp_index+1]
@@ -344,7 +370,7 @@ class energyTempModule(DEMLitModule):
                 return_logweights=True,
                 return_num_unique_idxs=True,
                 batch_size=self.hparams.inference_batch_size,
-                resampling_interval=self.resampling_interval,
+                resampling_interval=self.hparams.resampling_interval,
                 inverse_temp = inverse_temp,
                 annealing_factor = inverse_lower_temp / inverse_temp,
                 resample_at_end = False,
@@ -362,22 +388,28 @@ class energyTempModule(DEMLitModule):
             self._log_energy_mean(samples_energy, prefix="val/temp_annealed")
 
             if self.hparams.resampling_interval != -1:
-                self._log_logweights(logweights, prefix=fr"val / $\beta$= {inverse_temp}, $\gamma$= {inverse_lower_temp}")
-                self._log_std_logweights(logweights, prefix=fr"val / $\beta$= {inverse_temp}, $\gamma$= {inverse_lower_temp}")
-                self._log_num_unique_idxs(num_unique_idxs, prefix=fr"val / $\beta$= {inverse_temp}, $\gamma$= {inverse_lower_temp}")
-                self.logger.experiment.log(
-                    {
-                        "1D Array Plot": wandb.plot.line_series(
-                            xs=torch.linspace(
-                                1, 0, len(num_unique_idxs)
-                            ).tolist(), 
-                            ys=[num_unique_idxs],
-                            keys=["Number of Unique Indices"],
-                            title=fr"val / $\beta$= {inverse_temp}, $\gamma$= {inverse_lower_temp}",
-                            xname="Time", 
-                        )
-                    }
-                )
+                self._log_logweights(logweights,
+                                     prefix=fr"val / $\beta$= {inverse_temp:0.3f}, $\gamma$= {inverse_lower_temp:0.3f}")
+                self._log_std_logweights(logweights,
+                                         prefix=fr"val / $\beta$= {inverse_temp:0.3f}, $\gamma$= {inverse_lower_temp:0.3f}")
+                self._log_num_unique_idxs(num_unique_idxs,
+                                          prefix=fr"val / $\beta$= {inverse_temp:0.3f}, $\gamma$= {inverse_lower_temp:0.3f}")
+
+
+                if wandb_logger is not None:
+                    self.logger.experiment.log(
+                        {
+                            "1D Array Plot": wandb.plot.line_series(
+                                xs=torch.linspace(
+                                    1, 0, len(num_unique_idxs)
+                                ).tolist(), 
+                                ys=[num_unique_idxs],
+                                keys=["Number of Unique Indices"],
+                                title=fr"val / $\beta$= {inverse_temp:0.3f}, $\gamma$= {inverse_lower_temp:0.3f}",
+                                xname="Time", 
+                            )
+                        }
+                    )
 
     def on_test_epoch_end(self) -> None:
         wandb_logger = get_wandb_logger(self.loggers)
@@ -476,14 +508,20 @@ class energyTempModule(DEMLitModule):
         self.last_samples = {}
         self.last_energies = {}
 
-        temperatures = torch.arange(
-            self.hparams.lower_temperature, self.hparams.higher_temperature, self.hparams.d_temp
-        )
+        num_temps = int((self.hparams.higher_temperature - self.hparams.lower_temperature) / self.hparams.d_temp) + 1
+
+        temperatures = torch.linspace(self.hparams.lower_temperature,
+                                        self.hparams.higher_temperature,
+                                        num_temps)
+
+        print("Temperatures: ", temperatures)
         self.inverse_temperatures = torch.flip(torch.round(self.hparams.higher_temperature / temperatures,
                                                            decimals=2).to(self.device), dims=(0,))
 
 
         print("Inverse Temperatures: ", self.inverse_temperatures)
+
+
 
         self.score_net = self.hparams.net()
         self.net = EnergyNet(score_net=self.score_net)
@@ -502,6 +540,15 @@ class energyTempModule(DEMLitModule):
             self.buffers[temp_index] = self.partial_buffer(device=self.device)
             self.last_samples[temp_index] = None
             self.last_energies[temp_index] = None
+
+
+            if self.init_from_prior:
+                init_states = self.priors[temp_index].sample(self.num_init_samples)
+
+            else:
+                init_states = self.energy_functions[0].sample(self.num_init_samples)
+            init_energies = self.energy_functions[temp_index](init_states)
+            self.buffers[temp_index].add(init_states, init_energies)
 
 
 

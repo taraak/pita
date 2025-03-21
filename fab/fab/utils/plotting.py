@@ -35,7 +35,6 @@ def plot_contours(
     grid_width_n_points: int = 20,
     n_contour_levels: Optional[int] = None,
     log_prob_min: float = -1000.0,
-    T: Optional[float] = 1.0,
     temperature: Optional[float] = 1.0,
 ):
     """Plot contours of a log_prob_func that is defined on 2D"""
@@ -44,7 +43,7 @@ def plot_contours(
     x_points_dim1 = torch.linspace(bounds[0], bounds[1], grid_width_n_points)
     x_points_dim2 = x_points_dim1
     x_points = torch.tensor(list(itertools.product(x_points_dim1, x_points_dim2)))
-    log_p_x = log_prob_func(x_points).detach() / temperature * T
+    log_p_x = log_prob_func(x_points).detach() / temperature
     log_p_x = torch.clamp_min(log_p_x, log_prob_min)
     log_p_x = log_p_x.reshape((grid_width_n_points, grid_width_n_points))
     x_points_dim1 = x_points[:, 0].reshape((grid_width_n_points, grid_width_n_points)).numpy()

@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from scipy.stats import qmc
 from torch import vmap
-from torch.func import hessian
+from torch.func import hessian, jacrev
 
 
 def sample_from_tensor(tensor, num_samples):
@@ -14,6 +14,18 @@ def rademacher(shape, dtype=torch.float32, device="cuda"):
     """Sample from Rademacher distribution."""
     rand = (torch.rand(shape) < 0.5) * 2 - 1
     return rand.to(dtype).to(device)
+
+
+def compute_divergence_exact(model, t, xt, beta):
+    # compute full divergence of the model
+    def func_wrap(t, xt):
+        return model.forward(t.unsqueeze(0), xt.unsqueeze(0), beta).squeeze()
+    
+    # Calculate the full jacobian 
+    jacobian_matrix = vmap(jacrev(func_wrap, argnums=1))(t, xt)
+    divergence = jacobian_matrix.diagonal(offset=0, dim1=-2, dim2=-1).sum(dim=-1)
+    return divergence.detach()
+
 
 
 def compute_divergence_forloop(nabla_Ut, x):

@@ -31,6 +31,7 @@ class GMM(BaseEnergyFunction):
         train_set_size=100000,
         test_set_size=10000,
         val_set_size=10000,
+        temperature=1.0,
     ):
         use_gpu = device != "cpu"
         torch.manual_seed(0)  # seed of 0 for GMM problem
@@ -57,6 +58,9 @@ class GMM(BaseEnergyFunction):
         self.test_set_size = test_set_size
         self.val_set_size = val_set_size
 
+
+        self.temperature = temperature
+
         self.name = "gmm"
 
         super().__init__(
@@ -68,7 +72,6 @@ class GMM(BaseEnergyFunction):
     def setup_test_set(self):
         test_sample = self.gmm.sample((self.test_set_size,))
         return test_sample
-        # return self.gmm.test_set
 
     def setup_train_set(self):
         train_samples = self.gmm.sample((self.train_set_size,))
@@ -81,7 +84,7 @@ class GMM(BaseEnergyFunction):
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_unnormalize:
             samples = self.unnormalize(samples)
-        return self.gmm.log_prob(samples)
+        return self.gmm.log_prob(samples) / self.temperature
 
     @property
     def dimensionality(self):
@@ -148,7 +151,7 @@ class GMM(BaseEnergyFunction):
         samples_fig = self.get_single_dataset_fig(samples, name)
         wandb_logger.log_image(f"{name}", [samples_fig])
 
-    def get_single_dataset_fig(self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40), T=1.0):
+    def get_single_dataset_fig(self, samples, name, plotting_bounds=(-1.4 * 40, 1.4 * 40)):
         fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 
         self.gmm.to("cpu")
@@ -158,7 +161,6 @@ class GMM(BaseEnergyFunction):
             ax=ax,
             n_contour_levels=50,
             grid_width_n_points=200,
-            T=T,
             temperature=self.temperature,
         )
 
@@ -175,7 +177,6 @@ class GMM(BaseEnergyFunction):
         gen_samples=None,
         plotting_bounds=(-1.4 * 40, 1.4 * 40),
         color="blue",
-        T=1.0,
         cmap=None,
         title=None,
         is_display_fig=False,
@@ -189,6 +190,7 @@ class GMM(BaseEnergyFunction):
             ax=axs[0],
             n_contour_levels=50,
             grid_width_n_points=200,
+            temperature=self.temperature,
         )
 
         # plot dataset samples
