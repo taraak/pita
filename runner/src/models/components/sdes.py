@@ -62,7 +62,7 @@ class VEReverseSDE(torch.nn.Module):
 
             Ut = self.energy_net.forward_energy(
                 h_t = h_t,
-                x = x,
+                x_t = x,
                 beta = beta,
                 pin = self.pin_energy,
                 energy_function = energy_function,

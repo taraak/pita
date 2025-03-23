@@ -48,8 +48,6 @@ model:
   num_samples_to_generate_per_epoch: 1024
   num_samples_to_sample_from_buffer: 512
 
-  init_from_prior: true
-
   cfm_prior_std: 2
   nll_integration_method: dopri5
   logz_with_cfm: false
@@ -60,13 +58,17 @@ model:
 
   # energytemp parameters
   test_batch_size: 5000
-  num_eval_samples: 256
-  inference_batch_size: 128
+  num_eval_samples: 128
+  inference_batch_size: 128 
   resampling_interval: 1
   start_resampling_step: 10
   scale_diffusion: False
 
   lower_temperature: 1.0
-  higher_temperature: 1.2
+  higher_temperature: 2.0
   d_temp: 0.1
+
+  temperatures: 
+    - 2.0
   
+  init_from_prior: false

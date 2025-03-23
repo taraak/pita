@@ -163,7 +163,7 @@ def euler_maruyama_step(
     # check time
     import time
     for i in range(x.shape[0] // batch_size):
-        t_start = time.time()
+        # t_start = time.time()
         drift_xt_i, drift_at_i = sde.f(
             t,
             x[i * batch_size : (i + 1) * batch_size],
@@ -172,8 +172,8 @@ def euler_maruyama_step(
             gamma=annealing_factor,
             energy_function=energy_function,
         )
-        t_end = time.time()
-        print(f"Time taken for drift calculation: {t_end - t_start}")
+        # t_end = time.time()
+        # print(f"Time taken for drift calculation: {t_end - t_start}")
 
         diffusion_i = sde.diffusion(
             t, x[i * batch_size : (i + 1) * batch_size], diffusion_scale
