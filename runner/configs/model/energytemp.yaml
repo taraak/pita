@@ -24,7 +24,7 @@ partial_buffer:
   _partial_: true
   dim: ${energy.dimensionality}
   max_length: 10000
-  min_sample_length: 1000
+  min_sample_length: 1
   initial_sampler: null
   sample_with_replacement: True
   fill_buffer_during_init: False

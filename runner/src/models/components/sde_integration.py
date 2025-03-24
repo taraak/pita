@@ -155,9 +155,13 @@ def euler_maruyama_step(
     diffusion_scale: float,
 ):
     # Calculate drift and diffusion terms for num_eval_batches
-    drift_xt = torch.zeros_like(x)
-    drift_at = torch.zeros_like(a)
-    diffusion = torch.zeros_like(x)
+    # drift_xt = torch.zeros_like(x)
+    # drift_at = torch.zeros_like(a)
+    # diffusion = torch.zeros_like(x)
+
+    diffusion = []
+    drift_at = []
+    drift_xt = []
 
 
     # check time
@@ -178,13 +182,35 @@ def euler_maruyama_step(
         diffusion_i = sde.diffusion(
             t, x[i * batch_size : (i + 1) * batch_size], diffusion_scale
         )
-        diffusion[i * batch_size : (i + 1) * batch_size] = diffusion_i
-        drift_xt[i * batch_size : (i + 1) * batch_size] = drift_xt_i
-        drift_at[i * batch_size : (i + 1) * batch_size] = drift_at_i
+        diffusion.append(diffusion_i)
+        drift_xt.append(drift_xt_i)
+        drift_at.append(drift_at_i)
+        
+    if x.shape[0] % batch_size != 0:
+        i = x.shape[0] // batch_size
+        drift_xt_i, drift_at_i = sde.f(
+            t,
+            x[i * batch_size :],
+            resampling_interval=resampling_interval,
+            beta=inverse_temperature,
+            gamma=annealing_factor,
+            energy_function=energy_function,
+        )
+        diffusion_i = sde.diffusion(
+            t, x[i * batch_size :], diffusion_scale
+        )
+        diffusion.append(diffusion_i)
+        drift_xt.append(drift_xt_i)
+        drift_at.append(drift_at_i)
+
+    diffusion = torch.cat(diffusion, dim=0)
+    drift_xt = torch.cat(drift_xt, dim=0)
+    drift_at = torch.cat(drift_at, dim=0)
 
     # update x, log weights, and log density
     dx = drift_xt * dt + diffusion * np.sqrt(dt)
     x_next = x + dx
+    
     a_next = a + drift_at * dt
 
     # don't start accumulating weights until step start_resampling_step

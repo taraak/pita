@@ -20,7 +20,6 @@ class EnergyNet(nn.Module):
         t: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         beta = beta * torch.ones(x_t.shape[0]).to(x_t.device)
-        beta = beta.unsqueeze(1)
 
         c_s = 1 / (1 + h_t)  # 1 / (1 + sigma^2)
         c_in = 1 / (1 + h_t) ** 0.5  # 1 / sqrt(1 + sigma^2)
@@ -58,4 +57,4 @@ class EnergyNet(nn.Module):
         self, h_t: torch.Tensor, x_t: torch.Tensor, beta, return_score=False
     )-> torch.Tensor:
         nabla_U = self.forward(h_t, x_t, beta)
-        return x_t * h_t[:, None] - nabla_U
+        return x_t  - h_t[:, None] * nabla_U

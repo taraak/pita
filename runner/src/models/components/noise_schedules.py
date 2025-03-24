@@ -94,9 +94,9 @@ class ElucidatingNoiseSchedule(BaseNoiseSchedule):
         self.term2 = (self.sigma_min ** (1/self.rho) - self.sigma_max ** (1/self.rho))
 
     def g(self, t):
+        # take derivative of h(t) with respect to t with automatic differentiation
         return (- 2 * self.rho * (self.term1 + (1-t) * self.term2)**(2 * self.rho - 1) * self.term2) ** 0.5
 
     def h(self, t):
         return (self.term1 + (1-t) * self.term2)**(2 * self.rho)
-
 

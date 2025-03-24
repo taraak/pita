@@ -55,6 +55,7 @@ class EGNN_dynamics(nn.Module):
 
     def forward(self, t, xs, beta):
         t = t.unsqueeze(-1)
+        beta = beta.unsqueeze(-1)
         n_batch = xs.shape[0]
         edges = self._cast_edges2batch(self.edges, n_batch, self._n_particles)
         edges = [edges[0].to(xs.device), edges[1].to(xs.device)]

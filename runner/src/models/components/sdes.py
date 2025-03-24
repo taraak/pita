@@ -27,24 +27,39 @@ class SDE(torch.nn.Module):
 
 class VEReverseSDE(torch.nn.Module):
     def __init__(
-        self, energy_net, noise_schedule, score_net=None, pin_energy=False
+        self, energy_net, noise_schedule, score_net=None, pin_energy=False,
+        debias_inference=True
     ):
         super().__init__()
         self.energy_net = energy_net
         self.score_net = score_net
         self.noise_schedule = noise_schedule
         self.pin_energy = pin_energy
+        self.debias_inference = debias_inference
+
+
+    def f_not_debiased(self, t, x, beta):
+        assert self.score_net is not None
+        h_t = self.noise_schedule.h(t)
+        drift_X = self.score_net(h_t, x, beta) * self.g(t).pow(2).unsqueeze(-1) 
+        drift_A = torch.zeros(x.shape[0]).to(x.device)
+        return drift_X, drift_A
+        
 
     def f(self, t, x, beta, gamma, energy_function, resampling_interval=-1):
         if t.dim() == 0:
             # repeat the same time for all points if we have a scalar time
             t = t * torch.ones(x.shape[0]).to(x.device)
+        
+                    
+        if not self.debias_inference:
+            return self.f_not_debiased(t, x, beta)
 
         with torch.enable_grad():
             x.requires_grad_(True)
             t.requires_grad_(True)
-            h_t = self.noise_schedule.h(t).to(x.device)
-
+        
+            h_t = self.noise_schedule.h(t)
             nabla_Ut = self.energy_net(h_t, x, beta)
 
             if self.score_net is not None:
@@ -118,16 +133,3 @@ class VEReverseSDE(torch.nn.Module):
             )
         return diffusion
 
-    
-
-class RegVEReverseSDE(VEReverseSDE):
-    def f(self, t, x):
-        dx = super().f(t, x[..., :-1])
-        quad_reg = 0.5 * dx.pow(2).sum(dim=-1, keepdim=True)
-        return torch.cat([dx, quad_reg], dim=-1)
-
-    def g(self, t, x):
-        g = self.noise_schedule.g(t)
-        if g.ndim > 0:
-            return g.unsqueeze(1)
-        return torch.cat([torch.full_like(x[..., :-1], g), torch.zeros_like(x[..., -1:])], dim=-1)
