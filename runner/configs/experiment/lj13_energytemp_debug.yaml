@@ -40,7 +40,7 @@ model:
     min_log_reward: null
 
   diffusion_scale: 1.0
-  num_negative_time_steps: 0
+  num_negative_time_steps: 1
   num_samples_to_generate_per_epoch: 1024
   num_samples_to_sample_from_buffer: 512
 
@@ -60,10 +60,11 @@ model:
   # energytemp parameters
   num_init_samples: 10000
   test_batch_size: 5000
-  num_eval_samples: 128
+  num_eval_samples: 2048
   inference_batch_size: 512 
-  resampling_interval: 1
-  start_resampling_step: 10
+  resampling_interval: 100
+  start_resampling_step: 0
+  end_resampling_step: 900
   scale_diffusion: False
 
   lower_temperature: 1.0
