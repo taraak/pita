@@ -7,7 +7,7 @@ from typing import Optional
 class EnergyNet(nn.Module):
     def __init__(self, score_net: nn.Module):
         super(EnergyNet, self).__init__()
-        self.score_net = score_net
+        self.net = score_net
         self.c = nn.Parameter(torch.tensor(0.0))
 
     def forward_energy(
@@ -27,8 +27,7 @@ class EnergyNet(nn.Module):
         c_noise = (1 / 8) * torch.log(h_t)  # 1/4 ln(sigma)
 
         def f_theta(t, x_t, beta):
-            h_theta = self.score_net(t, x_t, beta)
-            # h_theta = self.score_net(t, xt)
+            h_theta = self.net(t, x_t, beta)
             return torch.sum(h_theta * x_t, dim=1)
 
         U_theta = f_theta(c_noise, c_in[:, None] * x_t, beta)
@@ -46,11 +45,16 @@ class EnergyNet(nn.Module):
         return E_theta
 
     def forward(
-        self, h_t: torch.Tensor, x_t: torch.Tensor, beta, pin=False, t=None
+        self,
+        h_t: torch.Tensor,
+        x_t: torch.Tensor,
+        beta: torch.Tensor,
+        pin: Optional[bool] = False,
+        t: Optional[torch.Tensor] = None,
+        energy_function: Optional[BaseEnergyFunction] = None,
     ) -> torch.Tensor:
-        U = self.forward_energy(h_t, x_t, beta, pin, t=t)
+        U = self.forward_energy(h_t, x_t, beta, pin=pin, t=t, energy_function=energy_function)
         nabla_U = torch.autograd.grad(U.sum(), x_t, create_graph=True)[0]
-        # nabla_U = self.score_net(h_t, x, beta)
         return nabla_U
     
     def denoiser(

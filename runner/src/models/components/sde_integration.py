@@ -2,6 +2,7 @@ from contextlib import contextmanager
 
 import numpy as np
 import torch
+from src.models.components.sdes import SDETerms
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.sdes import VEReverseSDE
 from src.models.components.utils import sample_cat_sys
@@ -67,6 +68,7 @@ def integrate_sde(
     num_integration_steps: int,
     energy_function: BaseEnergyFunction,
     start_resampling_step: int,
+    end_resampling_step: int,
     reverse_time: bool = True,
     diffusion_scale=1.0,
     time_range=1.0,
@@ -77,6 +79,7 @@ def integrate_sde(
     num_langevin_steps=1,
     batch_size=None,
     no_grad=True,
+    resample_at_end=False,
 ):
     start_time = time_range if reverse_time else 0.0
     end_time = time_range - start_time
@@ -93,13 +96,14 @@ def integrate_sde(
     samples = []
     logweights = []
     num_unique_idxs = []
+    sde_terms_all = []
 
     a = torch.zeros(x.shape[0], device=x.device)
 
     with conditional_no_grad(no_grad):
         for step, t in enumerate(times):
             for _ in range(num_langevin_steps):
-                x, a, idxs = (
+                x, a, idxs, sde_terms = (
                     euler_maruyama_step(
                         sde,
                         t,
@@ -111,6 +115,7 @@ def integrate_sde(
                         diffusion_scale=diffusion_scale,
                         batch_size=batch_size,
                         start_resampling_step=start_resampling_step,
+                        end_resampling_step=end_resampling_step,
                         inverse_temperature=inverse_temperature,
                         annealing_factor=annealing_factor,
                         energy_function=energy_function,
@@ -120,9 +125,33 @@ def integrate_sde(
                     x = remove_mean(
                         x, energy_function.n_particles, energy_function.n_spatial_dim
                     )
+
                 samples.append(x)
                 logweights.append(a)
                 num_unique_idxs.append(idxs)
+                sde_terms_all.append(sde_terms)
+
+        if resample_at_end:
+            t = torch.tensor(end_time).to(x.device)
+            target_logprob = energy_function(x)
+            if t.dim() == 0:
+                t = t * (torch.ones(x.shape[0])).to(x.device)
+                h_t = sde.noise_schedule.h(t)
+            model_energy = sde.energy_net.forward_energy(
+                h_t,
+                x,
+                inverse_temperature,
+                pin=sde.pin_energy,
+                energy_function=energy_function,
+                t=t
+            )
+            logq_0 = -model_energy
+            a_next = target_logprob - logq_0 + a
+            choice, _ = sample_cat_sys(x.shape[0], a_next)
+            x = x[choice]
+            logweights.append(a_next)
+            samples.append(x)
+            num_unique_idxs.append(len(np.unique(choice)))
 
     samples = torch.stack(samples)
     logweights = torch.stack(logweights)
@@ -136,7 +165,7 @@ def integrate_sde(
         )
         samples = torch.concatenate((samples, samples_langevin), axis=0)
 
-    return samples, logweights, num_unique_idxs
+    return samples, logweights, num_unique_idxs, sde_terms_all
 
 
 def euler_maruyama_step(
@@ -148,6 +177,7 @@ def euler_maruyama_step(
     step: int,
     batch_size: int,
     start_resampling_step: int,
+    end_resampling_step: int,
     resampling_interval: int,
     inverse_temperature: float,
     annealing_factor: float,
@@ -162,13 +192,14 @@ def euler_maruyama_step(
     diffusion = []
     drift_at = []
     drift_xt = []
+    sde_terms = []
 
 
     # check time
     import time
     for i in range(x.shape[0] // batch_size):
         # t_start = time.time()
-        drift_xt_i, drift_at_i = sde.f(
+        sde_term = sde.f(
             t,
             x[i * batch_size : (i + 1) * batch_size],
             resampling_interval=resampling_interval,
@@ -179,16 +210,14 @@ def euler_maruyama_step(
         # t_end = time.time()
         # print(f"Time taken for drift calculation: {t_end - t_start}")
 
-        diffusion_i = sde.diffusion(
+        sde_term.diffusion = sde.diffusion(
             t, x[i * batch_size : (i + 1) * batch_size], diffusion_scale
         )
-        diffusion.append(diffusion_i)
-        drift_xt.append(drift_xt_i)
-        drift_at.append(drift_at_i)
+        sde_terms.append(sde_term)
         
     if x.shape[0] % batch_size != 0:
         i = x.shape[0] // batch_size
-        drift_xt_i, drift_at_i = sde.f(
+        sde_term = sde.f(
             t,
             x[i * batch_size :],
             resampling_interval=resampling_interval,
@@ -196,34 +225,32 @@ def euler_maruyama_step(
             gamma=annealing_factor,
             energy_function=energy_function,
         )
-        diffusion_i = sde.diffusion(
+        sde_term.diffusion = sde.diffusion(
             t, x[i * batch_size :], diffusion_scale
         )
-        diffusion.append(diffusion_i)
-        drift_xt.append(drift_xt_i)
-        drift_at.append(drift_at_i)
+        sde_terms.append(sde_term)
 
-    diffusion = torch.cat(diffusion, dim=0)
-    drift_xt = torch.cat(drift_xt, dim=0)
-    drift_at = torch.cat(drift_at, dim=0)
+    sde_terms = SDETerms.concatenate(sde_terms)
 
     # update x, log weights, and log density
-    dx = drift_xt * dt + diffusion * np.sqrt(dt)
+    dx = sde_terms.drift_X * dt + sde_terms.diffusion * np.sqrt(dt)
     x_next = x + dx
     
-    a_next = a + drift_at * dt
+    a_next = a + sde_terms.drift_A * dt
 
     # don't start accumulating weights until step start_resampling_step
     if step < start_resampling_step:
         a_next = torch.zeros_like(a_next)
-        x_next = x  # samples are disytributed according to the prior, don't move
+        x_next = x  # samples are distributed according to the prior, don't move
+    elif step >= end_resampling_step:
+        a_next = torch.zeros_like(a_next)
 
     if (
         resampling_interval == -1
         or (step + 1) % resampling_interval != 0
         or step < start_resampling_step
     ):
-        return x_next, a_next, len(x_next)
+        return x_next, a_next, len(x_next), sde_terms
 
 
     # resample based on the weights
@@ -233,4 +260,4 @@ def euler_maruyama_step(
 
     num_unique_idxs = len(np.unique(choice))
 
-    return x_next, a_next, num_unique_idxs
+    return x_next, a_next, num_unique_idxs, sde_terms

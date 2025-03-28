@@ -16,10 +16,10 @@ def rademacher(shape, dtype=torch.float32, device="cuda"):
     return rand.to(dtype).to(device)
 
 
-def compute_divergence_exact(model, t, xt, beta):
+def compute_divergence_exact(f, t, xt, beta):
     # compute full divergence of the model
     def func_wrap(t, xt):
-        return model.forward(t.unsqueeze(0), xt.unsqueeze(0), beta).squeeze()
+        return f(t.unsqueeze(0), xt.unsqueeze(0), beta).squeeze()
     
     # Calculate the full jacobian 
     jacobian_matrix = vmap(jacrev(func_wrap, argnums=1))(t, xt)
@@ -42,9 +42,9 @@ def compute_divergence_forloop(nabla_Ut, x):
     return laplacian
 
 
-def compute_laplacian_exact(model, t, xt, beta):
+def compute_laplacian_exact(f, t, xt, beta):
     def func_wrap(t, xt):
-        return model.forward_energy(t.unsqueeze(0), xt.unsqueeze(0), beta).squeeze()
+        return f(t.unsqueeze(0), xt.unsqueeze(0), beta).squeeze()
 
     # Calculate the Hessian matrix of the model output with respect to the input
     hessian_matrix = vmap(hessian(func_wrap, argnums=1))(t, xt)

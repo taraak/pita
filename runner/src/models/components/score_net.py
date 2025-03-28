@@ -11,7 +11,10 @@ class ScoreNet(nn.Module):
         self.model = model
 
     def forward(
-        self, h_t: torch.Tensor, x_t: torch.Tensor, beta
+        self,
+        h_t: torch.Tensor,
+        x_t: torch.Tensor,
+        beta: torch.Tensor,
     ) -> torch.Tensor:
 
         return (self.denoiser(h_t, x_t, beta) - x_t) / h_t[:, None]
