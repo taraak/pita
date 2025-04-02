@@ -4,21 +4,70 @@ import PIL
 import torch
 import wandb
 from src.models.components.sdes import VEReverseSDE
-from src.models.components.temperature_schedules import BaseInverseTempSchedule
 from src.models.components.utils import sample_from_tensor
 from src.models.components.energy_net import EnergyNet
 from src.models.components.score_net import ScoreNet
 import copy 
 from dataclasses import dataclass, fields
 from src.models.components.sdes import SDETerms
-from .dem_module import *
+from src.models.components.sde_integration import WeightedSDEIntegrator
 import logging
+from lightning import LightningModule
+from lightning.pytorch.loggers import WandbLogger
+from src.utils.data_utils import remove_mean
+from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
+from src.models.components.noise_schedules import BaseNoiseSchedule
+from src.models.components.energy_net import EnergyNet
+from src.models.components.score_net import ScoreNet
+
+import time
+import hydra
+import matplotlib.pyplot as plt
+import numpy as np
+import ot as pot
+import torch
+from src.energies.base_energy_function import BaseEnergyFunction
+from src.utils.data_utils import remove_mean
+from .components.noise_schedules import BaseNoiseSchedule
+from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
+from .components.sdes import VEReverseSDE
 
 logger = logging.getLogger(__name__)
 
-class energyTempModule(DEMLitModule):
+
+class BaseLightningModule(LightningModule):
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+        self.eval_step("val", batch, batch_idx)
+
+    def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
+        self.eval_step("test", batch, batch_idx)
+
+    def on_validation_epoch_end(self) -> None:
+        self.eval_epoch_end("val")
+
+def get_wandb_logger(loggers):
+    """Gets the wandb logger if it is the list of loggers otherwise returns None."""
+    wandb_logger = None
+    for logger in loggers:
+        if isinstance(logger, WandbLogger):
+            wandb_logger = logger
+            break
+    return wandb_logger
+
+class energyTempModule(BaseLightningModule):
     def __init__(
         self,
+        net: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler,
+        noise_schedule: BaseNoiseSchedule,
+        partial_buffer: PrioritisedReplayBuffer,
+        num_samples_to_generate_per_epoch: int,
+        num_samples_to_sample_from_buffer: int,
+        num_integration_steps: int,
+        lr_scheduler_update_frequency: int,
+        num_samples_to_save: int,
+        num_init_samples: int,
         lower_temperature: float,
         higher_temperature: float,
         temperatures,
@@ -29,131 +78,85 @@ class energyTempModule(DEMLitModule):
         inference_batch_size: int,
         start_resampling_step: int,
         end_resampling_step: int,
+        resampling_interval: int,
+        num_negative_time_steps: int,
         P_mean: float,
         P_std: float,
         resample_at_end: bool,
+        compile: bool,
         loss_weights: dict,
+        partial_prior=None,
+        init_from_prior=False,
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__()
 
-        self.train_loss_score = MeanMetric()
-        self.train_loss_energy = MeanMetric()
-        self.train_loss_energy_matching = MeanMetric()
+        self.save_hyperparameters(logger=False)
+
+        print(args, kwargs)
+
+        h_theta = self.hparams.net()
+        self.energy_net = EnergyNet(score_net=copy.deepcopy(h_theta))
+        self.score_net = ScoreNet(model=h_theta)
+
+        self.reverse_sde = VEReverseSDE(
+            energy_net=self.energy_net,
+            noise_schedule=self.hparams.noise_schedule,
+            score_net=self.score_net,
+            pin_energy=False,
+            debias_inference=True
+        )
+        
+        self.weighted_sde_integrator = WeightedSDEIntegrator(
+            sde=self.reverse_sde,
+            num_integration_steps=self.hparams.num_integration_steps,
+            reverse_time=True,
+            time_range=1.0,
+            no_grad=True,
+            diffusion_scale=self.hparams.diffusion_scale,
+            resampling_interval=self.hparams.resampling_interval,
+            num_negative_time_steps=self.hparams.num_negative_time_steps,
+            start_resampling_step=self.hparams.start_resampling_step,
+            end_resampling_step=self.hparams.end_resampling_step,
+            resample_at_end=self.hparams.resample_at_end,
+            batch_size=self.hparams.inference_batch_size,
+        )
 
     def generate_samples(
         self,
-        reverse_sde: VEReverseSDE,
         inverse_temp: float,
         prior, 
         energy_function: BaseEnergyFunction,
         num_samples: int,
         annealing_factor: Optional[float] = 1.0,
         return_full_trajectory: bool = False,
-        diffusion_scale=None,
-        resampling_interval=None,
         return_logweights=False,
-        num_langevin_steps=1,
-        batch_size=None,
-        num_negative_time_steps=-1,
-        start_resampling_step=None,
-        end_resampling_step=None,
-        resample_at_end=False,
     ) -> torch.Tensor:
-        diffusion_scale = diffusion_scale or self.hparams.diffusion_scale
-        start_resampling_step = start_resampling_step or self.hparams.start_resampling_step
-        end_resampling_step = end_resampling_step or self.hparams.end_resampling_step
-        reverse_sde = reverse_sde or self.reverse_sde
-
-        if num_negative_time_steps == -1:
-            num_negative_time_steps = self.hparams.num_negative_time_steps
-
         prior_samples = prior.sample(num_samples)
 
-        samples, _, num_unique_idxs, sde_terms = self.integrate(
-            reverse_sde=reverse_sde,
-            samples=prior_samples.clone(),
-            reverse_time=True,
+        samples, _, num_unique_idxs, sde_terms = self.weighted_sde_integrator.integrate_sde(
+            x1=prior_samples.clone(),
             energy_function=energy_function,
-            return_full_trajectory=return_full_trajectory,
-            diffusion_scale=diffusion_scale,
-            resampling_interval=resampling_interval,
             inverse_temperature=inverse_temp,
             annealing_factor=annealing_factor,
-            num_langevin_steps=num_langevin_steps,
-            batch_size=batch_size,
-            num_negative_time_steps=num_negative_time_steps,
-            start_resampling_step=start_resampling_step,
-            end_resampling_step=end_resampling_step,
-            resample_at_end=resample_at_end,
         )
+        if not return_full_trajectory:
+            samples = samples[-1]
+
         if return_logweights:
             # reintegrate without resampling to get logweights, don't need as many samples
-            _, logweights, _, _ = self.integrate(
-                reverse_sde=reverse_sde,
-                samples=prior_samples.clone()[:batch_size],
-                reverse_time=True,
+            _, logweights, _, _ = self.weighted_sde_integrator.integrate_sde(
+                x1=prior_samples.clone()[:self.hparams.inference_batch_size],
                 energy_function=energy_function,
-                return_full_trajectory=return_full_trajectory,
-                diffusion_scale=diffusion_scale,
-                resampling_interval=self.num_integration_steps + 1,
+                resampling_interval=self.hparams.num_integration_steps + 1,
                 inverse_temperature=inverse_temp,
                 annealing_factor=annealing_factor,
-                num_langevin_steps=1,
-                batch_size=batch_size,
-                num_negative_time_steps=num_negative_time_steps,
-                start_resampling_step=start_resampling_step,
-                end_resampling_step=end_resampling_step,
-                resample_at_end=resample_at_end,
             )
             return samples, logweights, num_unique_idxs, sde_terms
         
         return samples, num_unique_idxs, sde_terms
 
-    def integrate(
-        self,
-        reverse_sde: VEReverseSDE,
-        samples: torch.Tensor,
-        reverse_time: bool,
-        energy_function: BaseEnergyFunction,
-        diffusion_scale: float,
-        resampling_interval: int,
-        inverse_temperature: float,
-        annealing_factor: float,
-        num_langevin_steps: int,
-        num_negative_time_steps: int,
-        start_resampling_step: int,
-        end_resampling_step: int,
-        resample_at_end: bool,
-        batch_size: int,
-        return_full_trajectory: bool,
-        no_grad=True,
-    ) -> torch.Tensor:
-        trajectory, logweights, num_unique_idxs, sde_terms = integrate_sde(
-            sde=reverse_sde,
-            x1=samples,
-            num_integration_steps=self.num_integration_steps,
-            energy_function=energy_function,
-            start_resampling_step=start_resampling_step,
-            end_resampling_step=end_resampling_step,
-            reverse_time=reverse_time,
-            diffusion_scale=diffusion_scale,
-            time_range=1.0,
-            resampling_interval=resampling_interval,
-            inverse_temperature=inverse_temperature,
-            annealing_factor=annealing_factor,
-            num_negative_time_steps=num_negative_time_steps,
-            num_langevin_steps=num_langevin_steps,
-            batch_size=batch_size,
-            no_grad=no_grad,
-            resample_at_end=resample_at_end,
-        )
-        if return_full_trajectory:
-            trajectory, logweights, num_unique_idxs, sde_terms
-
-        return trajectory[-1], logweights, num_unique_idxs, sde_terms
-    
 
     def logsigma_stratified_loss(self, batch_t, batch_loss, num_bins=5, loss_name=None):
         """Stratify loss by binning t."""
@@ -239,7 +242,7 @@ class energyTempModule(DEMLitModule):
     def model_step(self, x0_samples, temp_index, prefix):
         ln_sigmat = torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std + self.hparams.P_mean
         ht = torch.exp(2 * ln_sigmat)
-        h0 = self.noise_schedule.h(torch.zeros_like(ht))
+        h0 = self.hparams.noise_schedule.h(torch.zeros_like(ht))
 
         inverse_temp = self.inverse_temperatures[temp_index]
 
@@ -282,7 +285,7 @@ class energyTempModule(DEMLitModule):
         # TODO: random inverse temperatures for each element in the batch
         temp_index = np.random.randint(0, len(self.inverse_temperatures))
         
-        x0_samples, _, _ = self.buffers[temp_index].sample(self.num_samples_to_sample_from_buffer)
+        x0_samples, _, _ = self.buffers[temp_index].sample(self.hparams.num_samples_to_sample_from_buffer)
 
         loss = self.model_step(x0_samples, temp_index, prefix="train")
 
@@ -295,16 +298,12 @@ class energyTempModule(DEMLitModule):
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures[:-1]):
             # if temp_index == 0:
             #     self.last_samples[temp_index] = self.generate_samples(
-            #         reverse_sde=self.reverse_sde,
             #         return_logweights=False,
             #         prior = self.priors[temp_index],
             #         energy_function = self.energy_functions[temp_index],
             #         num_samples=self.num_samples_to_generate_per_epoch,
-            #         batch_size=self.hparams.inference_batch_size,
-            #         resampling_interval=self.hparams.resampling_interval,
             #         inverse_temp = inverse_temp,
             #         annealing_factor= 1.0,
-            #         resample_at_end = False,
             #     )
             #     self.last_energies[temp_index] = self.energy_function(self.last_samples[temp_index])
             #     self.buffers[temp_index].add(self.last_samples[temp_index],
@@ -314,16 +313,12 @@ class energyTempModule(DEMLitModule):
             energy_function = self.energy_functions[temp_index+1]
             "Lightning hook that is called when a training epoch ends."
             self.last_samples[temp_index+1], _, _= self.generate_samples(
-                reverse_sde=self.reverse_sde,
                 return_logweights=False,
                 prior = self.priors[temp_index+1],
                 energy_function = energy_function,
-                num_samples=self.num_samples_to_generate_per_epoch,
-                batch_size=self.hparams.inference_batch_size,
-                resampling_interval=self.hparams.resampling_interval,
+                num_samples=self.hparams.num_samples_to_generate_per_epoch,
                 inverse_temp = inverse_temp,
                 annealing_factor= inverse_lower_temp/ inverse_temp,
-                resample_at_end = False,
             )
             self.last_energies[temp_index+1] = energy_function(self.last_samples[temp_index+1])
 
@@ -407,16 +402,12 @@ class energyTempModule(DEMLitModule):
             energy_function = self.energy_functions[temp_index_lower]
 
             samples, logweights, num_unique_idxs, sde_terms = self.generate_samples(
-                reverse_sde=self.reverse_sde,
                 prior = self.priors[temp_index_lower],
                 energy_function=energy_function,
                 num_samples=self.hparams.num_eval_samples,
                 return_logweights=True,
-                batch_size=self.hparams.inference_batch_size,
-                resampling_interval=self.hparams.resampling_interval,
                 inverse_temp = inverse_temp,
                 annealing_factor = inverse_lower_temp / inverse_temp,
-                resample_at_end = False,
             )
 
             if energy_function.is_molecule:
@@ -478,22 +469,18 @@ class energyTempModule(DEMLitModule):
             final_samples = []
 
             batch_size = self.hparams.num_eval_samples
-            n_batches = self.num_samples_to_save // batch_size
+            n_batches = self.hparams.num_samples_to_save // batch_size
             logger.info(f"Generating {n_batches} batches of annealed samples of size {batch_size}.")
             logger.info(f"Resampling interval is {self.hparams.resampling_interval}")
 
             for i in range(n_batches):
                 start = time.time()
                 samples = self.generate_samples(
-                    reverse_sde=self.reverse_sde,
                     prior = self.priors[temp_index + 1],
                     energy_function=self.energy_functions[temp_index + 1],
                     num_samples=self.hparams.num_samples_to_save,
-                    batch_size=self.hparams.inference_batch_size,
-                    resampling_interval=self.hparams.resampling_interval,
                     inverse_temp=inverse_temp,
                     annealing_factor=inverse_lower_temp / inverse_temp,
-                    resample_at_end=False,
                 )
                 final_samples.append(samples)
                 end = time.time()
@@ -502,7 +489,7 @@ class energyTempModule(DEMLitModule):
             final_samples = torch.cat(final_samples, dim=0)
             output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
             # append time to avoid overwriting
-            path = f"{output_dir}/samples_temperature_{inverse_lower_temp}_{self.num_samples_to_save}.pt"
+            path = f"{output_dir}/samples_temperature_{inverse_lower_temp}_{self.hparams.num_samples_to_save}.pt"
             torch.save(final_samples, path)
             logger.info(f"Saving samples to {path}")
 
@@ -591,7 +578,6 @@ class energyTempModule(DEMLitModule):
         #                                 self.hparams.higher_temperature,
         #                                 num_temps)
 
-
         temperatures = torch.tensor(self.hparams.temperatures)
 
         logger.debug(f"Temperatures: {temperatures}")
@@ -602,53 +588,38 @@ class energyTempModule(DEMLitModule):
         logger.debug(f"Inverse Temperatures: {self.inverse_temperatures}")
 
 
-        h_theta = self.hparams.net()
-        self.energy_net = EnergyNet(score_net=copy.deepcopy(h_theta))
-
-
-        times = torch.linspace(1, 0, self.num_integration_steps + 1)
+        times = torch.linspace(1, 0, self.hparams.num_integration_steps + 1)
         t_start = times[self.hparams.start_resampling_step]
         
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
             self.energy_functions[temp_index] = self.hparams.energy_function(device=self.device,
                                                                                temperature=1/inverse_temp)
-            self.priors[temp_index] = self.partial_prior(device=self.device,
-                                                           scale=(self.noise_schedule.h(t_start) / inverse_temp) ** 0.5)
-            self.buffers[temp_index] = self.partial_buffer(device=self.device)
+            self.priors[temp_index] = self.hparams.partial_prior(device=self.device,
+                                                           scale=(self.hparams.noise_schedule.h(t_start) / inverse_temp) ** 0.5)
+            self.buffers[temp_index] = self.hparams.partial_buffer(device=self.device)
             self.last_samples[temp_index] = None
             self.last_energies[temp_index] = None
 
 
-            if self.init_from_prior:
-                init_states = self.priors[temp_index].sample(self.num_init_samples)
+            if self.hparams.init_from_prior:
+                init_states = self.priors[temp_index].sample(self.hparams.num_init_samples)
 
             else:
-                init_states = self.energy_functions[0].sample_test_set(self.num_init_samples)
+                init_states = self.energy_functions[0].sample_test_set(self.hparams.num_init_samples)
             init_energies = self.energy_functions[temp_index](init_states)
             self.buffers[temp_index].add(init_states, init_energies)
 
-        # self.score_net = ScoreNet(model=h_theta, x0=init_states)
-        self.score_net = ScoreNet(model=h_theta)
-
-        self.reverse_sde = VEReverseSDE(
-                                energy_net=self.energy_net,
-                                noise_schedule=self.hparams.noise_schedule,
-                                score_net=self.score_net,
-                                pin_energy=False,
-                                debias_inference=True
-                            )
-
-        
+                
         self.is_molecule = self.energy_functions[0].is_molecule
         if self.is_molecule:
             self.n_particles = self.energy_functions[0].n_particles
             self.n_spatial_dim = self.energy_functions[0].n_spatial_dim
 
-
+    
 
 
 if __name__ == "__main__":
-    _ = DEMLitModule(
+    _ = energyTempModule(
         None,
         None,
         None,
