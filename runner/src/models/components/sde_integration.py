@@ -8,8 +8,11 @@ from src.models.components.utils import sample_cat_sys
 from src.utils.data_utils import remove_mean
 from lightning import LightningModule
 from dataclasses import dataclass, asdict, fields
+from tqdm.auto import tqdm
+from rich.progress import Progress
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 
-
+disable = rank_zero_only.rank != 0  
 
 @contextmanager
 def conditional_no_grad(condition):
@@ -90,6 +93,8 @@ class WeightedSDEIntegrator:
         if resampling_interval is None:
             resampling_interval = self.resampling_interval
 
+        print("The resampling interval is: ", resampling_interval)
+
 
         times = torch.linspace(
             self.start_time, self.end_time, self.num_integration_steps + 1, device=x1.device
@@ -104,9 +109,18 @@ class WeightedSDEIntegrator:
         num_unique_idxs = []
         sde_terms_all = []
         a = torch.zeros(x.shape[0], device=x.device)
+        # with Progress() as pb:
+        #     t1 = pb.add_task('inner', total=len(times))
+        #     # t2 = pb.add_task('outer', total=100)
 
         with conditional_no_grad(self.no_grad):
-            for step, t in enumerate(times):
+            # change for loop to tqdm for progress bar
+            # with tqdm(total=len(times), position=0, leave=True) as pbar:
+            # for i in tqdm((foo_, range_ ), position=0, leave=True):
+            #     pbar.update()
+
+            for step, t in enumerate(tqdm(times, position=0, leave=True, dynamic_ncols=True, disable=disable)):
+            #for step, t in enumerate(times):
                 x, a, idxs, sde_terms = self.ddp_batched_euler_maruyama_step(
                     t,
                     x,
@@ -123,6 +137,7 @@ class WeightedSDEIntegrator:
                         x, energy_function.n_particles, energy_function.n_spatial_dim
                     )
 
+                import ipdb; ipdb.set_trace()
                 samples.append(x)
                 logweights.append(a)
                 num_unique_idxs.append(idxs)
@@ -189,7 +204,6 @@ class WeightedSDEIntegrator:
             x,
             a,
             dt,
-            step,
             inverse_temperature,
             annealing_factor,
             energy_function,
@@ -239,7 +253,6 @@ class WeightedSDEIntegrator:
             x: torch.Tensor,
             a: torch.tensor,
             dt: float,
-            step: int,
             inverse_temperature: float,
             annealing_factor: float,
             energy_function: BaseEnergyFunction,
@@ -271,13 +284,7 @@ class WeightedSDEIntegrator:
                 energy_function=energy_function,
             )
             sde_term.diffusion = self.sde.diffusion(t, x[i * self.batch_size :], self.diffusion_scale)
-            print("in for loop rank:", self.lightning_module.global_rank, len(sde_terms))
             sde_terms.append(sde_term)
-            print("after append", self.lightning_module.global_rank, len(sde_terms))
-
-        print("before concatenate", self.lightning_module.global_rank, x.shape, self.batch_size)
-        print("before concatenate", self.lightning_module.global_rank, sde_terms[0].drift_X.shape)
-
         sde_terms = SDETerms.concatenate(sde_terms)
 
         # update x, log weights, and log density

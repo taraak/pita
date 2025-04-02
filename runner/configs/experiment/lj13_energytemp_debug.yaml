@@ -44,7 +44,7 @@ model:
   # energytemp parameters
   num_init_samples: 10000
   test_batch_size: 5000
-  num_eval_samples: 2048
+  num_eval_samples: 512 #2048
   inference_batch_size: 512 
   resampling_interval: 1
   start_resampling_step: 0
@@ -64,5 +64,4 @@ model:
     score: 1.0
     energy_matching: 1.0
 
-  
   init_from_prior: false
