@@ -2,9 +2,8 @@ from contextlib import contextmanager
 
 import numpy as np
 import torch
-from src.models.components.sdes import SDETerms
 from src.energies.base_energy_function import BaseEnergyFunction
-from src.models.components.sdes import VEReverseSDE
+from src.models.components.sdes import SDETerms, VEReverseSDE
 from src.models.components.utils import sample_cat_sys
 from src.utils.data_utils import remove_mean
 
@@ -91,35 +90,31 @@ def integrate_sde(
         start_time, end_time, num_integration_steps + 1, device=x1.device
     )[:-1]
     x = x1
-
     x1.requires_grad = True
     samples = []
     logweights = []
     num_unique_idxs = []
     sde_terms_all = []
-
     a = torch.zeros(x.shape[0], device=x.device)
 
     with conditional_no_grad(no_grad):
         for step, t in enumerate(times):
             for _ in range(num_langevin_steps):
-                x, a, idxs, sde_terms = (
-                    euler_maruyama_step(
-                        sde,
-                        t,
-                        x,
-                        a,
-                        time_range / num_integration_steps,
-                        step,
-                        resampling_interval=resampling_interval,
-                        diffusion_scale=diffusion_scale,
-                        batch_size=batch_size,
-                        start_resampling_step=start_resampling_step,
-                        end_resampling_step=end_resampling_step,
-                        inverse_temperature=inverse_temperature,
-                        annealing_factor=annealing_factor,
-                        energy_function=energy_function,
-                    )
+                x, a, idxs, sde_terms = euler_maruyama_step(
+                    sde,
+                    t,
+                    x,
+                    a,
+                    time_range / num_integration_steps,
+                    step,
+                    resampling_interval=resampling_interval,
+                    diffusion_scale=diffusion_scale,
+                    batch_size=batch_size,
+                    start_resampling_step=start_resampling_step,
+                    end_resampling_step=end_resampling_step,
+                    inverse_temperature=inverse_temperature,
+                    annealing_factor=annealing_factor,
+                    energy_function=energy_function,
                 )
                 if energy_function.is_molecule:
                     x = remove_mean(
@@ -143,7 +138,7 @@ def integrate_sde(
                 inverse_temperature,
                 pin=sde.pin_energy,
                 energy_function=energy_function,
-                t=t
+                t=t,
             )
             logq_0 = -model_energy
             a_next = target_logprob - logq_0 + a
@@ -183,22 +178,11 @@ def euler_maruyama_step(
     annealing_factor: float,
     energy_function: BaseEnergyFunction,
     diffusion_scale: float,
+    world_size=1,
 ):
-    # Calculate drift and diffusion terms for num_eval_batches
-    # drift_xt = torch.zeros_like(x)
-    # drift_at = torch.zeros_like(a)
-    # diffusion = torch.zeros_like(x)
-
-    diffusion = []
-    drift_at = []
-    drift_xt = []
+    # local_batch_size = batch_size // world_size
     sde_terms = []
-
-
-    # check time
-    import time
     for i in range(x.shape[0] // batch_size):
-        # t_start = time.time()
         sde_term = sde.f(
             t,
             x[i * batch_size : (i + 1) * batch_size],
@@ -207,14 +191,11 @@ def euler_maruyama_step(
             gamma=annealing_factor,
             energy_function=energy_function,
         )
-        # t_end = time.time()
-        # print(f"Time taken for drift calculation: {t_end - t_start}")
-
         sde_term.diffusion = sde.diffusion(
             t, x[i * batch_size : (i + 1) * batch_size], diffusion_scale
         )
         sde_terms.append(sde_term)
-        
+
     if x.shape[0] % batch_size != 0:
         i = x.shape[0] // batch_size
         sde_term = sde.f(
@@ -225,9 +206,7 @@ def euler_maruyama_step(
             gamma=annealing_factor,
             energy_function=energy_function,
         )
-        sde_term.diffusion = sde.diffusion(
-            t, x[i * batch_size :], diffusion_scale
-        )
+        sde_term.diffusion = sde.diffusion(t, x[i * batch_size :], diffusion_scale)
         sde_terms.append(sde_term)
 
     sde_terms = SDETerms.concatenate(sde_terms)
@@ -235,7 +214,6 @@ def euler_maruyama_step(
     # update x, log weights, and log density
     dx = sde_terms.drift_X * dt + sde_terms.diffusion * np.sqrt(dt)
     x_next = x + dx
-    
     a_next = a + sde_terms.drift_A * dt
 
     # don't start accumulating weights until step start_resampling_step
@@ -251,7 +229,6 @@ def euler_maruyama_step(
         or step < start_resampling_step
     ):
         return x_next, a_next, len(x_next), sde_terms
-
 
     # resample based on the weights
     choice, _ = sample_cat_sys(x.shape[0], a_next)
