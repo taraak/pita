@@ -121,6 +121,7 @@ class energyTempModule(BaseLightningModule):
             end_resampling_step=self.hparams.end_resampling_step,
             resample_at_end=self.hparams.resample_at_end,
             batch_size=self.hparams.inference_batch_size,
+            lightning_module=self,
         )
 
     def generate_samples(
