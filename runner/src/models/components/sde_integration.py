@@ -6,6 +6,9 @@ from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.sdes import SDETerms, VEReverseSDE
 from src.models.components.utils import sample_cat_sys
 from src.utils.data_utils import remove_mean
+from lightning import LightningModule
+from dataclasses import dataclass, asdict, fields
+
 
 
 @contextmanager
@@ -44,6 +47,7 @@ class WeightedSDEIntegrator:
             num_integration_steps: int,
             start_resampling_step: int,
             end_resampling_step: int,
+            lightning_module: LightningModule, 
             reverse_time: bool = True,
             diffusion_scale=1.0,
             time_range=1.0,
@@ -66,9 +70,11 @@ class WeightedSDEIntegrator:
         self.batch_size = batch_size
         self.no_grad = no_grad
         self.resample_at_end = resample_at_end
+        self.lightning_module = lightning_module
 
         self.start_time = time_range if reverse_time else 0.0
         self.end_time = time_range - self.start_time
+
 
 
     def integrate_sde(self,
@@ -101,7 +107,7 @@ class WeightedSDEIntegrator:
 
         with conditional_no_grad(self.no_grad):
             for step, t in enumerate(times):
-                x, a, idxs, sde_terms = self.euler_maruyama_step(
+                x, a, idxs, sde_terms = self.ddp_batched_euler_maruyama_step(
                     t,
                     x,
                     a,
@@ -158,6 +164,74 @@ class WeightedSDEIntegrator:
         return samples, logweights, num_unique_idxs, sde_terms_all
     
 
+    def ddp_batched_euler_maruyama_step(
+        self,
+        t: torch.Tensor,
+        x: torch.Tensor,
+        a: torch.tensor,
+        dt: float,
+        step: int,
+        inverse_temperature: float,
+        annealing_factor: float,
+        energy_function: BaseEnergyFunction,
+        resampling_interval: int,
+    ):
+        local_batch_size = x.shape[0] // self.lightning_module.trainer.world_size
+
+        rank = self.lightning_module.trainer.global_rank
+
+        # split x and a into batches
+        x = x[rank * local_batch_size : (rank + 1) * local_batch_size]
+        a = a[rank * local_batch_size : (rank + 1) * local_batch_size]
+
+        x_next, a_next, sde_terms = self.euler_maruyama_step(
+            t,
+            x,
+            a,
+            dt,
+            step,
+            inverse_temperature,
+            annealing_factor,
+            energy_function,
+            resampling_interval,
+        )
+
+        # gather x and a
+        x_next = self.lightning_module.all_gather(x_next).reshape(-1, *x_next.shape[1:])
+        a_next = self.lightning_module.all_gather(a_next).reshape(-1, *a_next.shape[1:])
+
+        sde_terms = self.lightning_module.all_gather(asdict(sde_terms))
+        for term in fields(SDETerms):
+            sde_terms[term.name] = sde_terms[term.name].reshape(-1, *sde_terms[term.name].shape[2:])
+        sde_terms = SDETerms(**sde_terms)
+
+        # don't start accumulating weights until step start_resamplings_step
+        if step < self.start_resampling_step:
+            a_next = torch.zeros_like(a_next)
+            x_next = x  # samples are distributed according to the prior, don't move
+        elif step >= self.end_resampling_step:
+            a_next = torch.zeros_like(a_next)
+
+        if (
+            self.resampling_interval == -1
+            or (step + 1) % self.resampling_interval != 0
+            or step < self.start_resampling_step
+        ):
+            return x_next, a_next, len(x_next), sde_terms
+
+        # resample based on the weights
+        choice, _ = sample_cat_sys(x_next.shape[0], a_next)
+        x_next = x_next[choice]
+        a_next = torch.zeros_like(a_next)
+
+        num_unique_idxs = len(np.unique(choice))
+
+        return x_next, a_next, num_unique_idxs, sde_terms
+
+
+
+
+        
 
     def euler_maruyama_step(
             self,
@@ -170,9 +244,7 @@ class WeightedSDEIntegrator:
             annealing_factor: float,
             energy_function: BaseEnergyFunction,
             resampling_interval: int,
-            world_size=1,
     ):
-        # local_batch_size = batch_size // world_size
         sde_terms = []
         for i in range(x.shape[0] // self.batch_size):
             sde_term = self.sde.f(
@@ -199,7 +271,12 @@ class WeightedSDEIntegrator:
                 energy_function=energy_function,
             )
             sde_term.diffusion = self.sde.diffusion(t, x[i * self.batch_size :], self.diffusion_scale)
+            print("in for loop rank:", self.lightning_module.global_rank, len(sde_terms))
             sde_terms.append(sde_term)
+            print("after append", self.lightning_module.global_rank, len(sde_terms))
+
+        print("before concatenate", self.lightning_module.global_rank, x.shape, self.batch_size)
+        print("before concatenate", self.lightning_module.global_rank, sde_terms[0].drift_X.shape)
 
         sde_terms = SDETerms.concatenate(sde_terms)
 
@@ -208,25 +285,4 @@ class WeightedSDEIntegrator:
         x_next = x + dx
         a_next = a + sde_terms.drift_A * dt
 
-        # don't start accumulating weights until step start_resampling_step
-        if step < self.start_resampling_step:
-            a_next = torch.zeros_like(a_next)
-            x_next = x  # samples are distributed according to the prior, don't move
-        elif step >= self.end_resampling_step:
-            a_next = torch.zeros_like(a_next)
-
-        if (
-            self.resampling_interval == -1
-            or (step + 1) % self.resampling_interval != 0
-            or step < self.start_resampling_step
-        ):
-            return x_next, a_next, len(x_next), sde_terms
-
-        # resample based on the weights
-        choice, _ = sample_cat_sys(x.shape[0], a_next)
-        x_next = x_next[choice]
-        a_next = torch.zeros_like(a_next)
-
-        num_unique_idxs = len(np.unique(choice))
-
-        return x_next, a_next, num_unique_idxs, sde_terms
+        return x_next, a_next, sde_terms
