@@ -13,6 +13,8 @@ sweep:
   subdir: ${hydra.job.num}
 
 job_logging:
+  root:
+    level: DEBUG
   handlers:
     file:
       # Incorporates fix from https://github.com/facebookresearch/hydra/pull/2242
