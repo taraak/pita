@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 import PIL
 import torch
@@ -19,7 +19,7 @@ from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from src.models.components.noise_schedules import BaseNoiseSchedule
 from src.models.components.energy_net import EnergyNet
 from src.models.components.score_net import ScoreNet
-
+from torchmetrics import MeanMetric
 import time
 import hydra
 import matplotlib.pyplot as plt
@@ -44,6 +44,29 @@ class BaseLightningModule(LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         self.eval_epoch_end("val")
+
+    def configure_optimizers(self) -> Dict[str, Any]:
+        """Choose what optimizers and learning-rate schedulers to use in your optimization.
+        Normally you'd need one. But in the case of GANs or similar you might have multiple.
+
+        Examples:
+            https://lightning.ai/docs/pytorch/latest/common/lightning_module.html#configure-optimizers
+
+        :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
+        """
+        optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
+        if self.hparams.scheduler is not None:
+            scheduler = self.hparams.scheduler(optimizer=optimizer)
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "monitor": "val/loss",
+                    "interval": "epoch",
+                    "frequency": self.hparams.lr_scheduler_update_frequency,
+                },
+            }
+        return {"optimizer": optimizer}
 
 def get_wandb_logger(loggers):
     """Gets the wandb logger if it is the list of loggers otherwise returns None."""
@@ -94,8 +117,6 @@ class energyTempModule(BaseLightningModule):
 
         self.save_hyperparameters(logger=False)
 
-        print(args, kwargs)
-
         h_theta = self.hparams.net()
         self.energy_net = EnergyNet(score_net=copy.deepcopy(h_theta))
         self.score_net = ScoreNet(model=h_theta)
@@ -123,6 +144,11 @@ class energyTempModule(BaseLightningModule):
             batch_size=self.hparams.inference_batch_size,
             lightning_module=self,
         )
+
+        self.val_energy_w2 = MeanMetric()
+        self.val_energy_w1 = MeanMetric()
+        self.val_dist_w2 = MeanMetric()
+        self.val_num_unique_idxs = MeanMetric()
 
     def generate_samples(
         self,
@@ -566,6 +592,18 @@ class energyTempModule(BaseLightningModule):
         img = PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
         wandb_logger.log_image(f"{prefix}/num_unique_idxs", [img])
 
+    def _log_energy_mean(
+        self,
+        samples_energy,
+        prefix="val",
+    ):
+        self.log(
+            f"{prefix}/energy_mean",
+            samples_energy.mean(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
     def setup(self, stage: str) -> None:
         self.energy_functions = {}
         self.priors = {}
