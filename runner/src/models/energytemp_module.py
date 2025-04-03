@@ -365,6 +365,7 @@ class energyTempModule(BaseLightningModule):
         :param batch_idx: The index of the current batch.
         """
         logger.debug(f"Eval step {prefix}")
+        val_loss = 0.0
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
             energy_function = self.energy_functions[temp_index]
 
@@ -373,8 +374,10 @@ class energyTempModule(BaseLightningModule):
             elif prefix == "val":
                 true_x0_samples = energy_function.sample_val_set(self.hparams.num_eval_samples)
 
-            prefix = f"{prefix}/inv_temp={inverse_temp:0.3f}"
-            loss = self.model_step(true_x0_samples, temp_index, prefix=prefix)
+            loss = self.model_step(true_x0_samples, temp_index, prefix=f"{prefix}/inv_temp={inverse_temp:0.3f}")
+            val_loss += loss
+        
+        self.log(f"{prefix}/loss", val_loss, on_step=True, on_epoch=True, prog_bar=True)
         
     
     def _log_energy_w2(self, temp_index, generated_samples, prefix="val"):
@@ -420,6 +423,7 @@ class energyTempModule(BaseLightningModule):
         logger.debug(f"Started eval epoch end {prefix}")
         wandb_logger = get_wandb_logger(self.loggers)
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
+            logger.debug(f"Started eval epoch end for inverse_temp {inverse_temp:0.3f}")
             if temp_index == len(self.inverse_temperatures) - 1:
                 temp_index_lower = temp_index
             else:
@@ -428,6 +432,7 @@ class energyTempModule(BaseLightningModule):
             inverse_lower_temp = self.inverse_temperatures[temp_index_lower]
             energy_function = self.energy_functions[temp_index_lower]
 
+            logger.debug(f"Generating {self.hparams.num_eval_samples}")
             samples, logweights, num_unique_idxs, sde_terms = self.generate_samples(
                 prior = self.priors[temp_index_lower],
                 energy_function=energy_function,
@@ -632,7 +637,7 @@ class energyTempModule(BaseLightningModule):
         
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
             self.energy_functions[temp_index] = self.hparams.energy_function(device=self.device,
-                                                                               temperature=1/inverse_temp)
+                                                                               temperature=temperatures[temp_index])
             self.priors[temp_index] = self.hparams.partial_prior(device=self.device,
                                                            scale=(self.hparams.noise_schedule.h(t_start) / inverse_temp) ** 0.5)
             self.buffers[temp_index] = self.hparams.partial_buffer(device=self.device)
