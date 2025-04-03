@@ -137,7 +137,7 @@ class WeightedSDEIntegrator:
                         x, energy_function.n_particles, energy_function.n_spatial_dim
                     )
 
-                import ipdb; ipdb.set_trace()
+
                 samples.append(x)
                 logweights.append(a)
                 num_unique_idxs.append(idxs)
@@ -227,8 +227,8 @@ class WeightedSDEIntegrator:
             a_next = torch.zeros_like(a_next)
 
         if (
-            self.resampling_interval == -1
-            or (step + 1) % self.resampling_interval != 0
+            resampling_interval == -1
+            or (step + 1) % resampling_interval != 0
             or step < self.start_resampling_step
         ):
             return x_next, a_next, len(x_next), sde_terms
@@ -241,10 +241,6 @@ class WeightedSDEIntegrator:
         num_unique_idxs = len(np.unique(choice))
 
         return x_next, a_next, num_unique_idxs, sde_terms
-
-
-
-
         
 
     def euler_maruyama_step(
