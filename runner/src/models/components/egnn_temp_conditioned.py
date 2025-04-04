@@ -144,7 +144,6 @@ class EGNN(nn.Module):
         if agg == "mean":
             self.coords_range_layer = self.coords_range_layer * 19
 
-
         # Encoder
         if self.has_virtual:
             self.virtual_embedding = nn.Embedding(2, self.hidden_nf // 2)

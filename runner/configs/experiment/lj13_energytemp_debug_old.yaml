@@ -24,7 +24,7 @@ model:
   net:
     n_layers: 5
     hidden_nf: 128
-  
+
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
@@ -69,4 +69,3 @@ model:
   lower_temperature: 1.5
   higher_temperature: 2.0
   d_temp: 0.5
-  

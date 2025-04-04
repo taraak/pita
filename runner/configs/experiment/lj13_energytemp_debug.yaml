@@ -20,7 +20,6 @@ defaults:
   - override /model/net: egnn_temp
   - override /model/noise_schedule: elucidating
 
-
 model:
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -36,7 +35,6 @@ model:
   num_samples_to_save: 10000
   num_integration_steps: 1000
 
-
   # Elucidating noise schedule
   P_mean: -1.2
   P_std: 1.2
@@ -45,7 +43,7 @@ model:
   num_init_samples: 10000
   test_batch_size: 5000
   num_eval_samples: 2048
-  inference_batch_size: 512 
+  inference_batch_size: 512
   resampling_interval: 1
   start_resampling_step: 0
   end_resampling_step: 1000
@@ -56,9 +54,9 @@ model:
   higher_temperature: 2.0
   d_temp: 0.1
 
-  temperatures: 
+  temperatures:
     - 2.0
-    
+
   loss_weights:
     energy_score: 1.0
     score: 1.0

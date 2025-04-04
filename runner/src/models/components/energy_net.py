@@ -1,12 +1,13 @@
-from torch import nn
+from typing import Optional
+
 import torch
 from src.energies.base_energy_function import BaseEnergyFunction
-from typing import Optional
+from torch import nn
 
 
 class EnergyNet(nn.Module):
     def __init__(self, score_net: nn.Module):
-        super(EnergyNet, self).__init__()
+        super().__init__()
         self.net = score_net
         self.c = nn.Parameter(torch.tensor(0.0))
 
@@ -56,9 +57,9 @@ class EnergyNet(nn.Module):
         U = self.forward_energy(h_t, x_t, beta, pin=pin, t=t, energy_function=energy_function)
         nabla_U = torch.autograd.grad(U.sum(), x_t, create_graph=True)[0]
         return nabla_U
-    
+
     def denoiser(
         self, h_t: torch.Tensor, x_t: torch.Tensor, beta, return_score=False
-    )-> torch.Tensor:
+    ) -> torch.Tensor:
         nabla_U = self.forward(h_t, x_t, beta)
-        return x_t  - h_t[:, None] * nabla_U
+        return x_t - h_t[:, None] * nabla_U

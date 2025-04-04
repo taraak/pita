@@ -1,10 +1,11 @@
-import torch
 import copy
+
+import numpy as np
+import torch
+from einops import rearrange
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm
-from einops import rearrange
-import numpy as np
 
 
 class SinusoidalEmbedding(nn.Module):
@@ -97,9 +98,7 @@ class PositionalEmbedding(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(
-        self, size: int, t_emb_size: int = 0, add_t_emb=False, concat_t_emb=False
-    ):
+    def __init__(self, size: int, t_emb_size: int = 0, add_t_emb=False, concat_t_emb=False):
         super().__init__()
 
         in_size = size + t_emb_size if concat_t_emb else size
@@ -146,10 +145,7 @@ class FourierMLP(nn.Module):
         )
         self.layers = nn.Sequential(
             nn.GELU(),
-            *[
-                nn.Sequential(nn.Linear(channels, channels), nn.GELU())
-                for _ in range(num_layers)
-            ],
+            *[nn.Sequential(nn.Linear(channels, channels), nn.GELU()) for _ in range(num_layers)],
             nn.Linear(channels, int(np.prod(self.out_shape))),
         )
         if zero_init:
@@ -158,12 +154,8 @@ class FourierMLP(nn.Module):
 
     def forward(self, cond, inputs):
         cond = cond.view(-1, 1).expand((inputs.shape[0], 1))
-        sin_embed_cond = torch.sin(
-            (self.timestep_coeff * cond.float()) + self.timestep_phase
-        )
-        cos_embed_cond = torch.cos(
-            (self.timestep_coeff * cond.float()) + self.timestep_phase
-        )
+        sin_embed_cond = torch.sin((self.timestep_coeff * cond.float()) + self.timestep_phase)
+        cos_embed_cond = torch.cos((self.timestep_coeff * cond.float()) + self.timestep_phase)
         embed_cond = self.timestep_embed(
             rearrange([sin_embed_cond, cos_embed_cond], "d b w -> b (d w)")
         )
@@ -440,7 +432,7 @@ class SpectralNormMLP(nn.Module):
         hidden2_size: int = 128,
         output_size: int = 1,
     ):
-        super(SpectralNormMLP, self).__init__()
+        super().__init__()
 
         # First hidden layer with spectral normalization
         self.fc1 = spectral_norm(nn.Linear(input_size, hidden1_size))

@@ -20,12 +20,11 @@ def compute_divergence_exact(f, t, xt, beta):
     # compute full divergence of the model
     def func_wrap(t, xt):
         return f(t.unsqueeze(0), xt.unsqueeze(0), beta).squeeze()
-    
-    # Calculate the full jacobian 
+
+    # Calculate the full jacobian
     jacobian_matrix = vmap(jacrev(func_wrap, argnums=1))(t, xt)
     divergence = jacobian_matrix.diagonal(offset=0, dim1=-2, dim2=-1).sum(dim=-1)
     return divergence.detach()
-
 
 
 def compute_divergence_forloop(nabla_Ut, x):
@@ -34,9 +33,9 @@ def compute_divergence_forloop(nabla_Ut, x):
 
     # Compute the Hessian row-wise
     for i in range(d):  # ∂(∇U_t)_i / ∂x
-        grad2 = torch.autograd.grad(
-            nabla_Ut[:, i].sum(), x, retain_graph=True, create_graph=True
-        )[0]
+        grad2 = torch.autograd.grad(nabla_Ut[:, i].sum(), x, retain_graph=True, create_graph=True)[
+            0
+        ]
         hessian_matrix[:, i, :] = grad2  # i-th row
     laplacian = hessian_matrix.diagonal(offset=0, dim1=-2, dim2=-1).sum(dim=-1)
     return laplacian

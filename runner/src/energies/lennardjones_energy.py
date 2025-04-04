@@ -172,7 +172,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.data_normalization_factor = data_normalization_factor
 
-
         self.data_path_train = (
             data_path
             + f"LJ{self.n_particles}_temp_{self.temperature:0.1f}/train_split_LJ{self.n_particles}-1000.npy"

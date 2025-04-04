@@ -1,4 +1,4 @@
-_target_: src.models.components.mlp.MyMLPTemperature 
+_target_: src.models.components.mlp.MyMLPTemperature
 _partial_: true
 hidden_size: 128
 hidden_layers: 3

@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 
-import torch
 import numpy as np
 import torch
 
@@ -48,7 +47,7 @@ class PowerNoiseSchedule(BaseNoiseSchedule):
         return torch.sqrt(self.beta * self.power * (t ** (self.power - 1)))
 
     def h(self, t):
-        return self.beta * (t ** self.power)
+        return self.beta * (t**self.power)
 
 
 class SubLinearNoiseSchedule(BaseNoiseSchedule):
@@ -72,11 +71,7 @@ class GeometricNoiseSchedule(BaseNoiseSchedule):
         # Let sigma_d = sigma_max / sigma_min
         # Then g(t) = sigma_min * sigma_d^t * sqrt{2 * log(sigma_d)}
         # See Eq 192 in https://arxiv.org/pdf/2206.00364.pdf
-        return (
-            self.sigma_min
-            * (self.sigma_diff**t)
-            * ((2 * np.log(self.sigma_diff)) ** 0.5)
-        )
+        return self.sigma_min * (self.sigma_diff**t) * ((2 * np.log(self.sigma_diff)) ** 0.5)
 
     def h(self, t):
         # Let sigma_d = sigma_max / sigma_min
@@ -90,13 +85,14 @@ class ElucidatingNoiseSchedule(BaseNoiseSchedule):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.rho = rho
-        self.term1 = self.sigma_max ** (1/self.rho) 
-        self.term2 = (self.sigma_min ** (1/self.rho) - self.sigma_max ** (1/self.rho))
+        self.term1 = self.sigma_max ** (1 / self.rho)
+        self.term2 = self.sigma_min ** (1 / self.rho) - self.sigma_max ** (1 / self.rho)
 
     def g(self, t):
         # take derivative of h(t) with respect to t with automatic differentiation
-        return (- 2 * self.rho * (self.term1 + (1-t) * self.term2)**(2 * self.rho - 1) * self.term2) ** 0.5
+        return (
+            -2 * self.rho * (self.term1 + (1 - t) * self.term2) ** (2 * self.rho - 1) * self.term2
+        ) ** 0.5
 
     def h(self, t):
-        return (self.term1 + (1-t) * self.term2)**(2 * self.rho)
-
+        return (self.term1 + (1 - t) * self.term2) ** (2 * self.rho)

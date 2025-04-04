@@ -58,7 +58,6 @@ class GMM(BaseEnergyFunction):
         self.test_set_size = test_set_size
         self.val_set_size = val_set_size
 
-
         self.temperature = temperature
 
         self.name = "gmm"
