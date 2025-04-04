@@ -22,7 +22,7 @@ from src.models.components.sdes import SDETerms, VEReverseSDE
 from src.models.components.utils import sample_from_tensor
 from src.utils.data_utils import remove_mean
 from torchmetrics import MeanMetric
-
+from .components.score_estimator import estimate_Rt
 from .components.clipper import Clipper
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
@@ -213,52 +213,104 @@ class energyTempModule(BaseLightningModule):
             stratified_losses[t_range] = range_loss
         return stratified_losses
 
-    def get_score_loss(
+    def get_loss(
         self,
         ht: torch.Tensor,
         x0: torch.Tensor,
         inverse_temp: float,
         energy_function: BaseEnergyFunction,
     ) -> torch.Tensor:
+        
+        h0 = self.hparams.noise_schedule.h(torch.zeros_like(ht))
         x0.requires_grad = True
         z = torch.randn_like(x0)
         xt = x0 + z * ht[:, None] ** 0.5
+        # TODO: should probably do weighting
+        lambda_t = 1  # (ht + 1) / ht
 
-        if self.is_molecule:
-            xt = remove_mean(
-                xt,
-                self.n_particles,
-                self.n_spatial_dim,
-            )
-            x0 = remove_mean(
-                x0,
-                self.n_particles,
-                self.n_spatial_dim,
-            )
+        x0 = self.maybe_remove_mean(x0)
+        xt = self.maybe_remove_mean(xt)
 
         predicted_x0_scorenet = self.score_net.denoiser(
             ht, xt, inverse_temp, return_score=False
         )
-        predicted_x0_energynet = self.energy_net.denoiser(ht, xt, inverse_temp)
+        predicted_x0_energynet, predicted_Ut = self.energy_net.denoiser_and_energy(
+            ht, xt, inverse_temp
+        )
 
-        # TODO: should probably do weighting
-        lambda_t = 1  # (ht + 1) / ht
-
-        x0_loss_energynet = torch.sum(
+        energy_score_loss = torch.sum(
             (predicted_x0_energynet - predicted_x0_scorenet.detach()) ** 2, dim=(-1)
         )
-        x0_loss_scorenet = torch.sum((predicted_x0_scorenet - x0) ** 2, dim=(-1))
-        energy_score_loss = lambda_t * x0_loss_energynet
-        score_loss = lambda_t * x0_loss_scorenet
-        target_energy = -energy_function(x0).sum()
-        target_score = torch.autograd.grad(target_energy, x0, create_graph=True)[0]
-        target_score = self.hparams.clipper.clip_scores(target_score)
-        target_x0 = xt - target_score * ht[:, None]
-        target_score_loss = torch.sum(
-            (predicted_x0_scorenet - target_x0) ** 2, dim=(-1)
+        score_loss = torch.sum(
+            (predicted_x0_scorenet - x0) ** 2, dim=(-1)
         )
+        target_score_loss = self.get_target_score_loss(
+            ht=ht,
+            x0=x0,
+            xt=xt,
+            energy_function=energy_function,
+            predicted_x0=predicted_x0_scorenet, 
+        )
+        dem_energy_loss = self.get_dem_energy_loss(
+            ht=ht,
+            xt=xt,
+            energy_function=energy_function,
+            predicted_Ut=predicted_Ut,
+        )
+        energy_matching_loss = self.get_energy_matching_loss(
+            h0=h0,
+            x0=x0,
+            inverse_temp=inverse_temp,
+            energy_function=energy_function,
+        )
+        energy_score_loss = lambda_t * energy_score_loss
+        score_loss = lambda_t * score_loss
+        target_score_loss = lambda_t * target_score_loss
 
-        return energy_score_loss, score_loss, target_score_loss
+        return energy_score_loss, score_loss, target_score_loss, dem_energy_loss, energy_matching_loss
+    
+
+
+    def get_target_score_loss(
+        self, 
+        ht: torch.Tensor,
+        x0: torch.Tensor,
+        xt: torch.Tensor,
+        energy_function: BaseEnergyFunction,
+        predicted_x0: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.hparams.loss_weights["target_score"] > 0:
+            return torch.zeros(predicted_x0.shape[0], device=x0.device)
+        energy = -energy_function(x0).sum()
+        score = torch.autograd.grad(energy, x0, create_graph=True)[0]
+        score = self.hparams.clipper.clip_scores(score)
+        x0 = xt - score * ht[:, None]
+        target_score_loss = torch.sum(
+            (x0 - predicted_x0) ** 2, dim=(-1)
+        )
+        return target_score_loss
+
+    
+    def get_dem_energy_loss(
+        self, 
+        ht: torch.Tensor,
+        xt: torch.Tensor,
+        energy_function: BaseEnergyFunction,
+        predicted_Ut: torch.Tensor,
+        energy_threshold: float = 1e3,
+    ) -> torch.Tensor:
+        if self.hparams.loss_weights["dem_energy"] > 0:
+            return torch.zeros_like(predicted_Ut)
+        Ut_estimate = - estimate_Rt(
+            ht=ht,
+            x=xt,
+            energy_function=energy_function,
+            num_mc_samples=self.hparams.num_mc_samples,
+        )
+        mask = Ut_estimate > energy_threshold
+        loss = (Ut_estimate - predicted_Ut) ** 2
+        loss = ~mask * loss
+        return loss
 
     def get_energy_matching_loss(
         self,
@@ -268,7 +320,9 @@ class energyTempModule(BaseLightningModule):
         energy_function: BaseEnergyFunction,
         energy_threshold: float = 1e3,
     ) -> torch.Tensor:
-        x0.requires_grad = True
+        
+        if self.hparams.loss_weights["energy_matching"] > 0:
+            return torch.zeros(x0.shape[0], device=x0.device)
 
         U0_true = -energy_function(x0)
 
@@ -284,16 +338,12 @@ class energyTempModule(BaseLightningModule):
             + self.hparams.P_mean
         )
         ht = torch.exp(2 * ln_sigmat)
-        h0 = self.hparams.noise_schedule.h(torch.zeros_like(ht))
 
         inverse_temp = self.inverse_temperatures[temp_index]
 
         with torch.enable_grad():
-            energy_score_loss, score_loss, target_score_loss = self.get_score_loss(
+            energy_score_loss, score_loss, target_score_loss, dem_energy_loss, energy_matching_loss = self.get_loss(
                 ht, x0_samples, inverse_temp, self.energy_functions[temp_index]
-            )
-            energy_matching_loss = self.get_energy_matching_loss(
-                h0, x0_samples, inverse_temp, self.energy_functions[temp_index]
             )
 
         if prefix == "train":
@@ -314,23 +364,33 @@ class energyTempModule(BaseLightningModule):
             self.log_dict(
                 self.logsigma_stratified_loss(
                     ln_sigmat,
-                    energy_matching_loss,
+                    target_score_loss,
                     loss_name="train/stratified/target_score_loss",
+                ),
+                sync_dist=True,
+            )
+            self.log_dict(
+                self.logsigma_stratified_loss(
+                    ln_sigmat,
+                    dem_energy_loss,
+                    loss_name="train/stratified/dem_energy_loss",
                 ),
                 sync_dist=True,
             )
 
         energy_score_loss = energy_score_loss.mean()
         score_loss = score_loss.mean()
-        energy_matching_loss = energy_matching_loss.mean()
         target_score_loss = target_score_loss.mean()
+        dem_energy_loss = dem_energy_loss.mean()
+        energy_matching_loss = energy_matching_loss.mean()
 
         loss_weights = self.hparams.loss_weights
         loss = (
             loss_weights["energy_score"] * energy_score_loss
             + loss_weights["score"] * score_loss
-            + loss_weights["energy_matching"] * energy_matching_loss
             + loss_weights["target_score"] * target_score_loss
+            + loss_weights["dem_energy"] * dem_energy_loss
+            + loss_weights["energy_matching"] * energy_matching_loss
         )
 
         # update and log metrics
@@ -338,8 +398,9 @@ class energyTempModule(BaseLightningModule):
             f"{prefix}/loss": loss,
             f"{prefix}/energy_score_loss": energy_score_loss,
             f"{prefix}/score_loss": score_loss,
-            f"{prefix}/energy_matching_loss": energy_matching_loss,
             f"{prefix}/target_score_loss": target_score_loss,
+            f"{prefix}/dem_energy_loss": dem_energy_loss,
+            f"{prefix}/energy_matching_loss": energy_matching_loss,
         }
 
         self.log_dict(
@@ -691,6 +752,13 @@ class energyTempModule(BaseLightningModule):
             on_epoch=True,
             prog_bar=True,
         )
+
+    def maybe_remove_mean(self, x):
+        if self.is_molecule:
+            x = remove_mean(
+                x, self.n_particles, self.n_spatial_dim
+            )
+        return x
 
     def setup(self, stage: str) -> None:
         self.energy_functions = {}

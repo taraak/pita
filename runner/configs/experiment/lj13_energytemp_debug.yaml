@@ -71,6 +71,7 @@ model:
     energy_score: 1.0
     score: 1.0
     energy_matching: 0.0
-    target_score: 1.0
+    target_score: 0.0
+    dem_energy: 1.0
 
   init_from_prior: false
