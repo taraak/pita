@@ -6,17 +6,17 @@
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["LJ13"]
+tags: ["LJ55"]
 
 seed: 12345
 
 logger:
   wandb:
     tags: ${tags}
-    group: "lj13"
+    group: "lj55"
 
 defaults:
-  - override /energy: lj13
+  - override /energy: lj55
   - override /model/net: egnn_temp
   - override /model/noise_schedule: elucidating
 
@@ -75,5 +75,3 @@ model:
     dem_energy: 0.0
 
   init_from_prior: false
-
-  num_mc_samples: 1000

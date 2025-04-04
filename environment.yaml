@@ -31,9 +31,10 @@ dependencies:
   - rich=13.*
   - pre-commit=3.*
   - pytest=7.*
-
   # --------- loggers --------- #
   - wandb
+  - ambertools # Required for MD generation
+  - openmm
   # - neptune-client
   # - mlflow
   # - comet-ml
@@ -41,6 +42,7 @@ dependencies:
 
   - pip>=23
   - pip:
+      - mdtraj
       - hydra-optuna-sweeper
       - hydra-colorlog
       - rootutils
