@@ -39,6 +39,12 @@ class BaseLightningModule(LightningModule):
         self.eval_step("test", batch, batch_idx)
 
     def on_validation_epoch_end(self) -> None:
+        if self.trainer.sanity_checking:
+            logger.info("Skipping validation epoch end during sanity check.")
+            return
+        if self.trainer.global_step == 0:
+            logger.info("Skipping validation epoch end during first step.")
+            return
         self.eval_epoch_end("val")
 
     def configure_optimizers(self) -> Dict[str, Any]:
