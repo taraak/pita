@@ -107,6 +107,7 @@ class energyTempModule(BaseLightningModule):
         start_resampling_step: int,
         end_resampling_step: int,
         resampling_interval: int,
+        num_mc_samples: int,
         num_negative_time_steps: int,
         P_mean: float,
         P_std: float,
@@ -282,9 +283,18 @@ class energyTempModule(BaseLightningModule):
         xt: torch.Tensor,
         energy_function: BaseEnergyFunction,
         predicted_x0: torch.Tensor,
+        time_threshold: float = 0.2,
     ) -> torch.Tensor:
         if self.hparams.loss_weights["target_score"] == 0:
             return torch.zeros(predicted_x0.shape[0], device=x0.device)
+        
+        h_threshold = self.hparams.noise_schedule.h(torch.tensor(time_threshold))
+        time_mask = ht > h_threshold
+        x0 = x0[time_mask]
+        ht = ht[time_mask]
+        xt = xt[time_mask]
+        predicted_x0 = predicted_x0[time_mask]
+
         energy = -energy_function(x0).sum()
         score = torch.autograd.grad(energy, x0, create_graph=True)[0]
         score = self.hparams.clipper.clip_scores(score)
@@ -302,9 +312,18 @@ class energyTempModule(BaseLightningModule):
         energy_function: BaseEnergyFunction,
         predicted_Ut: torch.Tensor,
         energy_threshold: float = 1e3,
+        time_threshold: float = 0.2,
     ) -> torch.Tensor:
+    
         if self.hparams.loss_weights["dem_energy"] == 0:
             return torch.zeros_like(predicted_Ut)
+        
+        h_threshold = self.hparams.noise_schedule.h(torch.tensor(time_threshold))
+        time_mask = ht > h_threshold
+        ht = ht[time_mask]
+        xt = xt[time_mask]
+        predicted_Ut = predicted_Ut[time_mask]
+
         Ut_estimate = - estimate_Rt(
             ht=ht,
             x=xt,
@@ -365,23 +384,7 @@ class energyTempModule(BaseLightningModule):
                 ),
                 sync_dist=True,
             )
-            self.log_dict(
-                self.logsigma_stratified_loss(
-                    ln_sigmat,
-                    target_score_loss,
-                    loss_name="train/stratified/target_score_loss",
-                ),
-                sync_dist=True,
-            )
-            self.log_dict(
-                self.logsigma_stratified_loss(
-                    ln_sigmat,
-                    dem_energy_loss,
-                    loss_name="train/stratified/dem_energy_loss",
-                ),
-                sync_dist=True,
-            )
-
+            
         energy_score_loss = energy_score_loss.mean()
         score_loss = score_loss.mean()
         target_score_loss = target_score_loss.mean()
@@ -508,7 +511,7 @@ class energyTempModule(BaseLightningModule):
         energies = energy_function(energy_function.normalize(data_set))
         energy_w2 = pot.emd2_1d(
             energies.cpu().numpy(), generated_energies.cpu().numpy()
-        )
+        )**0.5
         self.log(
             f"{prefix}/energy_w2",
             self.val_energy_w2(energy_w2),
@@ -531,7 +534,7 @@ class energyTempModule(BaseLightningModule):
             .numpy()
             .reshape(-1),
             energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1),
-        )
+        )**0.5
         self.log(
             f"{prefix}/dist_w2",
             self.val_dist_w2(dist_w2),

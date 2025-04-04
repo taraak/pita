@@ -75,3 +75,5 @@ model:
     dem_energy: 1.0
 
   init_from_prior: false
+
+  num_mc_samples: 1000
