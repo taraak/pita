@@ -23,6 +23,7 @@ from src.models.components.utils import sample_from_tensor
 from src.utils.data_utils import remove_mean
 from torchmetrics import MeanMetric
 
+from .components.clipper import Clipper
 from .components.noise_schedules import BaseNoiseSchedule
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.sdes import VEReverseSDE
@@ -80,6 +81,7 @@ class energyTempModule(BaseLightningModule):
         net: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
+        clipper: Clipper,
         noise_schedule: BaseNoiseSchedule,
         partial_buffer: PrioritisedReplayBuffer,
         num_samples_to_generate_per_epoch: int,
@@ -117,6 +119,7 @@ class energyTempModule(BaseLightningModule):
         h_theta = self.hparams.net()
         self.energy_net = EnergyNet(score_net=copy.deepcopy(h_theta))
         self.score_net = ScoreNet(model=h_theta)
+        self.clipper = clipper
 
         self.reverse_sde = VEReverseSDE(
             energy_net=self.energy_net,
@@ -159,11 +162,13 @@ class energyTempModule(BaseLightningModule):
     ) -> torch.Tensor:
         prior_samples = prior.sample(num_samples)
 
-        samples, _, num_unique_idxs, sde_terms = self.weighted_sde_integrator.integrate_sde(
-            x1=prior_samples.clone(),
-            energy_function=energy_function,
-            inverse_temperature=inverse_temp,
-            annealing_factor=annealing_factor,
+        samples, _, num_unique_idxs, sde_terms = (
+            self.weighted_sde_integrator.integrate_sde(
+                x1=prior_samples.clone(),
+                energy_function=energy_function,
+                inverse_temperature=inverse_temp,
+                annealing_factor=annealing_factor,
+            )
         )
         if not return_full_trajectory:
             samples = samples[-1]
@@ -231,7 +236,9 @@ class energyTempModule(BaseLightningModule):
                 self.n_spatial_dim,
             )
 
-        predicted_x0_scorenet = self.score_net.denoiser(ht, xt, inverse_temp, return_score=False)
+        predicted_x0_scorenet = self.score_net.denoiser(
+            ht, xt, inverse_temp, return_score=False
+        )
         predicted_x0_energynet = self.energy_net.denoiser(ht, xt, inverse_temp)
 
         # TODO: should probably do weighting
@@ -243,19 +250,13 @@ class energyTempModule(BaseLightningModule):
         x0_loss_scorenet = torch.sum((predicted_x0_scorenet - x0) ** 2, dim=(-1))
         energy_score_loss = lambda_t * x0_loss_energynet
         score_loss = lambda_t * x0_loss_scorenet
-
-        import ipdb
-
-        ipdb.set_trace()
-        target_energy = -energy_function(x0)
-        print(f"target_energy: {target_energy[:10]}")
-        target_score = torch.autograd.grad(target_energy.sum(), x0, create_graph=True)[
-            0
-        ]  # nablaU0
-        print(f"target_score: {target_score[:10, :5]}")
+        target_energy = -energy_function(x0).sum()
+        target_score = torch.autograd.grad(target_energy, x0, create_graph=True)[0]
+        target_score = self.hparams.clipper.clip_scores(target_score)
         target_x0 = xt - target_score * ht[:, None]
-        print(f"target_x0: {target_x0[:10, :5]}")
-        target_score_loss = torch.sum((predicted_x0_scorenet - target_x0) ** 2, dim=(-1))
+        target_score_loss = torch.sum(
+            (predicted_x0_scorenet - target_x0) ** 2, dim=(-1)
+        )
 
         return energy_score_loss, score_loss, target_score_loss
 
@@ -341,7 +342,9 @@ class energyTempModule(BaseLightningModule):
             f"{prefix}/target_score_loss": target_score_loss,
         }
 
-        self.log_dict(loss_dict, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log_dict(
+            loss_dict, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
+        )
 
         return loss
 
@@ -384,7 +387,9 @@ class energyTempModule(BaseLightningModule):
                 inverse_temp=inverse_temp,
                 annealing_factor=inverse_lower_temp / inverse_temp,
             )
-            self.last_energies[temp_index + 1] = energy_function(self.last_samples[temp_index + 1])
+            self.last_energies[temp_index + 1] = energy_function(
+                self.last_samples[temp_index + 1]
+            )
 
             self.buffers[temp_index + 1].add(
                 self.last_samples[temp_index + 1], self.last_energies[temp_index + 1]
@@ -392,7 +397,9 @@ class energyTempModule(BaseLightningModule):
 
         # print buffer size:
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
-            logger.debug(f"Buffer size for inverse_temp: {len(self.buffers[temp_index])}")
+            logger.debug(
+                f"Buffer size for inverse_temp: {len(self.buffers[temp_index])}"
+            )
 
     def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
         """Perform a single eval step on a batch of data from the validation set.
@@ -407,9 +414,13 @@ class energyTempModule(BaseLightningModule):
             energy_function = self.energy_functions[temp_index]
 
             if prefix == "test":
-                true_x0_samples = energy_function.sample_test_set(self.hparams.num_eval_samples)
+                true_x0_samples = energy_function.sample_test_set(
+                    self.hparams.num_eval_samples
+                )
             elif prefix == "val":
-                true_x0_samples = energy_function.sample_val_set(self.hparams.num_eval_samples)
+                true_x0_samples = energy_function.sample_val_set(
+                    self.hparams.num_eval_samples
+                )
 
             loss = self.model_step(
                 true_x0_samples,
@@ -430,7 +441,9 @@ class energyTempModule(BaseLightningModule):
             data_set = energy_function.sample_val_set(self.hparams.num_eval_samples)
 
         energies = energy_function(energy_function.normalize(data_set))
-        energy_w2 = pot.emd2_1d(energies.cpu().numpy(), generated_energies.cpu().numpy())
+        energy_w2 = pot.emd2_1d(
+            energies.cpu().numpy(), generated_energies.cpu().numpy()
+        )
         self.log(
             f"{prefix}/energy_w2",
             self.val_energy_w2(energy_w2),
@@ -448,7 +461,10 @@ class energyTempModule(BaseLightningModule):
             data_set = energy_function.sample_val_set(self.hparams.num_eval_samples)
 
         dist_w2 = pot.emd2_1d(
-            energy_function.interatomic_dist(generated_samples).cpu().numpy().reshape(-1),
+            energy_function.interatomic_dist(generated_samples)
+            .cpu()
+            .numpy()
+            .reshape(-1),
             energy_function.interatomic_dist(data_set).cpu().numpy().reshape(-1),
         )
         self.log(
@@ -602,7 +618,9 @@ class energyTempModule(BaseLightningModule):
         # limit yaxis
         axs.set_xlabel("Integration time")
         fig.canvas.draw()
-        img = PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+        img = PIL.Image.frombytes(
+            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
+        )
         wandb_logger.log_image(f"{prefix}/annealing_logweights", [img])
 
     def _log_std_logweights(self, logweights, prefix="val"):
@@ -616,7 +634,9 @@ class energyTempModule(BaseLightningModule):
         axs.plot(integration_times, std_logweights)
         axs.set_xlabel("Integration time")
         fig.canvas.draw()
-        img = PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+        img = PIL.Image.frombytes(
+            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
+        )
         wandb_logger.log_image(f"{prefix}/std_logweights", [img])
 
     def _log_sde_term(self, sde_terms, term, prefix="val"):
@@ -640,7 +660,9 @@ class energyTempModule(BaseLightningModule):
 
         axs.set_xlabel("Integration time")
         fig.canvas.draw()
-        img = PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+        img = PIL.Image.frombytes(
+            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
+        )
         wandb_logger.log_image(f"{prefix}/{term}", [img])
 
     def _log_num_unique_idxs(self, num_unique_idxs, prefix="val"):
@@ -652,7 +674,9 @@ class energyTempModule(BaseLightningModule):
         axs.plot(integration_times, num_unique_idxs)
         axs.set_xlabel("Integration time")
         fig.canvas.draw()
-        img = PIL.Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+        img = PIL.Image.frombytes(
+            "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
+        )
         wandb_logger.log_image(f"{prefix}/num_unique_idxs", [img])
 
     def _log_energy_mean(
@@ -710,7 +734,9 @@ class energyTempModule(BaseLightningModule):
             self.last_energies[temp_index] = None
 
             if self.hparams.init_from_prior:
-                init_states = self.priors[temp_index].sample(self.hparams.num_init_samples)
+                init_states = self.priors[temp_index].sample(
+                    self.hparams.num_init_samples
+                )
 
             else:
                 init_states = self.energy_functions[0].sample_test_set(

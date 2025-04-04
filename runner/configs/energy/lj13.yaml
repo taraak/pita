@@ -2,6 +2,7 @@ _target_: src.energies.lennardjones_energy.LennardJonesEnergy
 _partial_: true
 dimensionality: 39
 n_particles: 13
+spatial_dim: 3
 data_path: "../data/"
 plot_samples_epoch_period: 1
 data_normalization_factor: 1.0

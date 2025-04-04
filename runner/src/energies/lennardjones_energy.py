@@ -149,6 +149,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self,
         dimensionality,
         n_particles,
+        spatial_dim,
         data_path,
         device="cpu",
         plot_samples_epoch_period=5,
@@ -161,7 +162,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
     ):
         self.temperature = temperature
         self.n_particles = n_particles
-        self.n_spatial_dim = dimensionality // n_particles
+        self.n_spatial_dim = spatial_dim
+        assert self.n_spatial_dim * self.n_particles == dimensionality
 
         if self.n_particles != 13 and self.n_particles != 55:
             raise NotImplementedError

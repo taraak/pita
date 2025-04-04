@@ -24,8 +24,18 @@ model:
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
-    n_particles: 13
-    spatial_dim: 3
+    n_particles: ${energy.n_particles}
+    spatial_dim: ${energy.spatial_dim} 
+
+  clipper:
+    _target_: src.models.components.clipper.Clipper
+    should_clip_scores: True
+    should_clip_log_rewards: False
+    max_score_norm: 1000
+    min_log_reward: null
+    n_particles: ${energy.n_particles}
+    dimensionality: ${energy.dimensionality}
+    spatial_dim: ${energy.spatial_dim}
 
   diffusion_scale: 1.0
   num_negative_time_steps: 0
