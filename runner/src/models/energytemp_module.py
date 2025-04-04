@@ -275,8 +275,6 @@ class energyTempModule(BaseLightningModule):
 
         return energy_score_loss, score_loss, target_score_loss, dem_energy_loss, energy_matching_loss
     
-
-
     def get_target_score_loss(
         self, 
         ht: torch.Tensor,
@@ -285,7 +283,7 @@ class energyTempModule(BaseLightningModule):
         energy_function: BaseEnergyFunction,
         predicted_x0: torch.Tensor,
     ) -> torch.Tensor:
-        if self.hparams.loss_weights["target_score"] > 0:
+        if self.hparams.loss_weights["target_score"] == 0:
             return torch.zeros(predicted_x0.shape[0], device=x0.device)
         energy = -energy_function(x0).sum()
         score = torch.autograd.grad(energy, x0, create_graph=True)[0]
@@ -305,7 +303,7 @@ class energyTempModule(BaseLightningModule):
         predicted_Ut: torch.Tensor,
         energy_threshold: float = 1e3,
     ) -> torch.Tensor:
-        if self.hparams.loss_weights["dem_energy"] > 0:
+        if self.hparams.loss_weights["dem_energy"] == 0:
             return torch.zeros_like(predicted_Ut)
         Ut_estimate = - estimate_Rt(
             ht=ht,
@@ -327,7 +325,7 @@ class energyTempModule(BaseLightningModule):
         energy_threshold: float = 1e3,
     ) -> torch.Tensor:
         
-        if self.hparams.loss_weights["energy_matching"] > 0:
+        if self.hparams.loss_weights["energy_matching"] == 0:
             return torch.zeros(x0.shape[0], device=x0.device)
 
         U0_true = -energy_function(x0)
