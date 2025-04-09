@@ -139,9 +139,9 @@ class LennardJonesPotential(Energy):
         x = torch.Tensor(x)
         return self._energy(x).cpu().numpy()
 
-    def _log_prob(self, x, smooth=False, T=1.0):
+    def _log_prob(self, x, smooth=False):
         E = -self._energy(x, smooth=smooth)
-        return (E / self._temperature) * T
+        return (E / self._temperature)
 
 
 class LennardJonesEnergy(BaseEnergyFunction):
@@ -210,8 +210,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         super().__init__(dimensionality=dimensionality, is_molecule=is_molecule)
 
-    def __call__(self, samples: torch.Tensor, T=1.0) -> torch.Tensor:
-        return self.lennard_jones._log_prob(samples, smooth=self.smooth, T=T).squeeze(-1)
+    def __call__(self, samples: torch.Tensor) -> torch.Tensor:
+        return self.lennard_jones._log_prob(samples, smooth=self.smooth).squeeze(-1)
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)
@@ -292,7 +292,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         samples_fig = self.get_dataset_fig(samples)
         wandb_logger.log_image(f"{name}", [samples_fig])
 
-    def get_dataset_fig(self, samples, T=1.0, T_og=1.0):
+    def get_dataset_fig(self, samples):
         # import pdb; pdb.set_trace()
         test_data_smaller = self.sample_test_set(5000)
 
@@ -324,8 +324,8 @@ class LennardJonesEnergy(BaseEnergyFunction):
         axs[0].set_xlabel("Interatomic distance")
         axs[0].legend()
 
-        energy_samples = -self(samples, T=T).detach().detach().cpu()
-        energy_test = -self(test_data_smaller, T=T_og).detach().detach().cpu()
+        energy_samples = -self(samples).detach().detach().cpu()
+        energy_test = -self(test_data_smaller).detach().detach().cpu()
 
         # min_energy = min(energy_test.min(), energy_samples.min()).item()
         # max_energy = max(energy_test.max(), energy_samples.max()).item()

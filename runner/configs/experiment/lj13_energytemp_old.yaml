@@ -44,28 +44,35 @@ model:
 
   diffusion_scale: 1.0
   num_negative_time_steps: 1
-  num_samples_to_generate_per_epoch: 512
+  num_samples_to_generate_per_epoch: 1024
   num_samples_to_sample_from_buffer: 512
-
-  init_from_prior: true
 
   cfm_prior_std: 2
   nll_integration_method: dopri5
   logz_with_cfm: false
   nll_with_cfm: false
 
-  num_integration_steps: 100
+  num_samples_to_save: 10000
+  num_integration_steps: 1000
 
-  num_samples_to_save: 10240
+  # Elucidating noise schedule
+  P_mean: -1.2
+  P_std: 1.2
 
   # energytemp parameters
-  test_batch_size: 10000
+  num_init_samples: 1
+  test_batch_size: 5000
   num_eval_samples: 128
-  inference_batch_size: 128
+  inference_batch_size: 512
   resampling_interval: 1
   start_resampling_step: 10
   scale_diffusion: False
 
-  lower_temperature: 1.5
+  lower_temperature: 1.0
   higher_temperature: 2.0
-  d_temp: 0.5
+  d_temp: 0.1
+
+  temperatures:
+    - 2.0
+
+  init_from_prior: false
