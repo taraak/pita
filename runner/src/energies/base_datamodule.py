@@ -17,11 +17,11 @@ from torch.utils.data import DataLoader, Dataset
 
 import mdtraj as md
 
-from src.models.components.distribution_distances import (
+from src.energies.components.distribution_distances import (
     compute_distribution_distances_with_prefix,
 )
 
-from src.data.components.tica import run_tica, tica_features, plot_tic01
+from src.energies.components.tica import run_tica, tica_features, plot_tic01
 
 class BaseDataModule(LightningDataModule):
     def __init__(

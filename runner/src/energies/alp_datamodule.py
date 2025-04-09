@@ -13,15 +13,15 @@ from lightning.pytorch.loggers import WandbLogger
 from matplotlib.colors import LogNorm
 from openmm import app
 
-from src.data.base_datamodule import BaseDataModule
-from src.data.components.center_of_mass import CenterOfMassTransform
-from src.data.components.rotation import Random3DRotationTransform
-from src.data.components.transform_dataset import TransformDataset
-from src.models.components.distribution_distances import (
+from src.energies.base_datamodule import BaseDataModule
+from src.energies.components.center_of_mass import CenterOfMassTransform
+from src.energies.components.rotation import Random3DRotationTransform
+from src.energies.components.transform_dataset import TransformDataset
+from src.energies.components.distribution_distances import (
     compute_distribution_distances_with_prefix,
 )
-from src.models.components.optimal_transport import torus_wasserstein
-from src.models.components.utils import (
+from src.energies.components.optimal_transport import torus_wasserstein
+from src.energies.components.utils import (
     check_symmetry_change,
     compute_chirality_sign,
     find_chirality_centers,
