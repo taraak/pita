@@ -1,0 +1,8 @@
+_target_: src.energies.alp_energy.ALPEnergy
+_partial_: true
+dimensionality: 39
+n_particles: 33
+spatial_dim: 3
+data_path: "../data/"
+plot_samples_epoch_period: 1
+is_molecule: True

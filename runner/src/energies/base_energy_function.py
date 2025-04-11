@@ -5,12 +5,15 @@ import numpy as np
 import torch
 from pytorch_lightning.loggers import WandbLogger
 from src.models.components.replay_buffer import ReplayBuffer
+from src.utils.data_utils import remove_mean
 
 
 class BaseEnergyFunction(ABC):
     def __init__(
         self,
         dimensionality: int,
+        n_particles: Optional[int] = None,
+        spatial_dim: Optional[int] = None,
         is_molecule: Optional[bool] = False,
         normalization_min: Optional[float] = None,
         normalization_max: Optional[float] = None,
@@ -34,32 +37,45 @@ class BaseEnergyFunction(ABC):
 
     def setup_val_set(self) -> Optional[torch.Tensor]:
         return None
-
-    @property
-    def _can_normalize(self) -> bool:
-        return self.normalization_min is not None and self.normalization_max is not None
-
+    
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
-        if x is None or not self._can_normalize:
-            return x
-
+        if self._is_molecule:
+            return self._normalize_molecule(x)
+        return self._normalize(x)
+    
+    def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
+        if self._is_molecule:
+            return self._unnormalize_molecule(x)
+        return self._unnormalize(x)
+    
+    def _normalize(self, x: torch.Tensor) -> torch.Tensor:
+        assert self.normalization_min is not None and self.normalization_max is not None, "Normalization min and max should be set"
         mins = self.normalization_min
         maxs = self.normalization_max
-
         ## [ 0, 1 ]
         x = (x - mins) / (maxs - mins + 1e-5)
         ## [ -1, 1 ]
         return x * 2 - 1
 
-    def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
-        if x is None or not self._can_normalize:
-            return x
-
+    def _unnormalize(self, x: torch.Tensor) -> torch.Tensor:
+        assert self.normalization_min is not None and self.normalization_max is not None, "Normalization min and max should be set"
         mins = self.normalization_min
         maxs = self.normalization_max
-
         x = (x + 1) / 2
         return x * (maxs - mins) + mins
+
+    def _normalize_molecule(self, x: torch.Tensor) -> torch.Tensor:
+        assert x.shape[-1] == self._dimensionality
+        assert self.data_normalization_factor is not None, "Standard deviation should be computed first"
+        x = remove_mean(x, self.n_particles, self.n_spatial_dim)
+        x = x / self.data_normalization_factor
+        return x
+
+    def _unnormalize_molecule(self, x: torch.Tensor) -> torch.Tensor:
+        assert x.shape[-1] == self.dim
+        assert self.data_normalization_factor is not None, "Standard deviation should be computed first"
+        x = x * self.data_normalization_factor.to(x)
+        return x
 
     def sample_test_set(self, num_points: int, normalize: bool = False) -> Optional[torch.Tensor]:
         if self.test_set is None:
