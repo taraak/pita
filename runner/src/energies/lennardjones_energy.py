@@ -154,16 +154,20 @@ class LennardJonesEnergy(BaseEnergyFunction):
         device="cpu",
         plot_samples_epoch_period=5,
         plotting_buffer_sample_size=512,
-        data_normalization_factor=1.0,
         energy_factor=1.0,
         is_molecule=True,
         smooth=False,
         temperature=1.0,
+        should_normalize=False,
+        data_normalization_factor=1.0,
     ):
         self.temperature = temperature
         self.n_particles = n_particles
         self.n_spatial_dim = spatial_dim
         assert self.n_spatial_dim * self.n_particles == dimensionality
+
+        self.should_normalize = should_normalize
+        self.data_normalization_factor = data_normalization_factor
 
         if self.n_particles != 13 and self.n_particles != 55:
             raise NotImplementedError
@@ -171,8 +175,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         self.curr_epoch = 0
         self.plotting_buffer_sample_size = plotting_buffer_sample_size
         self.plot_samples_epoch_period = plot_samples_epoch_period
-
-        self.data_normalization_factor = data_normalization_factor
 
         self.data_path_train = (
             data_path
@@ -208,14 +210,20 @@ class LennardJonesEnergy(BaseEnergyFunction):
 
         self.smooth = smooth
 
-        super().__init__(dimensionality=dimensionality, is_molecule=is_molecule)
+        super().__init__(dimensionality=dimensionality,
+                         is_molecule=is_molecule)
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
+        if self.should_normalize:
+            samples = self.unnormalize(samples)
         return self.lennard_jones._log_prob(samples, smooth=self.smooth).squeeze(-1)
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)
-        data = remove_mean(data, self.n_particles, self.n_spatial_dim)
+        if self.should_normalize:
+            data = self.normalize(data)
+        else:
+            data = remove_mean(data, self.n_particles, self.n_spatial_dim)
         data = torch.tensor(data, device=self.device)
         return data
 
@@ -223,7 +231,10 @@ class LennardJonesEnergy(BaseEnergyFunction):
         if self.data_path_val is None:
             raise ValueError("Data path for validation data is not provided")
         data = np.load(self.data_path_val, allow_pickle=True)
-        data = remove_mean(data, self.n_particles, self.n_spatial_dim)
+        if self.should_normalize:
+            data = self.normalize(data)
+        else:
+            data = remove_mean(data, self.n_particles, self.n_spatial_dim)
         data = torch.tensor(data, device=self.device)
         return data
 
@@ -231,11 +242,16 @@ class LennardJonesEnergy(BaseEnergyFunction):
         if self.data_path_train is None:
             raise ValueError("Data path for training data is not provided")
         data = np.load(self.data_path_val, allow_pickle=True)
-        data = remove_mean(data, self.n_particles, self.n_spatial_dim)
+        if self.should_normalize:
+            data = self.normalize(data)
+        else:
+            data = remove_mean(data, self.n_particles, self.n_spatial_dim)
         data = torch.tensor(data, device=self.device)
         return data
 
     def interatomic_dist(self, x):
+        if self.should_normalize:
+            x = self.unnormalize(x)
         batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
         x = x.view(*batch_shape, self.n_particles, self.n_spatial_dim)
 

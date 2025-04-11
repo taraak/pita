@@ -38,7 +38,7 @@ model:
     spatial_dim: ${energy.spatial_dim}
 
   diffusion_scale: 1.0
-  num_negative_time_steps: 0
+  num_negative_time_steps: 10
   num_samples_to_sample_from_buffer: 512
 
   num_samples_to_save: 10000
