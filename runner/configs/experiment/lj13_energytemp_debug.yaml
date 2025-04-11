@@ -81,4 +81,4 @@ model:
 
   update_temp_epoch: 
     - 2
-    - 2
+    - 4

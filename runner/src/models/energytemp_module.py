@@ -517,6 +517,8 @@ class energyTempModule(BaseLightningModule):
         else:
             temp_index_lower = temp_index
             num_samples = self.hparams.num_eval_samples
+
+        logger.debug(f"Active inverse temperatures: {active_inverse_temperatures} during epoch {self.trainer.current_epoch}")
         
         for inverse_temp in active_inverse_temperatures:
             logger.debug(f"Started eval epoch end for inverse_temp {inverse_temp:0.3f}")
@@ -524,7 +526,7 @@ class energyTempModule(BaseLightningModule):
             inverse_lower_temp = self.inverse_temperatures[temp_index_lower]
             energy_function = self.energy_functions[temp_index_lower]
 
-            print(f"inverse_temp is {inverse_temp} and inverse_lower_temp is {inverse_lower_temp}")
+            logger.debug(f"inverse_temp is {inverse_temp:0.3f} and inverse_lower_temp is {inverse_lower_temp:0.3f}")
 
             logger.debug(f"Generating {self.hparams.num_samples_to_generate_per_epoch}" 
                          + f" samples for inverse_temp {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}")
@@ -536,15 +538,21 @@ class energyTempModule(BaseLightningModule):
                 inverse_temp=inverse_temp,
                 annealing_factor=inverse_lower_temp / inverse_temp,
             )
+            samples_energy = energy_function(samples)
             if temp_index_lower != temp_index:
+                logger.debug(f"temp_index_lower {temp_index_lower}")
+                logger.debug(f"temp_index {temp_index}")
+                logger.debug(f"they are not equal? {temp_index_lower != temp_index}")
                 # fill the buffers
                 self.buffers[temp_index_lower].add(
-                    samples, energy_function(samples)
+                    samples, 
+                    samples_energy,
                 )
                 output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
                 # append time to avoid overwriting
                 path = f"{output_dir}/buffer_samples_temperature_{inverse_lower_temp:0.3f}.pt"
                 torch.save(samples, path)
+                torch.save(samples_energy, path.replace("buffer_samples", "buffer_energies"))
                 logger.info(f"Saving samples to {path}")
                 logger.debug(
                     f"Buffer size for inverse_temp {inverse_lower_temp:0.3f} is {len(self.buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
@@ -565,8 +573,6 @@ class energyTempModule(BaseLightningModule):
                 if term.name == "drift_X" or term.name == "drift_A":
                     continue
                 self._log_sde_term(sde_terms, term.name, prefix=prefix_plot)
-
-            samples_energy = energy_function(samples)
 
             energy_function.log_on_epoch_end(
                 samples,
