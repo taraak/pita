@@ -17,6 +17,7 @@ from src.energies.base_molecule_energy_function import BaseMoleculeEnergy
 from src.models.components.distribution_distances import (
     compute_distribution_distances_with_prefix,
 )
+from src.energies.components.tica import run_tica, tica_features, plot_tic01
 from src.models.components.optimal_transport import torus_wasserstein
 from src.models.components.energy_utils import (
     check_symmetry_change,
@@ -132,12 +133,7 @@ class ALPEnergy(BaseMoleculeEnergy):
     def get_dataset_fig(
         self,
         samples,
-        log_p_samples: torch.Tensor,
-        samples_jarzynski: torch.Tensor = None,
-        use_com_energy: bool = False,
-        min_energy=-20,
-        max_energy=80,
-        ylim=(0, 0.1),
+        energy_samples: torch.Tensor,
     ):
         if self.n_particles == 63:
             min_energy = -130
@@ -157,12 +153,7 @@ class ALPEnergy(BaseMoleculeEnergy):
             ylim = (0, 0.1)
         return super().get_dataset_fig(
             samples,
-            log_p_samples,
-            samples_jarzynski,
-            use_com_energy,
-            min_energy,
-            max_energy,
-            ylim=ylim,
+            energy_samples,
         )
 
     def compute_adj_list_and_atom_types(self):
@@ -178,29 +169,25 @@ class ALPEnergy(BaseMoleculeEnergy):
 
     def log_on_epoch_end(
         self,
-        samples,
-        log_p_samples: torch.Tensor,
+        latest_samples: torch.Tensor,
+        latest_energies: torch.Tensor,
+        wandb_logger: WandbLogger,
         num_eval_samples: int = 5000,
-        use_com_energy: bool = False,
-        loggers=None,
         prefix: str = "",
     ) -> None:
-        wandb_logger = self.get_wandb_logger(loggers)
         super().log_on_epoch_end(
-            samples,
-            log_p_samples,
-            samples_jarzynski,
-            use_com_energy=use_com_energy,
-            loggers=loggers,
+            latest_samples,
+            latest_energies,
+            wandb_logger=wandb_logger,
             prefix=prefix,
         )
         logging.info("Base plots done")
 
         metrics = {}
         if self.should_normalize:
-            samples = self.unnormalize(samples).cpu()
+            latest_samples = self.unnormalize(latest_samples).cpu()
         samples_metrics = self.get_ramachandran_metrics(
-            samples[:num_eval_samples], prefix=prefix + "generated_samples/rama"
+            latest_samples[:num_eval_samples], prefix=prefix + "generated_samples/rama"
         )
         logging.info("Ramachandran metrics computed (generated samples)")
         metrics.update(samples_metrics)
@@ -214,17 +201,17 @@ class ALPEnergy(BaseMoleculeEnergy):
             reference_samples.reshape(-1, self.n_particles, self.n_spatial_dim)[[1]], chirality_centers
         )
         symmetry_change = check_symmetry_change(
-            samples, chirality_centers, reference_signs
+            latest_samples.reshape(-1, self.n_particles, self.n_spatial_dim), chirality_centers, reference_signs
         )
         print("Symmetry change frac:", (symmetry_change).float().mean())
-        samples[symmetry_change] *= -1
+        latest_samples[symmetry_change] *= -1
         correct_symmetry_rate = 1 - symmetry_change.sum() / len(symmetry_change)
         symmetry_change = check_symmetry_change(
-            samples, chirality_centers, reference_signs
+            latest_samples.reshape(-1, self.n_particles, self.n_spatial_dim), chirality_centers, reference_signs
         )
-        samples = samples[~symmetry_change]
+        latest_samples = latest_samples[~symmetry_change]
         uncorrectable_symmetry_rate = symmetry_change.sum() / len(symmetry_change)
-        samples = samples.reshape(-1, self.n_particles * self.n_spatial_dim)
+        latest_samples = latest_samples.reshape(-1, self.n_particles * self.n_spatial_dim)
 
         metrics.update(
             {
@@ -239,7 +226,7 @@ class ALPEnergy(BaseMoleculeEnergy):
         return metrics
 
     def get_ramachandran_metrics(self, samples, prefix: str = ""):
-        x_pred = self.get_phi_psi_vectors(samples)
+        x_pred = self.get_phi_psi_vectors(samples.cpu())
 
         if "val" in prefix:
             eval_samples = self.sample_val_set(x_pred.shape[0])
@@ -247,10 +234,10 @@ class ALPEnergy(BaseMoleculeEnergy):
             eval_samples = self.sample_test_set(x_pred.shape[0])
         if self.should_normalize:
             eval_samples = self.unnormalize(eval_samples)
-        x_true = self.get_phi_psi_vectors(eval_samples)
+        x_true = self.get_phi_psi_vectors(eval_samples.cpu())
 
-        # metrics = compute_distribution_distances_with_prefix(x_true, x_pred, prefix=prefix)
-        # metrics[prefix + "/torus_wasserstein"] = torus_wasserstein(x_true, x_pred)
+        metrics = compute_distribution_distances_with_prefix(x_true, x_pred, prefix=prefix)
+        metrics[prefix + "/torus_wasserstein"] = torus_wasserstein(x_true, x_pred)
         return metrics
 
     def get_phi_psi_vectors(self, samples):
@@ -261,7 +248,10 @@ class ALPEnergy(BaseMoleculeEnergy):
         x = torch.cat([torch.from_numpy(phis), torch.from_numpy(psis)], dim=1)
         return x
 
-    def plot_ramachandran(self, samples, prefix: str = "", wandb_logger: WandbLogger = None):
+    def plot_ramachandran(self,
+                          samples,
+                          prefix: str = "",
+                          wandb_logger: WandbLogger = None):
         samples = samples.reshape(-1, self.n_particles, self.n_spatial_dim)
         traj_samples = md.Trajectory(samples, topology=self.topology)
         phis = md.compute_phi(traj_samples)[1]
@@ -318,5 +308,34 @@ class ALPEnergy(BaseMoleculeEnergy):
             cbar.ax.set_ylabel(f"Count, max = {int(h.max())}", fontsize=18)
             if wandb_logger is not None:
                 wandb_logger.log_image(f"{prefix}/ramachandran_simple/{i}", [fig])
+
+        return fig
+
+    def plot_tica(self, samples=None, prefix="", wandb_logger=None, ):
+
+        lagtime = 10 if self.n_particles == 33 else 100
+        
+
+        test_samples = self.sample_test_set(5000).cpu()
+        traj_samples_test = md.Trajectory(test_samples.reshape(-1, self.n_particles, self.n_spatial_dim).numpy(), topology=self.topology)
+
+        # the tica projection is computed based on reference data
+        # the lagtime can be changed in order to get well seperated states
+        tica_model = run_tica(traj_samples_test, lagtime=lagtime)
+
+        if samples is None:
+            # we can then map other data, e.g. generated with the same transformation
+            features = tica_features(traj_samples_test)
+        else:
+            samples = md.Trajectory(samples.reshape(-1, self.n_particles, self.n_spatial_dim).cpu().numpy(),
+                                    topology=self.topology)
+            features = tica_features(samples)
+        tics = tica_model.transform(features)
+
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax = plot_tic01(ax, tics, f"MD", tics_lims=tics)
+
+        if wandb_logger is not None:
+            wandb_logger.log_image(f"{prefix}/tica/plot", [fig])
 
         return fig

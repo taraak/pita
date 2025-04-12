@@ -97,7 +97,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
     def interatomic_dist(self, x):
         if self.should_normalize:
             x = self.unnormalize(x)
-        batch_shape = x.shape[: -len(self.lennard_jones.event_shape)]
+        batch_shape = x.shape[:-1]
         x = x.view(*batch_shape, self.n_particles, self.n_spatial_dim)
 
         # Compute the pairwise interatomic distances
@@ -115,9 +115,6 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
         wandb_logger: WandbLogger,
-        unprioritized_buffer_samples=None,
-        cfm_samples=None,
-        replay_buffer=None,
         prefix: str = "",
     ) -> None:
         if latest_samples is None:
@@ -130,7 +127,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
             prefix += "/"
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
-            samples_fig = self.get_dataset_fig(latest_samples)
+            samples_fig = self.get_dataset_fig(latest_samples, energy_samples=latest_energies)
 
             wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 
@@ -148,7 +145,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         samples_fig = self.get_dataset_fig(samples)
         wandb_logger.log_image(f"{name}", [samples_fig])
 
-    def get_dataset_fig(self, samples):
+    def get_dataset_fig(self, samples, energy_samples=None):
         # import pdb; pdb.set_trace()
         test_data_smaller = self.sample_test_set(5000)
 
@@ -180,8 +177,10 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         axs[0].set_xlabel("Interatomic distance")
         axs[0].legend()
 
-        energy_samples = -self(samples).detach().detach().cpu()
-        energy_test = -self(test_data_smaller).detach().detach().cpu()
+        if energy_samples is None:
+            energy_samples = self(samples)
+        energy_samples = - energy_samples.detach().cpu()
+        energy_test = -self(test_data_smaller).detach().cpu()
 
 
         min_energy = energy_test.min().item() - 10

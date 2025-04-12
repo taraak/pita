@@ -270,9 +270,6 @@ class LennardJonesEnergy(BaseEnergyFunction):
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
         wandb_logger: WandbLogger,
-        unprioritized_buffer_samples=None,
-        cfm_samples=None,
-        replay_buffer=None,
         prefix: str = "",
     ) -> None:
         if latest_samples is None:
@@ -285,14 +282,9 @@ class LennardJonesEnergy(BaseEnergyFunction):
             prefix += "/"
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
-            samples_fig = self.get_dataset_fig(latest_samples)
+            samples_fig = self.get_dataset_fig(latest_samples, energy_samples=latest_energies)
 
             wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
-
-            if cfm_samples is not None:
-                cfm_samples_fig = self.get_dataset_fig(cfm_samples)
-
-                wandb_logger.log_image(f"{prefix}cfm_generated_samples", [cfm_samples_fig])
 
         self.curr_epoch += 1
 
@@ -308,7 +300,7 @@ class LennardJonesEnergy(BaseEnergyFunction):
         samples_fig = self.get_dataset_fig(samples)
         wandb_logger.log_image(f"{name}", [samples_fig])
 
-    def get_dataset_fig(self, samples):
+    def get_dataset_fig(self, samples, energy_samples=None):
         # import pdb; pdb.set_trace()
         test_data_smaller = self.sample_test_set(5000)
 
@@ -340,8 +332,10 @@ class LennardJonesEnergy(BaseEnergyFunction):
         axs[0].set_xlabel("Interatomic distance")
         axs[0].legend()
 
-        energy_samples = -self(samples).detach().detach().cpu()
-        energy_test = -self(test_data_smaller).detach().detach().cpu()
+        if energy_samples is None:
+            energy_samples = self(samples)
+        energy_samples = - energy_samples.detach().cpu()
+        energy_test = -self(test_data_smaller).detach().cpu()
 
         # min_energy = min(energy_test.min(), energy_samples.min()).item()
         # max_energy = max(energy_test.max(), energy_samples.max()).item()
