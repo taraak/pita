@@ -14,20 +14,18 @@ from matplotlib.colors import LogNorm
 from openmm import app
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.energies.base_molecule_energy_function import BaseMoleculeEnergy
-from src.data.base_datamodule import BaseDataModule
-from src.data.components.center_of_mass import CenterOfMassTransform
-from src.data.components.rotation import Random3DRotationTransform
-from src.data.components.transform_dataset import TransformDataset
-from src.models.components.distribution_distances import (
-    compute_distribution_distances_with_prefix,
-)
-from src.models.components.optimal_transport import torus_wasserstein
-from src.models.components.utils import (
-    check_symmetry_change,
-    compute_chirality_sign,
-    find_chirality_centers,
-    resample,
-)
+# from src.data.components.center_of_mass import CenterOfMassTransform
+# from src.data.components.rotation import Random3DRotationTransform
+# from src.data.components.transform_dataset import TransformDataset
+# from src.models.components.distribution_distances import (
+#     compute_distribution_distances_with_prefix,
+# )
+# from src.models.components.optimal_transport import torus_wasserstein
+# from src.models.components.utils import (
+#     check_symmetry_change,
+#     compute_chirality_sign,
+#     find_chirality_centers,
+# )
 from src.utils.data_utils import remove_mean
 
 logger = logging.getLogger(__name__)
@@ -137,63 +135,6 @@ class ALPEnergy(BaseMoleculeEnergy):
             data = remove_mean(data, self.n_particles, self.n_spatial_dim)
         data = torch.tensor(data, device=self.device)
         return data
-
-    def setup(self, stage: Optional[str] = None) -> None:
-        # Divide batch size by the number of devices.
-        if self.trainer is not None:
-            if self.hparams.batch_size % self.trainer.world_size != 0:
-                raise RuntimeError(
-                    f"Batch size ({self.hparams.batch_size}) is not divisible by the number of devices ({self.trainer.world_size})."
-                )
-            self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
-
-        # load the data + tensorize
-        data = np.load(f"{self.hparams.data_dir}/{self.hparams.filename}", allow_pickle=True)
-        data = data.reshape(-1, self.dim)
-        data = torch.tensor(data).float() / self.scaling
-        if self.hparams.make_iid:
-            rand_idx = torch.randperm(data.shape[0])
-            data = data[rand_idx]
-
-        if self.n_particles == 42:
-            data = data[:700000]
-        elif self.n_particles == 33:
-            data = data[:300000]
-
-        data = self.zero_center_of_mass(data)
-
-        train_data = data[:100000]
-        test_data = data[100000:]
-        self.original_test_data = data[120_000:]
-
-        # compute std on only train data
-        self.std = train_data.std()
-
-        if self.hparams.com_augmentation:
-            self.transforms = torchvision.transforms.Compose(
-                [
-                    self.transforms,
-                    CenterOfMassTransform(self.n_particles, self.n_dimensions, self.std),
-                ]
-            )
-
-        # standardize the data
-        train_data = self.normalize(train_data)
-        test_data = self.normalize(test_data)
-
-        # split the data
-        self.data_train = TransformDataset(
-            train_data.repeat(self.repeat_factor, 1), transform=self.transforms
-        )
-
-        self.data_val, self.data_test = test_data[:20_000], test_data[20_000:]
-
-        val_rng = np.random.default_rng(0)
-        self.data_val = torch.tensor(val_rng.permutation(self.data_val))
-
-        test_rng = np.random.default_rng(1)
-        self.data_test_full = self.data_test
-        self.data_test = torch.tensor(test_rng.permutation(self.data_test))[:100_000]
 
     def get_dataset_fig(
         self,
@@ -315,8 +256,8 @@ class ALPEnergy(BaseMoleculeEnergy):
             eval_samples = self.unnormalize(eval_samples)
         x_true = self.get_phi_psi_vectors(eval_samples)
 
-        metrics = compute_distribution_distances_with_prefix(x_true, x_pred, prefix=prefix)
-        metrics[prefix + "/torus_wasserstein"] = torus_wasserstein(x_true, x_pred)
+        # metrics = compute_distribution_distances_with_prefix(x_true, x_pred, prefix=prefix)
+        # metrics[prefix + "/torus_wasserstein"] = torus_wasserstein(x_true, x_pred)
         return metrics
 
     def get_phi_psi_vectors(self, samples):
