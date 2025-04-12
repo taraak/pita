@@ -505,6 +505,7 @@ class energyTempModule(BaseLightningModule):
 
         active_inverse_temperatures = [self.inverse_temperatures[self.active_inverse_temperature_index]]
         temp_index = self.active_inverse_temperature_index
+        inverse_temp = self.inverse_temperatures[temp_index]
 
         if (self.trainer.current_epoch > 0 
             and (self.trainer.current_epoch+1) == self.hparams.update_temp_epoch[self.active_inverse_temperature_index] 
@@ -512,98 +513,102 @@ class energyTempModule(BaseLightningModule):
             # update active inverse temperatures
             active_inverse_temperatures = self.inverse_temperatures[self.active_inverse_temperature_index:self.active_inverse_temperature_index+2]
             temp_index_lower = self.active_inverse_temperature_index + 1
-            self.active_inverse_temperature_index += 1
+            self.active_inverse_temperature_index = temp_index_lower
             num_samples = self.hparams.num_samples_to_generate_per_epoch
         else:
             temp_index_lower = temp_index
             num_samples = self.hparams.num_eval_samples
+
+        logger.debug(f"Active inverse temperatures: {active_inverse_temperatures} during epoch {self.trainer.current_epoch}")
         
-        for inverse_temp in active_inverse_temperatures:
-            logger.debug(f"Started eval epoch end for inverse_temp {inverse_temp:0.3f}")
+        # for inverse_temp in active_inverse_temperatures:
+        logger.debug(f"Started eval epoch end for inverse_temp {inverse_temp:0.3f}")
 
-            inverse_lower_temp = self.inverse_temperatures[temp_index_lower]
-            energy_function = self.energy_functions[temp_index_lower]
+        inverse_lower_temp = self.inverse_temperatures[temp_index_lower]
+        energy_function = self.energy_functions[temp_index_lower]
 
-            print(f"inverse_temp is {inverse_temp} and inverse_lower_temp is {inverse_lower_temp}")
+        logger.debug(f"inverse_temp is {inverse_temp:0.3f} and inverse_lower_temp is {inverse_lower_temp:0.3f}")
+        logger.debug(f"temp_index is {temp_index} and temp_index_lower is {temp_index_lower}")
 
-            logger.debug(f"Generating {self.hparams.num_samples_to_generate_per_epoch}" 
-                         + f" samples for inverse_temp {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}")
-            samples, logweights, num_unique_idxs, sde_terms = self.generate_samples(
-                prior=self.priors[temp_index_lower],
-                energy_function=energy_function,
-                num_samples=num_samples,
-                return_logweights=True,
-                inverse_temp=inverse_temp,
-                annealing_factor=inverse_lower_temp / inverse_temp,
-            )
-            if temp_index_lower != temp_index:
-                # fill the buffers
-                self.buffers[temp_index_lower].add(
-                    samples, energy_function(samples)
-                )
-                output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-                # append time to avoid overwriting
-                path = f"{output_dir}/buffer_samples_temperature_{inverse_lower_temp:0.3f}.pt"
-                torch.save(samples, path)
-                logger.info(f"Saving samples to {path}")
-                logger.debug(
-                    f"Buffer size for inverse_temp {inverse_lower_temp:0.3f} is {len(self.buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
-                    )
-
-            print(f"Buffer size for inverse_temp {inverse_lower_temp:0.3f} is {len(self.buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}")
-            # select a subset of the generated samples to log
-            if energy_function.is_molecule:
-                self._log_dist_w2(
-                    prefix="val", temp_index=temp_index_lower, generated_samples=samples
-                )
-            self._log_energy_w2(
-                prefix="val", temp_index=temp_index_lower, generated_samples=samples,
-            )
-
-            prefix_plot = f"val/inv_temp= {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}"
-            for term in fields(SDETerms):
-                if term.name == "drift_X" or term.name == "drift_A":
-                    continue
-                self._log_sde_term(sde_terms, term.name, prefix=prefix_plot)
-
-            samples_energy = energy_function(samples)
-
-            energy_function.log_on_epoch_end(
-                samples,
+        logger.debug(f"Generating {self.hparams.num_samples_to_generate_per_epoch}" 
+                        + f" samples for inverse_temp {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}")
+        samples, logweights, num_unique_idxs, sde_terms = self.generate_samples(
+            prior=self.priors[temp_index_lower],
+            energy_function=energy_function,
+            num_samples=num_samples,
+            return_logweights=True,
+            inverse_temp=inverse_temp,
+            annealing_factor=inverse_lower_temp / inverse_temp,
+        )
+        samples_energy = energy_function(samples)
+        if temp_index_lower != temp_index:
+            # fill the buffers
+            self.buffers[temp_index_lower].add(
+                samples, 
                 samples_energy,
-                wandb_logger,
-                prefix=prefix_plot,
             )
-            self._log_energy_mean(
-                -samples_energy,
-                prefix=prefix_plot,
+            output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+            # append time to avoid overwriting
+            path = f"{output_dir}/buffer_samples_temperature_{inverse_lower_temp:0.3f}.pt"
+            torch.save(samples, path)
+            torch.save(samples_energy, path.replace("buffer_samples", "buffer_energies"))
+            logger.info(f"Saving samples to {path}")
+        logger.debug(
+            f"Buffer size for inverse_temp {inverse_lower_temp:0.3f} is {len(self.buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
             )
-            if self.hparams.resampling_interval != -1:
-                self._log_logweights(
-                    logweights,
-                    prefix=prefix_plot,
-                )
-                self._log_std_logweights(
-                    logweights,
-                    prefix=prefix_plot,
-                )
-                self._log_num_unique_idxs(
-                    num_unique_idxs,
-                    prefix=prefix_plot,
-                )
 
-                if wandb_logger is not None:
-                    self.logger.experiment.log(
-                        {
-                            "1D Array Plot": wandb.plot.line_series(
-                                xs=torch.linspace(1, 0, len(num_unique_idxs)).tolist(),
-                                ys=[num_unique_idxs],
-                                keys=["Number of Unique Indices"],
-                                title=rf"val / $\beta$= {inverse_temp:0.3f}, $\gamma$= {inverse_lower_temp:0.3f}",
-                                xname="Time",
-                            )
-                        }
-                    )
+        print(f"Buffer size for inverse_temp {inverse_lower_temp:0.3f} is {len(self.buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}")
+        # select a subset of the generated samples to log
+        if energy_function.is_molecule:
+            self._log_dist_w2(
+                prefix="val", temp_index=temp_index_lower, generated_samples=samples
+            )
+        self._log_energy_w2(
+            prefix="val", temp_index=temp_index_lower, generated_samples=samples,
+        )
+
+        prefix_plot = f"val/inv_temp= {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}"
+        for term in fields(SDETerms):
+            if term.name == "drift_X" or term.name == "drift_A":
+                continue
+            self._log_sde_term(sde_terms, term.name, prefix=prefix_plot)
+
+        energy_function.log_on_epoch_end(
+            samples,
+            samples_energy,
+            wandb_logger,
+            prefix=prefix_plot,
+        )
+        self._log_energy_mean(
+            -samples_energy,
+            prefix=prefix_plot,
+        )
+        if self.hparams.resampling_interval != -1:
+            self._log_logweights(
+                logweights,
+                prefix=prefix_plot,
+            )
+            self._log_std_logweights(
+                logweights,
+                prefix=prefix_plot,
+            )
+            self._log_num_unique_idxs(
+                num_unique_idxs,
+                prefix=prefix_plot,
+            )
+
+            if wandb_logger is not None:
+                self.logger.experiment.log(
+                    {
+                        "1D Array Plot": wandb.plot.line_series(
+                            xs=torch.linspace(1, 0, len(num_unique_idxs)).tolist(),
+                            ys=[num_unique_idxs],
+                            keys=["Number of Unique Indices"],
+                            title=rf"val / $\beta$= {inverse_temp:0.3f}, $\gamma$= {inverse_lower_temp:0.3f}",
+                            xname="Time",
+                        )
+                    }
+                )
         logger.debug(f"Finished eval epoch end {prefix}")
 
     def on_test_epoch_end(self) -> None:
@@ -622,7 +627,7 @@ class energyTempModule(BaseLightningModule):
 
             for i in range(n_batches):
                 start = time.time()
-                samples = self.generate_samples(
+                samples, _, _, _ = self.generate_samples(
                     prior=self.priors[temp_index + 1],
                     energy_function=self.energy_functions[temp_index + 1],
                     num_samples=self.hparams.num_samples_to_save,

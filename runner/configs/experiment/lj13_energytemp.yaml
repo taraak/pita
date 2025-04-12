@@ -38,7 +38,7 @@ model:
     spatial_dim: ${energy.spatial_dim}
 
   diffusion_scale: 1.0
-  num_negative_time_steps: 0
+  num_negative_time_steps: 2
   num_samples_to_sample_from_buffer: 512
 
   num_samples_to_save: 10000
@@ -56,7 +56,7 @@ model:
   inference_batch_size: 512
   resampling_interval: 1
   start_resampling_step: 0
-  end_resampling_step: 950
+  end_resampling_step: 980
   scale_diffusion: False
   resample_at_end: True
 
@@ -80,4 +80,4 @@ model:
   update_temp_epoch: 
     - 100
     - 200
-    - 1200
+    - 400
