@@ -14,18 +14,15 @@ from matplotlib.colors import LogNorm
 from openmm import app
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.energies.base_molecule_energy_function import BaseMoleculeEnergy
-# from src.data.components.center_of_mass import CenterOfMassTransform
-# from src.data.components.rotation import Random3DRotationTransform
-# from src.data.components.transform_dataset import TransformDataset
-# from src.models.components.distribution_distances import (
-#     compute_distribution_distances_with_prefix,
-# )
-# from src.models.components.optimal_transport import torus_wasserstein
-# from src.models.components.utils import (
-#     check_symmetry_change,
-#     compute_chirality_sign,
-#     find_chirality_centers,
-# )
+from src.models.components.distribution_distances import (
+    compute_distribution_distances_with_prefix,
+)
+from src.models.components.optimal_transport import torus_wasserstein
+from src.models.components.energy_utils import (
+    check_symmetry_change,
+    compute_chirality_sign,
+    find_chirality_centers,
+)
 from src.utils.data_utils import remove_mean
 
 logger = logging.getLogger(__name__)
@@ -34,9 +31,9 @@ logger = logging.getLogger(__name__)
 class ALPEnergy(BaseMoleculeEnergy):
     def __init__(
         self,
-        data_path="../data/alanine/",
+        data_path: str,
+        pdb_filename: str,
         atom_encoding_filename: str = "atom_types_ecoding.npy",
-        pdb_filename: str = "AlaAlaAla_310K.pdb",
         dimensionality: int=99,
         n_particles: int=33,
         spatial_dim: int=3,
@@ -48,7 +45,7 @@ class ALPEnergy(BaseMoleculeEnergy):
         temperature: float=1.0,
         should_normalize: bool=True,
     ):
-        super.__init__(
+        super().__init__(
             dimensionality=dimensionality,
             n_particles=n_particles,
             spatial_dim=spatial_dim,
@@ -66,11 +63,10 @@ class ALPEnergy(BaseMoleculeEnergy):
         self.adj_list = None
         self.atom_types = None
         self.atom_encoding_filename = atom_encoding_filename
-        self.atom_types_encoding = np.load(
-            f"{data_path}/{atom_encoding_filename}", allow_pickle=True
+        self.atom_types_encoding = np.load(data_path + f"/{atom_encoding_filename}", allow_pickle=True
         ).item()
 
-        self.pdb_path = f"{data_path}/{pdb_filename}"
+        self.pdb_path =  f"{pdb_filename}"
         logger.info(f"Loading pdb file from {self.pdb_path}")
         self.topology = md.load_topology(self.pdb_path)
         self.pdb = app.PDBFile(self.pdb_path)
@@ -95,14 +91,11 @@ class ALPEnergy(BaseMoleculeEnergy):
             bridge=OpenMMBridge(system, integrator, platform_name="CUDA")
         )
 
-        super().__init__(dimensionality=dimensionality,
-                         is_molecule=is_molecule)
-
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         if self.should_normalize:
             samples = self.unnormalize(samples)
-        return -self.openmm_energy(samples)
+        return -self.openmm_energy.energy(samples).squeeze(-1)
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)

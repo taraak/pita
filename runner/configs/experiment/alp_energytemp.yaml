@@ -21,6 +21,22 @@ defaults:
   - override /model/noise_schedule: elucidating
 
 model:
+  net: 
+    _target_: src.models.components.egnn_temp_conditioned.EGNN_dynamics
+    _partial_: true
+    n_particles: ${energy.n_particles}
+    n_dimension: ${energy.spatial_dim}
+    hidden_nf: 32
+    n_layers: 3
+    act_fn:
+      _target_: torch.nn.SiLU
+    recurrent: True
+    tanh: True
+    attention: True
+    condition_time: True
+    condition_temperature: True
+    agg: "sum"
+  
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
@@ -38,7 +54,7 @@ model:
     spatial_dim: ${energy.spatial_dim}
 
   diffusion_scale: 1.0
-  num_negative_time_steps: 10
+  num_negative_time_steps: 2
   num_samples_to_sample_from_buffer: 512
 
   num_samples_to_save: 10000
@@ -58,12 +74,10 @@ model:
   start_resampling_step: 0
   end_resampling_step: 950
   scale_diffusion: False
-  resample_at_end: True
+  resample_at_end: False
 
   temperatures:
-    - 2.0
-    - 1.5
-    - 1.0
+    - 300
 
 
   loss_weights:
@@ -79,5 +93,3 @@ model:
 
   update_temp_epoch: 
     - 100
-    - 200
-    - 1200

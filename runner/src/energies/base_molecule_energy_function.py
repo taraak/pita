@@ -31,10 +31,13 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         should_normalize=False,
         data_normalization_factor=1.0,
     ):
+                
         self.temperature = temperature
         self.n_particles = n_particles
         self.n_spatial_dim = spatial_dim
         assert self.n_spatial_dim * self.n_particles == dimensionality
+
+        self.device = device
 
         self.should_normalize = should_normalize
         self.data_normalization_factor = data_normalization_factor
@@ -45,21 +48,20 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
 
         self.data_path_train = (
             data_path
-            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/train_split_LJ{self.n_particles}-1000.npy"
+            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/train_split_{data_name}{self.n_particles}-10000.npy"
         )
         self.data_path_val = (
             data_path
-            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/val_split_LJ{self.n_particles}-1000.npy"
+            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/val_split_{data_name}{self.n_particles}-10000.npy"
         )
         self.data_path_test = (
             data_path
-            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/test_split_LJ{self.n_particles}-1000.npy"
+            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/test_split_{data_name}{self.n_particles}-10000.npy"
         )
-
-        self.device = device
 
         super().__init__(dimensionality=dimensionality,
                          is_molecule=is_molecule)
+
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)

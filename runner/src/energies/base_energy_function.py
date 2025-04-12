@@ -19,6 +19,7 @@ class BaseEnergyFunction(ABC):
         normalization_max: Optional[float] = None,
     ):
         self._dimensionality = dimensionality
+        self._is_molecule = is_molecule
 
         self._test_set = self.setup_test_set()
         self._val_set = self.setup_val_set()
@@ -26,8 +27,6 @@ class BaseEnergyFunction(ABC):
 
         self.normalization_min = normalization_min
         self.normalization_max = normalization_max
-
-        self._is_molecule = is_molecule
 
     def setup_test_set(self) -> Optional[torch.Tensor]:
         return None
@@ -72,9 +71,9 @@ class BaseEnergyFunction(ABC):
         return x
 
     def _unnormalize_molecule(self, x: torch.Tensor) -> torch.Tensor:
-        assert x.shape[-1] == self.dim
+        assert x.shape[-1] == self._dimensionality
         assert self.data_normalization_factor is not None, "Standard deviation should be computed first"
-        x = x * self.data_normalization_factor.to(x)
+        x = x * self.data_normalization_factor
         return x
 
     def sample_test_set(self, num_points: int, normalize: bool = False) -> Optional[torch.Tensor]:
