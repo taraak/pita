@@ -180,14 +180,14 @@ class energyTempModule(BaseLightningModule):
 
         if return_logweights:
             # reintegrate without resampling to get logweights, don't need as many samples
-            _, logweights, _, _ = self.weighted_sde_integrator.integrate_sde(
+            samples_not_resampled, logweights, _, _ = self.weighted_sde_integrator.integrate_sde(
                 x1=prior_samples.clone()[: self.hparams.inference_batch_size],
                 energy_function=energy_function,
                 resampling_interval=self.hparams.num_integration_steps + 1,
                 inverse_temperature=inverse_temp,
                 annealing_factor=annealing_factor,
             )
-            return samples, logweights, num_unique_idxs, sde_terms
+            return samples, samples_not_resampled[-1], logweights, num_unique_idxs, sde_terms
 
         return samples, num_unique_idxs, sde_terms
 
@@ -532,7 +532,7 @@ class energyTempModule(BaseLightningModule):
 
         logger.debug(f"Generating {self.hparams.num_samples_to_generate_per_epoch}" 
                         + f" samples for inverse_temp {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}")
-        samples, logweights, num_unique_idxs, sde_terms = self.generate_samples(
+        samples, samples_not_resampled, logweights, num_unique_idxs, sde_terms = self.generate_samples(
             prior=self.priors[temp_index_lower],
             energy_function=energy_function,
             num_samples=num_samples,
@@ -577,6 +577,7 @@ class energyTempModule(BaseLightningModule):
             samples,
             samples_energy,
             wandb_logger,
+            latest_samples_not_resampled=samples_not_resampled,
             prefix=prefix_plot,
         )
         self._log_energy_mean(

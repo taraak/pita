@@ -115,6 +115,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
         wandb_logger: WandbLogger,
+        latest_samples_not_resampled: Optional[torch.Tensor]=None,
         prefix: str = "",
     ) -> None:
         if latest_samples is None:
@@ -127,7 +128,9 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
             prefix += "/"
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
-            samples_fig = self.get_dataset_fig(latest_samples, energy_samples=latest_energies)
+            samples_fig = self.get_dataset_fig(latest_samples,
+                                               energy_samples=latest_energies,
+                                               samples_not_resampled=latest_samples_not_resampled)
 
             wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 
@@ -145,7 +148,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         samples_fig = self.get_dataset_fig(samples)
         wandb_logger.log_image(f"{name}", [samples_fig])
 
-    def get_dataset_fig(self, samples, energy_samples=None):
+    def get_dataset_fig(self, samples, energy_samples=None, samples_not_resampled=None):
         # import pdb; pdb.set_trace()
         test_data_smaller = self.sample_test_set(5000)
 
@@ -174,6 +177,18 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
             linewidth=4,
             label="generated data",
         )
+        if samples_not_resampled is not None:
+            dist_samples_not_resampled = self.interatomic_dist(samples_not_resampled).detach().cpu()
+            axs[0].hist(
+                dist_samples_not_resampled.view(-1),
+                bins=bins,
+                alpha=0.6,
+                density=True,
+                histtype="step",
+                color="b",
+                linewidth=4,
+                label="generated data (not resampled)",
+            )
         axs[0].set_xlabel("Interatomic distance")
         axs[0].legend()
 
@@ -209,6 +224,20 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
             linewidth=4,
             label="generated data",
         )
+
+        if samples_not_resampled is not None:
+            energy_samples_not_resampled = -self(samples_not_resampled).detach().cpu()
+            axs[1].hist(
+                energy_samples_not_resampled,
+                bins=bins,  # 100
+                density=True,
+                alpha=0.6,
+                range=(min_energy, max_energy),
+                color="b",
+                histtype="step",
+                linewidth=4,
+                label="generated data (not resampled)",
+            )
         axs[1].set_xlabel("Energy")
         axs[1].legend()
 
