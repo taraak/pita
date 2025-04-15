@@ -26,8 +26,10 @@ def conditional_no_grad(condition):
 
 def grad_E(x, energy_function):
     with torch.enable_grad():
-        x = x.requires_grad_()
-        return torch.autograd.grad(torch.sum(energy_function(x)), x)[0].detach()
+        x.requires_grad_()
+        grad = torch.autograd.grad(torch.sum(energy_function(x)), x)[0].detach()
+        x.requires_grad_(False)
+        return grad
 
 
 def negative_time_descent(x, energy_function, num_steps, dt=1e-4):
@@ -164,6 +166,7 @@ class WeightedSDEIntegrator:
         samples = torch.stack(samples)
         logweights = torch.stack(logweights)
 
+        breakpoint()
         if self.num_negative_time_steps > 0:
             print("doing negative time descent...")
             samples_langevin = negative_time_descent(
@@ -172,6 +175,7 @@ class WeightedSDEIntegrator:
                 num_steps=self.num_negative_time_steps,
             )
             samples = torch.concatenate((samples, samples_langevin), axis=0)
+            
         return samples, logweights, num_unique_idxs, sde_terms_all
 
     def ddp_batched_euler_maruyama_step(
