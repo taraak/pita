@@ -26,11 +26,10 @@ def conditional_no_grad(condition):
 
 def grad_E(x, energy_function):
     with torch.enable_grad():
-        x = x.requires_grad_()
-        grad =  torch.autograd.grad(torch.sum(energy_function(x)), x)[0].detach()
+        x.requires_grad_()
+        grad = torch.autograd.grad(torch.sum(energy_function(x)), x)[0].detach()
         x.requires_grad_(False)
-    return grad
-
+        return grad
 
 
 def negative_time_descent(x, energy_function, num_steps, dt=1e-4):
@@ -40,7 +39,9 @@ def negative_time_descent(x, energy_function, num_steps, dt=1e-4):
         x = x + drift * dt
 
         if energy_function.is_molecule:
-            x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
+            x = remove_mean(
+                x, energy_function.n_particles, energy_function.n_spatial_dim
+            )
 
         samples.append(x)
     return torch.stack(samples)
@@ -97,7 +98,10 @@ class WeightedSDEIntegrator:
         print("The resampling interval is: ", resampling_interval)
 
         times = torch.linspace(
-            self.start_time, self.end_time, self.num_integration_steps + 1, device=x1.device
+            self.start_time,
+            self.end_time,
+            self.num_integration_steps + 1,
+            device=x1.device,
         )[:-1]
 
         dt = self.time_range / self.num_integration_steps
@@ -122,7 +126,7 @@ class WeightedSDEIntegrator:
             for step, t in enumerate(
                 tqdm(times, position=0, leave=True, dynamic_ncols=True, disable=disable)
             ):
-            # for step, t in enumerate(times):
+                # for step, t in enumerate(times):
                 x, a, idxs, sde_terms = self.ddp_batched_euler_maruyama_step(
                     t,
                     x,
@@ -135,7 +139,9 @@ class WeightedSDEIntegrator:
                     resampling_interval=resampling_interval,
                 )
                 if energy_function.is_molecule:
-                    x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
+                    x = remove_mean(
+                        x, energy_function.n_particles, energy_function.n_spatial_dim
+                    )
 
                 samples.append(x)
                 logweights.append(a)
@@ -175,6 +181,7 @@ class WeightedSDEIntegrator:
                 num_steps=self.num_negative_time_steps,
             )
             samples = torch.concatenate((samples, samples_langevin), axis=0)
+
         return samples, logweights, num_unique_idxs, sde_terms_all
 
     def ddp_batched_euler_maruyama_step(
@@ -264,7 +271,9 @@ class WeightedSDEIntegrator:
                 energy_function=energy_function,
             )
             sde_term.diffusion = self.sde.diffusion(
-                t, x[i * self.batch_size : (i + 1) * self.batch_size], self.diffusion_scale
+                t,
+                x[i * self.batch_size : (i + 1) * self.batch_size],
+                self.diffusion_scale,
             )
             sde_terms.append(sde_term)
 
