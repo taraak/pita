@@ -59,6 +59,7 @@ model:
   end_resampling_step: 995
   scale_diffusion: False
   resample_at_end: True
+  debias_inference: True #if self to false it just does regular VE reverse sde for debugging
 
   temperatures:
     - 2.0
@@ -68,7 +69,7 @@ model:
     - 0.8
     - 0.7
 
-
+  do_energy_matching_loss_every_n_steps: 1
   loss_weights:
     energy_score: 1.0
     score: 1.0
@@ -80,10 +81,26 @@ model:
 
   num_mc_samples: 1000
 
-  update_temp_epoch: 
+  num_epochs_per_temp: 
     - 100
-    - 300
-    - 600
-    - 1000
-    - 1400
-    - 1800
+    - 200
+    - 200
+    - 200 
+    - 200
+
+# parametrs for training DEM at the high temperature to collect samples instead of MCMC
+  dem:
+    noise_schedule: elucidating
+    num_training_epochs: 0
+    training_batch_size: 512
+    num_samples_to_generate_per_epoch: 512
+    check_val_every_n_epochs: 10
+    clipper:
+      _target_: src.models.components.clipper.Clipper
+      should_clip_scores: True
+      should_clip_log_rewards: False
+      max_score_norm: 100
+      min_log_reward: null
+      n_particles: ${energy.n_particles}
+      dimensionality: ${energy.dimensionality}
+      spatial_dim: ${energy.spatial_dim}

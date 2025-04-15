@@ -96,7 +96,11 @@ class VEReverseSDE(torch.nn.Module):
         h_t = self.noise_schedule.h(t)
         drift_X = self.score_net(h_t, x, beta) * self.g(t).pow(2).unsqueeze(-1)
         drift_A = torch.zeros(x.shape[0]).to(x.device)
-        return drift_X.detach(), drift_A.detach()
+        sde_terms = SDETerms(
+            drift_X=drift_X,
+            drift_A=drift_A,
+        )
+        return sde_terms
 
     def f(self, t, x, beta, gamma, energy_function, resampling_interval=-1):
         assert self.energy_net is not None

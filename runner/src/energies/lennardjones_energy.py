@@ -161,6 +161,8 @@ class LennardJonesEnergy(BaseMoleculeEnergy):
         temperature=1.0,
         should_normalize=False,
         data_normalization_factor=1.0,
+        *args, 
+        **kwargs,
     ):
         
         if n_particles != 13 and n_particles != 55:

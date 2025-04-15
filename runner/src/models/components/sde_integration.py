@@ -148,8 +148,11 @@ class WeightedSDEIntegrator:
                 num_unique_idxs.append(idxs)
                 sde_terms_all.append(sde_terms)
 
-            if self.resample_at_end:
-                t = torch.tensor(self.end_time).to(x.device)
+            did_resampling = resampling_interval != -1 and resampling_interval < len(times)
+            if self.resample_at_end and did_resampling:
+                # t = torch.tensor(self.end_time).to(x.device)
+                t = times[self.end_resampling_step]
+                print(f"doing resampling at {t}")
                 target_logprob = energy_function(x)
                 if t.dim() == 0:
                     t = t * (torch.ones(x.shape[0])).to(x.device)
@@ -162,7 +165,7 @@ class WeightedSDEIntegrator:
                     energy_function=energy_function,
                     t=t,
                 )
-                logq_0 = -model_energy
+                logq_0 = -model_energy * annealing_factor
                 a_next = target_logprob - logq_0 + a
                 choice, _ = sample_cat_sys(x.shape[0], a_next)
                 x = x[choice]
@@ -221,6 +224,8 @@ class WeightedSDEIntegrator:
 
         sde_terms = self.lightning_module.all_gather(asdict(sde_terms))
         for term in fields(SDETerms):
+            if sde_terms[term.name] is None:
+                continue
             sde_terms[term.name] = sde_terms[term.name].reshape(
                 -1, *sde_terms[term.name].shape[2:]
             )

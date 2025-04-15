@@ -26,16 +26,8 @@ model:
     _partial_: true
     n_particles: ${energy.n_particles}
     n_dimension: ${energy.spatial_dim}
-    hidden_nf: 32
-    n_layers: 3
-    act_fn:
-      _target_: torch.nn.SiLU
-    recurrent: True
-    tanh: True
-    attention: True
-    condition_time: True
-    condition_temperature: True
-    agg: "sum"
+    hidden_nf: 64
+    n_layers: 5
   
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -58,7 +50,7 @@ model:
   training_batch_size: 1024
 
   num_samples_to_save: 10000
-  num_integration_steps: 5
+  num_integration_steps: 1000
 
   # Elucidating noise schedule
   P_mean: -1.2
@@ -75,16 +67,20 @@ model:
   end_resampling_step: 950
   scale_diffusion: False
   resample_at_end: False
+  debias_inference: True #if self to False it just does regular VE reverse sde for debugging
 
   temperatures:
-    - 1200
+    - 600
+    # - 1200
 
   loss_weights:
-    energy_score: 1.0
+    energy_score: 0.0
     score: 1.0
-    energy_matching: 1.0
+    energy_matching: 0.0
     target_score: 0.0
     dem_energy: 0.0
+
+  do_energy_matching_loss_every_n_steps: 10
 
   init_from_prior: false
 
@@ -94,7 +90,16 @@ model:
 
   dem:
     noise_schedule: elucidating
-    num_training_epochs: 10
+    num_training_epochs: 0
     training_batch_size: 512
     num_samples_to_generate_per_epoch: 512
     check_val_every_n_epochs: 10
+    clipper:
+      _target_: src.models.components.clipper.Clipper
+      should_clip_scores: True
+      should_clip_log_rewards: False
+      max_score_norm: 100
+      min_log_reward: null
+      n_particles: ${energy.n_particles}
+      dimensionality: ${energy.dimensionality}
+      spatial_dim: ${energy.spatial_dim}

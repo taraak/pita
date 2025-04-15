@@ -30,7 +30,6 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         temperature=1.0,
         should_normalize=False,
         data_normalization_factor=1.0,
-        device_index=None,
     ):
                 
         self.temperature = temperature

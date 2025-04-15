@@ -60,6 +60,7 @@ class ALPEnergy(BaseMoleculeEnergy):
             plot_samples_epoch_period=plot_samples_epoch_period,
             plotting_buffer_sample_size=plotting_buffer_sample_size,
             is_molecule=is_molecule,
+            
         )
         
         self.adj_list = None
