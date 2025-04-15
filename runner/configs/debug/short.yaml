@@ -4,10 +4,15 @@ task_name: "debug_short"
 model:
   num_integration_steps: 10
   num_negative_time_steps: 1
+  num_mc_samples: 10
+  dem:
+    training_batch_size: 3
+    num_samples_to_generate_per_epoch: 3
+    
 
 data:
-  n_train_batches_per_epoch: 250
+  n_train_batches_per_epoch: 10
 
 trainer:
-  max_epochs: 1
+  max_epochs: 10
   check_val_every_n_epoch: 1

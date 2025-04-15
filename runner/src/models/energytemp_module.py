@@ -408,7 +408,6 @@ class energyTempModule(BaseLightningModule):
         loss = self.hparams.loss_weights["dem_score"] * dem_score_loss
         loss_dict = {f"{prefix}/dem_score_loss": dem_score_loss}
         self.log_dict(loss_dict, sync_dist=True)
-        breakpoint()
         return loss
 
     def model_step(self, x0_samples, temp_index, prefix):

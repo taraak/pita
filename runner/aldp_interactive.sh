@@ -4,6 +4,6 @@ experiment=alp_energytemp \
 trainer=ddp model.resampling_interval=1 \
 tags=["test","ALDP"] \
 model.noise_schedule.sigma_min=0.05 \
-data.n_train_batches_per_epoch=250 \
+model.dem.num_training_epochs=0 \
 debug=short \
 
