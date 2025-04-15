@@ -45,8 +45,7 @@ def tica_features(
     elif use_distances:
         return ca_distances
     elif use_dihedrals:
-        return ca_dihedrals
-    else:
+        return dihedrals
         return []
     
 def plot_tic01(ax, tics, name, tics_lims, cmap='viridis'):
