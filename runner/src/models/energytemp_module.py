@@ -354,10 +354,6 @@ class energyTempModule(BaseLightningModule):
         energy_function: BaseEnergyFunction,
         predicted_nabla_Ut: torch.Tensor,
     ) -> torch.Tensor:
-
-        if self.hparams.loss_weights["dem_score"] == 0:
-            return torch.zeros_like(predicted_nabla_Ut[0])
-
         nabla_Ut_estimate = -estimate_grad_Rt(
             ht=ht,
             x=xt,
@@ -393,6 +389,7 @@ class energyTempModule(BaseLightningModule):
         )
         ht = torch.exp(2 * ln_sigmat)
         inverse_temp = self.inverse_temperatures[0]
+        import ipdb; ipdb.set_trace()
 
         xt = x0_samples + torch.randn_like(x0_samples) * ht[:, None] ** 0.5
 
@@ -400,14 +397,18 @@ class energyTempModule(BaseLightningModule):
 
         with torch.enable_grad():
             dem_score_loss = self.get_dem_loss(
-                ht=ht,
-                xt=xt,
-                energy_function=self.energy_functions[0],
-                predicted_nabla_Ut=predicted_nabla_Ut,
-            ).mean()
-        loss = self.hparams.loss_weights["dem_score"] * dem_score_loss
-        loss_dict = {f"{prefix}/dem_score_loss": dem_score_loss}
-        self.log_dict(loss_dict, sync_dist=True)
+                ht = ht,
+                xt = xt,
+                energy_function = self.energy_functions[0],
+                predicted_nabla_Ut = predicted_nabla_Ut,
+            )
+        loss = dem_score_loss.mean()
+        loss_dict = {
+            f"{prefix}/dem_score_loss": dem_score_loss,
+        }
+        self.log_dict(
+            loss_dict, on_step=True, on_epoch=True, prog_bar=False, sync_dist=True
+        )
         return loss
 
     def model_step(self, x0_samples, temp_index, prefix):
@@ -503,47 +504,6 @@ class energyTempModule(BaseLightningModule):
         if self.trainer.current_epoch % self.hparams.dem.check_val_every_n_epochs == 0:
             self.eval_epoch_end_dem("val")
 
-    #     # do eval epoch end every 10 epochs
-    #     logger.debug("On train epoch end")
-    #     for temp_index, inverse_temp in enumerate(self.inverse_temperatures[:-1]):
-    #         # if temp_index == 0:
-    #         #     self.last_samples[temp_index] = self.generate_samples(
-    #         #         return_logweights=False,
-    #         #         prior = self.priors[temp_index],
-    #         #         energy_function = self.energy_functions[temp_index],
-    #         #         num_samples=self.num_samples_to_generate_per_epoch,
-    #         #         inverse_temp = inverse_temp,
-    #         #         annealing_factor= 1.0,
-    #         #     )
-    #         #     self.last_energies[temp_index] = self.energy_function(self.last_samples[temp_index])
-    #         #     self.buffers[temp_index].add(self.last_samples[temp_index],
-    #         #                                      self.last_energies[temp_index])
-
-    #         inverse_lower_temp = self.inverse_temperatures[temp_index + 1]
-    #         energy_function = self.energy_functions[temp_index + 1]
-    #         "Lightning hook that is called when a training epoch ends."
-    #         self.last_samples[temp_index + 1], _, _ = self.generate_samples(
-    #             return_logweights=False,
-    #             prior=self.priors[temp_index + 1],
-    #             energy_function=energy_function,
-    #             num_samples=self.hparams.num_eval_samples,
-    #             inverse_temp=inverse_temp,
-    #             annealing_factor=inverse_lower_temp / inverse_temp,
-    #         )
-    #         self.last_energies[temp_index + 1] = energy_function(
-    #             self.last_samples[temp_index + 1]
-    #         )
-
-    #         self.buffers[temp_index + 1].add(
-    #             self.last_samples[temp_index + 1], self.last_energies[temp_index + 1]
-    #         )
-
-    #     # print buffer size:
-    #     for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
-    #         logger.debug(
-    #             f"Buffer size for inverse_temp: {len(self.buffers[temp_index])}"
-    #         )
-
     def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
         """Perform a single eval step on a batch of data from the validation set.
 
@@ -584,6 +544,11 @@ class energyTempModule(BaseLightningModule):
             num_samples=self.hparams.dem.num_samples_to_generate_per_epoch,
         )
         samples_energy = energy_function(samples)
+                
+        self.buffers[0].add(
+            samples,
+            samples_energy,
+        )
 
         prefix_plot = f"{prefix}/dem"
         if self.is_molecule:
@@ -607,11 +572,6 @@ class energyTempModule(BaseLightningModule):
             prefix=prefix_plot,
         )
         logger.debug(f"Finished eval epoch end DEM {prefix}")
-
-        self.buffers[0].add(
-            samples,
-            samples_energy,
-        )
 
     def eval_epoch_end(self, prefix: str):
         logger.debug(f"Started eval epoch end {prefix}")

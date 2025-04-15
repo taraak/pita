@@ -58,7 +58,7 @@ model:
   training_batch_size: 1024
 
   num_samples_to_save: 10000
-  num_integration_steps: 1000
+  num_integration_steps: 5
 
   # Elucidating noise schedule
   P_mean: -1.2
@@ -85,7 +85,6 @@ model:
     energy_matching: 1.0
     target_score: 0.0
     dem_energy: 0.0
-    dem_score: 1.0
 
   init_from_prior: false
 
