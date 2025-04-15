@@ -316,8 +316,7 @@ class energyTempModule(BaseLightningModule):
         score = torch.autograd.grad(energy, x0, create_graph=True)[0]
         score = self.hparams.clipper.clip_scores(score)
         x0 = xt - score * ht[:, None]
-        target_score_loss = torch.sum((x0 - predicted_x0) ** 2, dim=(-1))
-        return target_score_loss
+        return torch.sum((x0 - predicted_x0) ** 2, dim=(-1))
 
     def get_dem_energy_loss(
         self,
@@ -949,7 +948,7 @@ class energyTempModule(BaseLightningModule):
             )
         else:
             assert (
-                len(self.inverse_temperatures) - 1 == 0
+                len(self.inverse_temperatures) == 1
             ), "Need to specify num_epochs_per_temp in the config file"
 
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
