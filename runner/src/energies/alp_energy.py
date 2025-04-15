@@ -45,6 +45,7 @@ class ALPEnergy(BaseMoleculeEnergy):
         is_molecule: bool=True,
         temperature: float=1.0,
         should_normalize: bool=True,
+        device_index: int=0,
     ):
         super().__init__(
             dimensionality=dimensionality,
@@ -88,8 +89,14 @@ class ALPEnergy(BaseMoleculeEnergy):
             0.3 / openmm.unit.picosecond,
             1.0 * openmm.unit.femtosecond,
         )
+
+        platform_name = "CUDA"
+        platform_properties =  dict(Precision='single', DeviceIndex=device_index) if platform_name == 'CUDA' else dict()
         self.openmm_energy = OpenMMEnergy(
-            bridge=OpenMMBridge(system, integrator, platform_name="CUDA")
+            bridge=OpenMMBridge(system,
+                                integrator,
+                                platform_name=platform_name,
+                                platform_properties=platform_properties), 
         )
 
 
@@ -134,6 +141,7 @@ class ALPEnergy(BaseMoleculeEnergy):
         self,
         samples,
         energy_samples: torch.Tensor,
+        samples_not_resampled: Optional[torch.Tensor] = None,
     ):
         if self.n_particles == 63:
             min_energy = -130
@@ -154,6 +162,7 @@ class ALPEnergy(BaseMoleculeEnergy):
         return super().get_dataset_fig(
             samples,
             energy_samples,
+            samples_not_resampled=samples_not_resampled,
         )
 
     def compute_adj_list_and_atom_types(self):
@@ -172,6 +181,7 @@ class ALPEnergy(BaseMoleculeEnergy):
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
         wandb_logger: WandbLogger,
+        latest_samples_not_resampled: Optional[torch.Tensor] = None,
         num_eval_samples: int = 5000,
         prefix: str = "",
     ) -> None:
@@ -179,6 +189,7 @@ class ALPEnergy(BaseMoleculeEnergy):
             latest_samples,
             latest_energies,
             wandb_logger=wandb_logger,
+            latest_samples_not_resampled=latest_samples_not_resampled,
             prefix=prefix,
         )
         logging.info("Base plots done")

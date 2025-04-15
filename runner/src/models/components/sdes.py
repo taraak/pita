@@ -82,7 +82,7 @@ class SDETerms:
 
 class VEReverseSDE(torch.nn.Module):
     def __init__(
-        self, energy_net, noise_schedule, score_net=None, pin_energy=False, debias_inference=True
+        self, noise_schedule, energy_net=None, score_net=None, pin_energy=False, debias_inference=True
     ):
         super().__init__()
         self.energy_net = energy_net
@@ -99,6 +99,7 @@ class VEReverseSDE(torch.nn.Module):
         return drift_X, drift_A
 
     def f(self, t, x, beta, gamma, energy_function, resampling_interval=-1):
+        assert self.energy_net is not None
         if t.dim() == 0:
             # repeat the same time for all points if we have a scalar time
             t = t * torch.ones(x.shape[0]).to(x.device)
