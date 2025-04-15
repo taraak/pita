@@ -1,0 +1,9 @@
+_target_: src.energies.alp_energy.ALPEnergy
+_partial_: true
+dimensionality: 66
+n_particles: 22
+spatial_dim: 3
+data_path: "../data/alanine/"
+pdb_filename: "../data/pdbs/A_capped.pdb"
+plot_samples_epoch_period: 1
+is_molecule: True

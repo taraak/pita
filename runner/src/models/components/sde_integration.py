@@ -119,7 +119,7 @@ class WeightedSDEIntegrator:
             for step, t in enumerate(
                 tqdm(times, position=0, leave=True, dynamic_ncols=True, disable=disable)
             ):
-                # for step, t in enumerate(times):
+            # for step, t in enumerate(times):
                 x, a, idxs, sde_terms = self.ddp_batched_euler_maruyama_step(
                     t,
                     x,

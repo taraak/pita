@@ -21,19 +21,11 @@ defaults:
   - override /model/noise_schedule: elucidating
 
 model:
-  net:
-    n_layers: 5
-    hidden_nf: 128
-
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
-    n_particles: 13
-    spatial_dim: 3
-
-  lambda_weighter:
-    _target_: src.models.components.lambda_weighter.NoLambdaWeighter
-    _partial_: true
+    n_particles: ${energy.n_particles}
+    spatial_dim: ${energy.spatial_dim} 
 
   clipper:
     _target_: src.models.components.clipper.Clipper
@@ -41,16 +33,13 @@ model:
     should_clip_log_rewards: False
     max_score_norm: 1000
     min_log_reward: null
+    n_particles: ${energy.n_particles}
+    dimensionality: ${energy.dimensionality}
+    spatial_dim: ${energy.spatial_dim}
 
   diffusion_scale: 1.0
   num_negative_time_steps: 1
-  num_samples_to_generate_per_epoch: 1024
   num_samples_to_sample_from_buffer: 512
-
-  cfm_prior_std: 2
-  nll_integration_method: dopri5
-  logz_with_cfm: false
-  nll_with_cfm: false
 
   num_samples_to_save: 10000
   num_integration_steps: 1000
@@ -60,19 +49,41 @@ model:
   P_std: 1.2
 
   # energytemp parameters
-  num_init_samples: 1
+  num_init_samples: 10000
   test_batch_size: 5000
-  num_eval_samples: 128
+  num_eval_samples: 2048
+  num_samples_to_generate_per_epoch: 5000
   inference_batch_size: 512
   resampling_interval: 1
-  start_resampling_step: 10
+  start_resampling_step: 0
+  end_resampling_step: 995
   scale_diffusion: False
-
-  lower_temperature: 1.0
-  higher_temperature: 2.0
-  d_temp: 0.1
+  resample_at_end: True
 
   temperatures:
     - 2.0
+    - 1.5
+    - 1.0
+    - 0.9
+    - 0.8
+    - 0.7
+
+
+  loss_weights:
+    energy_score: 1.0
+    score: 1.0
+    energy_matching: 1.0
+    target_score: 0.0
+    dem_energy: 0.0
 
   init_from_prior: false
+
+  num_mc_samples: 1000
+
+  update_temp_epoch: 
+    - 100
+    - 300
+    - 600
+    - 1000
+    - 1400
+    - 1800

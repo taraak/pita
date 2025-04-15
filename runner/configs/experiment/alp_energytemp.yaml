@@ -6,21 +6,37 @@
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["LJ13"]
+tags: ["ALDP"]
 
 seed: 12345
 
 logger:
   wandb:
     tags: ${tags}
-    group: "lj13"
+    group: "aldp"
 
 defaults:
-  - override /energy: lj13
+  - override /energy: aldp
   - override /model/net: egnn_temp
   - override /model/noise_schedule: elucidating
 
 model:
+  net: 
+    _target_: src.models.components.egnn_temp_conditioned.EGNN_dynamics
+    _partial_: true
+    n_particles: ${energy.n_particles}
+    n_dimension: ${energy.spatial_dim}
+    hidden_nf: 32
+    n_layers: 3
+    act_fn:
+      _target_: torch.nn.SiLU
+    recurrent: True
+    tanh: True
+    attention: True
+    condition_time: True
+    condition_temperature: True
+    agg: "sum"
+  
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
@@ -38,11 +54,11 @@ model:
     spatial_dim: ${energy.spatial_dim}
 
   diffusion_scale: 1.0
-  num_negative_time_steps: 0
+  num_negative_time_steps: 2
   num_samples_to_sample_from_buffer: 512
 
   num_samples_to_save: 10000
-  num_integration_steps: 1
+  num_integration_steps: 1000
 
   # Elucidating noise schedule
   P_mean: -1.2
@@ -50,23 +66,20 @@ model:
 
   # energytemp parameters
   num_init_samples: 10000
-  test_batch_size: 10
+  test_batch_size: 5000
   num_eval_samples: 2048
   num_samples_to_generate_per_epoch: 5000
   inference_batch_size: 512
   resampling_interval: 1
   start_resampling_step: 0
-  end_resampling_step: 1000
+  end_resampling_step: 950
   scale_diffusion: False
   resample_at_end: False
 
-  lower_temperature: 1.0
-  higher_temperature: 2.0
-  d_temp: 0.1
-
   temperatures:
-    - 2.0
-    - 1.5
+    - 600
+    - 550
+
 
   loss_weights:
     energy_score: 1.0
@@ -80,5 +93,5 @@ model:
   num_mc_samples: 1000
 
   update_temp_epoch: 
-    - 2
-    - 4
+    - 100
+    - 200
