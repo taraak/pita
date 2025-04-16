@@ -151,7 +151,7 @@ class WeightedSDEIntegrator:
             did_resampling = resampling_interval != -1 and resampling_interval < len(times)
             if self.resample_at_end and did_resampling:
                 # t = torch.tensor(self.end_time).to(x.device)
-                t = times[self.end_resampling_step]
+                t = times[self.end_resampling_step-1]
                 print(f"doing resampling at {t}")
                 target_logprob = energy_function(x)
                 if t.dim() == 0:

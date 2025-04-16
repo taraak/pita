@@ -60,6 +60,7 @@ model:
   scale_diffusion: False
   resample_at_end: True
   debias_inference: True #if self to false it just does regular VE reverse sde for debugging
+  energy_masking_threshold: 1000
 
   temperatures:
     - 2.0
@@ -84,8 +85,8 @@ model:
   num_epochs_per_temp: 
     - 100
     - 200
-    - 200
-    - 200 
+    - 300
+    - 300 
     - 200
 
 # parametrs for training DEM at the high temperature to collect samples instead of MCMC

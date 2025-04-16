@@ -22,6 +22,7 @@ from src.models.components.sdes import SDETerms, VEReverseSDE
 from src.models.components.utils import sample_from_tensor
 from src.utils.data_utils import remove_mean
 from torchmetrics import MeanMetric
+from .components.distribution_distances import energy_distances
 
 from .components.clipper import Clipper
 from .components.noise_schedules import BaseNoiseSchedule
@@ -272,14 +273,13 @@ class energyTempModule(BaseLightningModule):
         predicted_x0_scorenet = self.score_net.denoiser(
             ht, xt, inverse_temp, return_score=False
         )
-        predicted_x0_energynet, predicted_Ut = self.energy_net.denoiser_and_energy(
-            ht, xt, inverse_temp
-        )
-
-        energy_score_loss = torch.sum(
-            (predicted_x0_energynet - predicted_x0_scorenet.detach()) ** 2, dim=(-1)
-        )
         score_loss = torch.sum((predicted_x0_scorenet - x0) ** 2, dim=(-1))
+        energy_score_loss, predicted_Ut = self.get_energy_score_loss(
+            ht=ht,
+            xt=xt,
+            inverse_temp=inverse_temp,
+            predicted_x0_scorenet=predicted_x0_scorenet,
+        )
         target_score_loss = self.get_target_score_loss(
             ht=ht,
             x0=x0,
@@ -310,6 +310,28 @@ class energyTempModule(BaseLightningModule):
             dem_energy_loss,
             energy_matching_loss,
         )
+    def get_energy_score_loss(
+        self,
+        ht: torch.Tensor,
+        xt: torch.Tensor,
+        inverse_temp: float,
+        predicted_x0_scorenet: torch.Tensor,
+    ) -> torch.Tensor:
+    
+        if self.hparams.loss_weights["energy_score"] == 0:
+            predicted_Ut = torch.zeros(xt.shape[0], device=xt.device)
+            if not (self.hparams.loss_weights["dem_energy"] == 0):
+                predicted_Ut = self.energy_net.forward_energy(
+                    ht, xt, inverse_temp
+                )
+            return torch.zeros(xt.shape[0], device=xt.device), predicted_Ut
+        predicted_x0_energynet, predicted_Ut = self.energy_net.denoiser_and_energy(
+            ht, xt, inverse_temp
+        )
+        energy_score_loss = torch.sum(
+            (predicted_x0_energynet - predicted_x0_scorenet.detach()) ** 2, dim=(-1)
+        )
+        return energy_score_loss, predicted_Ut
 
     def get_target_score_loss(
         self,
@@ -450,13 +472,16 @@ class energyTempModule(BaseLightningModule):
                 ht, x0_samples, inverse_temp, self.energy_functions[temp_index]
             )
 
-        if prefix == "train":
+        should_log_stratified_energy_score = self.hparams.loss_weights["energy_score"] != 0 and prefix == "train"
+        should_log_stratified_score = self.hparams.loss_weights["score"] != 0 and prefix == "train" 
+        if should_log_stratified_score:
             self.log_dict(
                 self.logsigma_stratified_loss(
                     ln_sigmat, score_loss, loss_name="train/stratified/score_loss"
                 ),
                 sync_dist=True,
             )
+        if should_log_stratified_energy_score:
             self.log_dict(
                 self.logsigma_stratified_loss(
                     ln_sigmat,
@@ -575,7 +600,7 @@ class energyTempModule(BaseLightningModule):
             self._log_dist_w2(
                 prefix=prefix_plot, temp_index=0, generated_samples=samples
             )
-        self._log_energy_w2(
+        self._log_energy_distances(
             prefix=prefix_plot,
             temp_index=0,
             generated_samples=samples,
@@ -655,6 +680,11 @@ class energyTempModule(BaseLightningModule):
         )
         samples_energy = energy_function(samples)
         if temp_index_lower != temp_index:
+            # mask out samples with high energy
+            mask = (samples_energy > self.hparams.energy_masking_threshold) | (
+                samples_energy < -self.hparams.energy_masking_threshold
+            )
+            samples = samples[~mask]
             # fill the buffers
             self.buffers[temp_index_lower].add(
                 samples,
@@ -682,7 +712,7 @@ class energyTempModule(BaseLightningModule):
             self._log_dist_w2(
                 prefix="val", temp_index=temp_index_lower, generated_samples=samples
             )
-        self._log_energy_w2(
+        self._log_energy_distances(
             prefix="val",
             temp_index=temp_index_lower,
             generated_samples=samples,
@@ -773,8 +803,7 @@ class energyTempModule(BaseLightningModule):
             batch_generated_samples = sample_from_tensor(
                 final_samples, self.hparams.test_batch_size
             )
-            # log energy w2
-            self._log_energy_w2(
+            self._log_energy_distances(
                 inverse_temp,
                 prefix="test",
                 test_generated_samples=batch_generated_samples,
@@ -846,35 +875,26 @@ class energyTempModule(BaseLightningModule):
         )
         wandb_logger.log_image(f"{prefix}/{term}", [img])
 
-    def _log_energy_w2(self, temp_index, generated_samples, prefix="val"):
+    def _log_energy_distances(self, temp_index, generated_samples, prefix="val"):
         energy_function = self.energy_functions[temp_index]
         generated_energies = energy_function(generated_samples)
-
         if "test" in prefix:
-            data_set = energy_function.sample_test_set(self.hparams.num_eval_samples)
+            data_set = energy_function.sample_test_set(generated_samples.shape[0])
         else:
-            data_set = energy_function.sample_val_set(self.hparams.num_eval_samples)
-
-        energies = energy_function(energy_function.normalize(data_set))
-        energy_w2 = (
-            pot.emd2_1d(energies.cpu().numpy(), generated_energies.cpu().numpy()) ** 0.5
-        )
-        self.log(
-            f"{prefix}/energy_w2",
-            self.val_energy_w2(energy_w2),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
+            data_set = energy_function.sample_val_set(generated_samples.shape[0])
+        energies = energy_function(data_set)
+        energy_distances_dict = energy_distances(generated_energies, energies, prefix=prefix, energy_threshold=self.hparams.energy_masking_threshold)
+        self.log_dict(
+            energy_distances_dict, on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
         )
 
     def _log_dist_w2(self, temp_index, generated_samples, prefix="val"):
         energy_function = self.energy_functions[temp_index]
 
         if "test" in prefix:
-            data_set = energy_function.sample_test_set(self.test_batch_size)
+            data_set = energy_function.sample_test_set(generated_samples.shape[0])
         else:
-            data_set = energy_function.sample_val_set(self.hparams.num_eval_samples)
+            data_set = energy_function.sample_val_set(generated_samples.shape[0])
 
         dist_w2 = (
             pot.emd2_1d(
@@ -991,7 +1011,7 @@ class energyTempModule(BaseLightningModule):
                     self.hparams.num_init_samples
                 )
             else:
-                init_states = self.energy_functions[0].sample_test_set(
+                init_states = self.energy_functions[0].sample_train_set(
                     self.hparams.num_init_samples
                 )
             init_energies = self.energy_functions[temp_index](init_states)

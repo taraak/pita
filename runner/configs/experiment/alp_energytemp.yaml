@@ -46,7 +46,7 @@ model:
     spatial_dim: ${energy.spatial_dim}
 
   diffusion_scale: 1.0
-  num_negative_time_steps: 2
+  num_negative_time_steps: 0
   training_batch_size: 1024
 
   num_samples_to_save: 10000
@@ -68,6 +68,7 @@ model:
   scale_diffusion: False
   resample_at_end: False
   debias_inference: True #if self to False it just does regular VE reverse sde for debugging
+  energy_masking_threshold: 1000
 
   temperatures:
     - 600
