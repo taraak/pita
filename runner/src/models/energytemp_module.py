@@ -684,11 +684,10 @@ class energyTempModule(BaseLightningModule):
             mask = (samples_energy > self.hparams.energy_masking_threshold) | (
                 samples_energy < -self.hparams.energy_masking_threshold
             )
-            samples = samples[~mask]
             # fill the buffers
             self.buffers[temp_index_lower].add(
-                samples,
-                samples_energy,
+                samples[~mask],
+                samples_energy[~mask],
             )
             output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
             # append time to avoid overwriting
@@ -703,7 +702,6 @@ class energyTempModule(BaseLightningModule):
         logger.debug(
             f"Buffer size for temperature {temp:0.3f} is {len(self.buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
         )
-
         print(
             f"Buffer size for temp {temp:0.3f} is {len(self.buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
         )
