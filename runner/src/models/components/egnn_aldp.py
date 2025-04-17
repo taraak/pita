@@ -159,7 +159,7 @@ class EGNN_dynamics(nn.Module):
             h = torch.cat([h, h_t], dim=-1)
 
         if self.condition_temperature:
-            h_beta = torch.zeros(n_batch, self._n_particles, 1).to(xs.device)
+            h_beta = torch.ones(n_batch, self._n_particles, 1).to(xs.device)
             h_beta = (h_beta * beta.unsqueeze(-1))
             h = torch.cat([h, h_beta], dim=-1)
         
