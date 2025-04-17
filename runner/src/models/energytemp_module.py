@@ -341,10 +341,8 @@ class energyTempModule(BaseLightningModule):
             inverse_temp=inverse_temp,
             energy_function=energy_function,
         )
-        breakpoint()
         energy_score_loss = lambda_t * energy_score_loss
         target_score_loss = lambda_t * target_score_loss
-
         return (
             energy_score_loss,
             score_loss,
