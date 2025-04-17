@@ -1,7 +1,7 @@
 import copy
 import logging
 import time
-from dataclasses import dataclass, fields
+from dataclasses import fields
 from typing import Any, Dict, List, Optional
 
 import hydra
@@ -16,19 +16,17 @@ from lightning.pytorch.loggers import WandbLogger
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.energy_net import EnergyNet
 from src.models.components.noise_schedules import BaseNoiseSchedule
-from src.models.components.score_net import ScoreNet
+from src.models.components.score_net import FlowNet, ScoreNet
 from src.models.components.sde_integration import WeightedSDEIntegrator
 from src.models.components.sdes import SDETerms, VEReverseSDE
 from src.models.components.utils import sample_from_tensor
 from src.utils.data_utils import remove_mean
 from torchmetrics import MeanMetric
-from .components.distribution_distances import energy_distances
 
 from .components.clipper import Clipper
-from .components.noise_schedules import BaseNoiseSchedule
+from .components.distribution_distances import energy_distances
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.score_estimator import estimate_grad_Rt, estimate_Rt
-from .components.sdes import VEReverseSDE
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +122,8 @@ class energyTempModule(BaseLightningModule):
         h_theta = self.hparams.net()
         self.energy_net = EnergyNet(score_net=copy.deepcopy(h_theta))
         self.score_net = ScoreNet(model=h_theta)
+        if self.hparams.get("debug_fm", False):
+            self.score_net = FlowNet(model=h_theta)
 
         self.reverse_sde = VEReverseSDE(
             energy_net=self.energy_net,
@@ -154,9 +154,12 @@ class energyTempModule(BaseLightningModule):
                 lightning_module=self,
             )
 
+        n_steps = self.hparams.num_integration_steps
+        if self.hparams.get("debug_fm", False):
+            n_steps = 1
         self.weighted_sde_integrator = WeightedSDEIntegrator(
             sde=self.reverse_sde,
-            num_integration_steps=self.hparams.num_integration_steps,
+            num_integration_steps=n_steps,
             reverse_time=True,
             time_range=1.0,
             no_grad=True,
@@ -189,17 +192,46 @@ class energyTempModule(BaseLightningModule):
         weighted_sde_integrator: Optional[WeightedSDEIntegrator] = None,
     ) -> torch.Tensor:
         prior_samples = prior.sample(num_samples)
+        if self.hparams.get("debug_fm", False):
+            from src.models.components.wrappers import torch_wrapper
+            from torchdyn.core import NeuralODE
+
+            wrapped_net = torch_wrapper(self.score_net)
+            node = NeuralODE(
+                wrapped_net,
+                atol=1e-4,
+                rtol=1e-4,
+                solver="dopri5",
+                sensitivity="adjoint",
+            )
+            t_span = torch.linspace(0, 1, 2)
+            x = prior_samples
+            samples_not_resampled, logweights, num_unique_idxs, sde_terms = (
+                self.weighted_sde_integrator.integrate_sde(
+                    x1=prior_samples.clone()[: self.hparams.inference_batch_size],
+                    energy_function=energy_function,
+                    resampling_interval=self.hparams.num_integration_steps + 1,
+                    inverse_temperature=inverse_temp,
+                    annealing_factor=annealing_factor,
+                )
+            )
+            samples = node.trajectory(x, t_span=t_span)[-1]
+            return (
+                samples,
+                samples_not_resampled[-1],
+                logweights,
+                num_unique_idxs,
+                sde_terms,
+            )
 
         if weighted_sde_integrator is None:
             weighted_sde_integrator = self.weighted_sde_integrator
 
-        samples, _, num_unique_idxs, sde_terms = (
-            weighted_sde_integrator.integrate_sde(
-                x1=prior_samples.clone(),
-                energy_function=energy_function,
-                inverse_temperature=inverse_temp,
-                annealing_factor=annealing_factor,
-            )
+        samples, _, num_unique_idxs, sde_terms = weighted_sde_integrator.integrate_sde(
+            x1=prior_samples.clone(),
+            energy_function=energy_function,
+            inverse_temperature=inverse_temp,
+            annealing_factor=annealing_factor,
         )
         if not return_full_trajectory:
             samples = samples[-1]
@@ -259,17 +291,27 @@ class energyTempModule(BaseLightningModule):
         h0 = self.hparams.noise_schedule.h(torch.zeros_like(ht))
         x0.requires_grad = True
         z = torch.randn_like(x0)
+        z = self.maybe_remove_mean(z)
+        x0 = self.maybe_remove_mean(x0)
+        if self.hparams.get("debug_fm", False):
+            t = torch.rand(x0.shape[0], device=x0.device)
+            xt = (t[:, None] * x0 + (1 - t[:, None]) * z).requires_grad_()
+            vt = self.score_net.denoiser(t, xt, inverse_temp)
+            score_loss = torch.sum((vt - (x0 - z)) ** 2, dim=(-1))
+            zeros = torch.zeros_like(score_loss)
+            return zeros, score_loss, zeros, zeros, zeros
         xt = x0 + z * ht[:, None] ** 0.5
         # TODO: should probably do weighting
-        lambda_t =  (ht + 1) / ht
-
-        x0 = self.maybe_remove_mean(x0)
-        xt = self.maybe_remove_mean(xt)
+        lambda_t = (ht + 1) / ht
 
         predicted_x0_scorenet = self.score_net.denoiser(
             ht, xt, inverse_temp, return_score=False
         )
         score_loss = torch.sum((predicted_x0_scorenet - x0) ** 2, dim=(-1))
+        if self.hparams.get("only_train_score", False):
+            zeros = torch.zeros_like(score_loss)
+            score_loss = lambda_t * score_loss
+            return zeros, score_loss, zeros, zeros, zeros
         energy_score_loss, predicted_Ut = self.get_energy_score_loss(
             ht=ht,
             xt=xt,
@@ -295,8 +337,8 @@ class energyTempModule(BaseLightningModule):
             inverse_temp=inverse_temp,
             energy_function=energy_function,
         )
+        breakpoint()
         energy_score_loss = lambda_t * energy_score_loss
-        score_loss = lambda_t * score_loss
         target_score_loss = lambda_t * target_score_loss
 
         return (
@@ -317,9 +359,7 @@ class energyTempModule(BaseLightningModule):
         if self.hparams.loss_weights["energy_score"] == 0:
             predicted_Ut = torch.zeros(xt.shape[0], device=xt.device)
             if not (self.hparams.loss_weights["dem_energy"] == 0):
-                predicted_Ut = self.energy_net.forward_energy(
-                    ht, xt, inverse_temp
-                )
+                predicted_Ut = self.energy_net.forward_energy(ht, xt, inverse_temp)
             return torch.zeros(xt.shape[0], device=xt.device), predicted_Ut
         predicted_x0_energynet, predicted_Ut = self.energy_net.denoiser_and_energy(
             ht, xt, inverse_temp
@@ -409,8 +449,12 @@ class energyTempModule(BaseLightningModule):
 
         if self.hparams.loss_weights["energy_matching"] == 0:
             return torch.zeros(x0.shape[0], device=x0.device)
-        
-        if self.trainer.global_step % self.hparams.do_energy_matching_loss_every_n_steps != 0:
+
+        if (
+            self.trainer.global_step
+            % self.hparams.do_energy_matching_loss_every_n_steps
+            != 0
+        ):
             return torch.zeros(x0.shape[0], device=x0.device)
 
         U0_true = -energy_function(x0)
@@ -436,18 +480,16 @@ class energyTempModule(BaseLightningModule):
 
         with torch.enable_grad():
             dem_score_loss = self.get_dem_loss(
-                ht = ht,
-                xt = xt,
-                energy_function = self.energy_functions[0],
-                predicted_nabla_Ut = predicted_nabla_Ut,
+                ht=ht,
+                xt=xt,
+                energy_function=self.energy_functions[0],
+                predicted_nabla_Ut=predicted_nabla_Ut,
             )
         dem_score_loss = dem_score_loss.mean()
         loss_dict = {
             f"{prefix}/dem_score_loss": dem_score_loss,
         }
-        self.log_dict(
-            loss_dict, on_step=True, on_epoch=True, prog_bar=False, sync_dist=True
-        )
+        self.log_dict(loss_dict, sync_dist=True)
         return dem_score_loss
 
     def model_step(self, x0_samples, temp_index, prefix):
@@ -471,8 +513,12 @@ class energyTempModule(BaseLightningModule):
                 ht, x0_samples, inverse_temp, self.energy_functions[temp_index]
             )
 
-        should_log_stratified_energy_score = self.hparams.loss_weights["energy_score"] != 0 and prefix == "train"
-        should_log_stratified_score = self.hparams.loss_weights["score"] != 0 and prefix == "train" 
+        should_log_stratified_energy_score = (
+            self.hparams.loss_weights["energy_score"] != 0 and prefix == "train"
+        )
+        should_log_stratified_score = (
+            self.hparams.loss_weights["score"] != 0 and prefix == "train"
+        )
         if should_log_stratified_score:
             self.log_dict(
                 self.logsigma_stratified_loss(
@@ -514,11 +560,7 @@ class energyTempModule(BaseLightningModule):
             f"{prefix}/dem_energy_loss": dem_energy_loss,
             f"{prefix}/energy_matching_loss": energy_matching_loss,
         }
-
-        self.log_dict(
-            loss_dict, on_step=True, on_epoch=True, prog_bar=False, sync_dist=True
-        )
-
+        self.log_dict(loss_dict, sync_dist=True, prog_bar=prefix == "train")
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -538,13 +580,15 @@ class energyTempModule(BaseLightningModule):
         )
 
         loss = self.model_step(x0_samples, temp_index, prefix="train")
-
         return loss
 
     def on_train_epoch_end(self) -> None:
         if self.trainer.current_epoch >= self.hparams.dem.num_training_epochs:
             return
-        if self.trainer.current_epoch % self.hparams.dem.check_val_every_n_epochs == 0 and self.trainer.global_step > 0:
+        if (
+            self.trainer.current_epoch % self.hparams.dem.check_val_every_n_epochs == 0
+            and self.trainer.global_step > 0
+        ):
             self.eval_epoch_end_dem("val")
 
     def eval_step(self, prefix: str, batch: torch.Tensor, batch_idx: int) -> None:
@@ -575,7 +619,7 @@ class energyTempModule(BaseLightningModule):
             )
             val_loss += loss
 
-        self.log(f"{prefix}/loss", val_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log(f"{prefix}/loss", val_loss)
 
     def eval_epoch_end_dem(self, prefix: str):
         logger.debug(f"Started DEM eval epoch end {prefix}")
@@ -588,7 +632,7 @@ class energyTempModule(BaseLightningModule):
             weighted_sde_integrator=self.weighted_sde_integrator_dem,
         )
         samples_energy = energy_function(samples)
-                
+
         self.buffers[0].add(
             samples,
             samples_energy,
@@ -611,10 +655,7 @@ class energyTempModule(BaseLightningModule):
             wandb_logger,
             prefix=prefix_plot,
         )
-        self._log_energy_mean(
-            -samples_energy,
-            prefix=prefix_plot,
-        )
+        self.log(f"{prefix_plot}/energy_mean", -samples_energy.mean(), sync_dist=True)
         logger.debug(f"Finished eval epoch end DEM {prefix}")
 
     def eval_epoch_end(self, prefix: str):
@@ -626,13 +667,17 @@ class energyTempModule(BaseLightningModule):
         ]
         temp_index = self.active_inverse_temperature_index
         inverse_temp = self.inverse_temperatures[temp_index]
-        
-        not_last_inverse_temp = self.active_inverse_temperature_index < len(self.inverse_temperatures) - 1
+
+        not_last_inverse_temp = (
+            self.active_inverse_temperature_index < len(self.inverse_temperatures) - 1
+        )
         temp_index_lower = temp_index
         num_samples = self.hparams.num_eval_samples
 
         if self.trainer.current_epoch > 0 and not_last_inverse_temp:
-            do_update = (self.trainer.current_epoch + 1) == self.update_temp_epoch[self.active_inverse_temperature_index]
+            do_update = (self.trainer.current_epoch + 1) == self.update_temp_epoch[
+                self.active_inverse_temperature_index
+            ]
             if do_update:
                 # update active inverse temperatures
                 active_inverse_temperatures = self.inverse_temperatures[
@@ -652,13 +697,10 @@ class energyTempModule(BaseLightningModule):
         inverse_lower_temp = self.inverse_temperatures[temp_index_lower]
         energy_function = self.energy_functions[temp_index_lower]
 
-
         temp = self.temperatures[temp_index]
         temp_lower = self.temperatures[temp_index_lower]
 
-        logger.debug(
-            f"temperature is {temp:0.3f} and lower temp is {temp_lower:0.3f}"
-        )
+        logger.debug(f"temperature is {temp:0.3f} and lower temp is {temp_lower:0.3f}")
         logger.debug(
             f"temp_index is {temp_index} and temp_index_lower is {temp_index_lower}"
         )
@@ -691,9 +733,7 @@ class energyTempModule(BaseLightningModule):
             )
             output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
             # append time to avoid overwriting
-            path = (
-                f"{output_dir}/buffer_samples_temperature_{temp:0.3f}.pt"
-            )
+            path = f"{output_dir}/buffer_samples_temperature_{temp:0.3f}.pt"
             torch.save(samples, path)
             torch.save(
                 samples_energy, path.replace("buffer_samples", "buffer_energies")
@@ -716,11 +756,13 @@ class energyTempModule(BaseLightningModule):
             generated_samples=samples,
         )
 
-        prefix_plot = (
-            f"val/temp= {temp:0.3f} annealed to {temp_lower:0.3f}"
-        )
+        prefix_plot = f"val/temp= {temp:0.3f} annealed to {temp_lower:0.3f}"
         for term in fields(SDETerms):
-            if term.name == "drift_X" or term.name == "drift_A" or getattr(sde_terms[0], term.name) is None:
+            if (
+                term.name == "drift_X"
+                or term.name == "drift_A"
+                or getattr(sde_terms[0], term.name) is None
+            ):
                 continue
             self._log_sde_term(sde_terms, term.name, prefix=prefix_plot)
 
@@ -731,10 +773,7 @@ class energyTempModule(BaseLightningModule):
             latest_samples_not_resampled=samples_not_resampled,
             prefix=prefix_plot,
         )
-        self._log_energy_mean(
-            -samples_energy,
-            prefix=prefix_plot,
-        )
+        self.log(f"{prefix_plot}/energy_mean", -samples_energy.mean(), sync_dist=True)
         if self.hparams.resampling_interval != -1:
             self._log_logweights(
                 logweights,
@@ -764,8 +803,6 @@ class energyTempModule(BaseLightningModule):
         logger.debug(f"Finished eval epoch end {prefix}")
 
     def on_test_epoch_end(self) -> None:
-        wandb_logger = get_wandb_logger(self.loggers)
-
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures[:-1]):
             inverse_lower_temp = self.inverse_temperatures[temp_index + 1]
             final_samples = []
@@ -881,9 +918,15 @@ class energyTempModule(BaseLightningModule):
         else:
             data_set = energy_function.sample_val_set(generated_samples.shape[0])
         energies = energy_function(data_set)
-        energy_distances_dict = energy_distances(generated_energies, energies, prefix=prefix, energy_threshold=self.hparams.energy_masking_threshold)
+        energy_distances_dict = energy_distances(
+            generated_energies,
+            energies,
+            prefix=prefix,
+            energy_threshold=self.hparams.energy_masking_threshold,
+        )
         self.log_dict(
-            energy_distances_dict, on_step=False, on_epoch=True, prog_bar=False, sync_dist=True
+            energy_distances_dict,
+            sync_dist=True,
         )
 
     def _log_dist_w2(self, temp_index, generated_samples, prefix="val"):
@@ -904,14 +947,7 @@ class energyTempModule(BaseLightningModule):
             )
             ** 0.5
         )
-        self.log(
-            f"{prefix}/dist_w2",
-            self.val_dist_w2(dist_w2),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log(f"{prefix}/dist_w2", dist_w2, sync_dist=True)
 
     def _log_num_unique_idxs(self, num_unique_idxs, prefix="val"):
         wandb_logger = get_wandb_logger(self.loggers)
@@ -926,20 +962,6 @@ class energyTempModule(BaseLightningModule):
             "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
         )
         wandb_logger.log_image(f"{prefix}/num_unique_idxs", [img])
-
-    def _log_energy_mean(
-        self,
-        samples_energy,
-        prefix="val",
-    ):
-        self.log(
-            f"{prefix}/energy_mean",
-            samples_energy.mean(),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
 
     def maybe_remove_mean(self, x):
         if self.is_molecule:
@@ -1035,29 +1057,3 @@ if __name__ == "__main__":
         None,
         None,
     )
-
-    # def get_energy_loss(self,
-    #                     ht: torch.Tensor,
-    #                     x0: torch.Tensor,
-    #                     inverse_temp: float) -> torch.Tensor:
-    #     x0.requires_grad = True
-    #     z = torch.randn_like(x0)
-    #     xt = x0 + z * ht[:, None] ** 0.5
-
-    #     if self.is_molecule:
-    #         xt = remove_mean(
-    #             xt,
-    #             self.n_particles,
-    #             self.n_spatial_dim,
-    #         )
-
-    #     predicted_score = - self.energy_net.forward(ht, xt, inverse_temp)
-
-    #     epsilon = -z
-
-    #     lambda_t = (ht + 1) / ht
-    #     score_loss = torch.sum(
-    #         (predicted_score * ht[:, None] ** 0.5 - epsilon) ** 2, dim=(-1)
-    #     )
-    #     score_loss = score_loss.mean()
-    #     return score_loss

@@ -46,6 +46,7 @@ class ALPEnergy(BaseMoleculeEnergy):
         temperature: float=1.0,
         should_normalize: bool=True,
         device_index: int=0,
+        debug_train_on_test: bool=False,
     ):
         super().__init__(
             dimensionality=dimensionality,
@@ -60,9 +61,9 @@ class ALPEnergy(BaseMoleculeEnergy):
             plot_samples_epoch_period=plot_samples_epoch_period,
             plotting_buffer_sample_size=plotting_buffer_sample_size,
             is_molecule=is_molecule,
-            
         )
         
+        self.debug_train_on_test = debug_train_on_test
         self.adj_list = None
         self.atom_types = None
         self.atom_encoding_filename = atom_encoding_filename
@@ -130,7 +131,10 @@ class ALPEnergy(BaseMoleculeEnergy):
     def setup_train_set(self):
         if self.data_path_train is None:
             raise ValueError("Data path for training data is not provided")
-        data = np.load(self.data_path_val, allow_pickle=True)
+        path = self.data_path_train
+        if self.debug_train_on_test:
+            path = self.data_path_test
+        data = np.load(path, allow_pickle=True)
         if self.should_normalize:
             data = self.normalize(data)
         else:
