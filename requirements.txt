@@ -1,0 +1,27 @@
+torchvision
+lightning
+torchmetrics
+hydra-core
+rich
+pre-commit
+pytest
+wandb
+mdtraj
+hydra-optuna-sweeper
+hydra-colorlog
+rootutils
+# normflows
+nflows
+einops
+ipdb
+torchsde
+torchdiffeq
+# git+https://github.com/VincentStimper/resampled-base-flows.git # larsflow
+git+https://github.com/atong01/bgflow.git
+hydra-submitit-launcher
+scikit-learn
+scipy
+matplotlib<3.10 #3.10 gives
+#AttributeError: 'FigureCanvasInterAgg' object has no attribute 'tostring_rgb'. Did you mean: 'tostring_argb'?
+-e fab
+-e runner/
