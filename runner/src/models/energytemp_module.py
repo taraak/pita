@@ -678,6 +678,7 @@ class energyTempModule(BaseLightningModule):
                 annealing_factor=inverse_lower_temp / inverse_temp,
             )
         )
+        # import ipdb; ipdb.set_trace()
         samples_energy = energy_function(samples)
         if temp_index_lower != temp_index:
             # mask out samples with high energy

@@ -3,8 +3,8 @@ model=energytemp \
 experiment=alp_energytemp \
 trainer=ddp model.resampling_interval=-1 \
 tags=["test","ALDP"] \
-model.noise_schedule.sigma_min=0.05 \
-trainer.check_val_every_n_epoch=10 \
+model.noise_schedule.sigma_min=0.002 \
+trainer.check_val_every_n_epoch=50 \
 model.dem.num_training_epochs=0 \
 model.debias_inference=False \
 #debug=short \

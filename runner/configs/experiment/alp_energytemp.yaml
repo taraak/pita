@@ -22,7 +22,7 @@ defaults:
 
 model:
   net: 
-    _target_: src.models.components.egnn_temp_conditioned.EGNN_dynamics
+    _target_: src.models.components.egnn_aldp.EGNN_dynamics
     _partial_: true
     n_particles: ${energy.n_particles}
     n_dimension: ${energy.spatial_dim}
