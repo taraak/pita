@@ -86,7 +86,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
     def setup_train_set(self):
         if self.data_path_train is None:
             raise ValueError("Data path for training data is not provided")
-        data = np.load(self.data_path_val, allow_pickle=True)
+        data = np.load(self.data_path_train, allow_pickle=True)
         if self.should_normalize:
             data = self.normalize(data)
         else:

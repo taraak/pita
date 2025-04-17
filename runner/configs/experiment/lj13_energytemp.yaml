@@ -38,11 +38,15 @@ model:
     spatial_dim: ${energy.spatial_dim}
 
   diffusion_scale: 1.0
+
+
   num_negative_time_steps: 1
-  training_batch_size: 512
+  dt_negative_time: 1e-4
+  do_langevin: False
 
   num_samples_to_save: 10000
   num_integration_steps: 1000
+  training_batch_size: 512
 
   # Elucidating noise schedule
   P_mean: -1.2

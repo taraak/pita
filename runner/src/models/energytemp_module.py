@@ -109,8 +109,6 @@ class energyTempModule(BaseLightningModule):
         num_mc_samples: int,
         num_epochs_per_temp: List[int],
         num_negative_time_steps: int,
-        P_mean: float,
-        P_std: float,
         resample_at_end: bool,
         compile: bool,
         loss_weights: dict,
@@ -165,6 +163,8 @@ class energyTempModule(BaseLightningModule):
             diffusion_scale=self.hparams.diffusion_scale,
             resampling_interval=self.hparams.resampling_interval,
             num_negative_time_steps=self.hparams.num_negative_time_steps,
+            dt_negative_time = self.hparams.dt_negative_time,
+            do_langevin=self.hparams.do_langevin,
             start_resampling_step=self.hparams.start_resampling_step,
             end_resampling_step=self.hparams.end_resampling_step,
             resample_at_end=self.hparams.resample_at_end,
@@ -229,11 +229,7 @@ class energyTempModule(BaseLightningModule):
         """Stratify loss by binning t."""
         flat_losses = batch_loss.flatten().detach().cpu().numpy()
         flat_t = batch_t.flatten().detach().cpu().numpy()
-        bin_edges = np.linspace(
-            self.hparams.P_mean - 2 * self.hparams.P_std,
-            self.hparams.P_mean + 2 * self.hparams.P_std,
-            num_bins + 1,
-        )
+        bin_edges = self.hparams.noise_schedule.get_ln_sigmat_bins(num_bins)
         # bin_idx = np.sum(bin_edges[:, None] <= flat_t[None, :], axis=0)
         # import pdb; pdb.set_trace()
         bin_idx = np.digitize(flat_t, bin_edges)
@@ -265,7 +261,7 @@ class energyTempModule(BaseLightningModule):
         z = torch.randn_like(x0)
         xt = x0 + z * ht[:, None] ** 0.5
         # TODO: should probably do weighting
-        lambda_t = 1  # (ht + 1) / ht
+        lambda_t =  (ht + 1) / ht
 
         x0 = self.maybe_remove_mean(x0)
         xt = self.maybe_remove_mean(xt)
@@ -423,12 +419,14 @@ class energyTempModule(BaseLightningModule):
         energy_matching_loss = (U0_true - U0_pred) ** 2
         energy_matching_loss = ~mask * energy_matching_loss
         return energy_matching_loss
+    
 
     def pre_training_step(self, x0_samples, prefix):
-        ln_sigmat = (
-            torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std
-            + self.hparams.P_mean
-        )
+        # ln_sigmat = (
+        #     torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std
+        #     + self.hparams.P_mean
+        # )
+        ln_sigmat = self.hparams.noise_schedule.sample_ln_sigma(len(x0_samples), device=x0_samples.device)
         ht = torch.exp(2 * ln_sigmat)
         inverse_temp = self.inverse_temperatures[0]
 
@@ -453,10 +451,11 @@ class energyTempModule(BaseLightningModule):
         return dem_score_loss
 
     def model_step(self, x0_samples, temp_index, prefix):
-        ln_sigmat = (
-            torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std
-            + self.hparams.P_mean
-        )
+        # ln_sigmat = (
+        #     torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std
+        #     + self.hparams.P_mean
+        # )
+        ln_sigmat = self.hparams.noise_schedule.sample_ln_sigma(len(x0_samples), device=x0_samples.device)
         ht = torch.exp(2 * ln_sigmat)
 
         inverse_temp = self.inverse_temperatures[temp_index]

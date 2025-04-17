@@ -32,11 +32,13 @@ def grad_E(x, energy_function):
         return grad
 
 
-def negative_time_descent(x, energy_function, num_steps, dt=1e-4):
+def negative_time_descent(x, energy_function, num_steps, dt, do_langevin=False):
     samples = []
     for _ in range(num_steps):
         drift = grad_E(x, energy_function)
         x = x + drift * dt
+        if do_langevin:
+            x = x + torch.randn_like(x) * np.sqrt(2 * dt)
 
         if energy_function.is_molecule:
             x = remove_mean(
@@ -63,6 +65,8 @@ class WeightedSDEIntegrator:
         batch_size=None,
         no_grad=True,
         resample_at_end=False,
+        dt_negative_time=1e-4,
+        do_langevin=False,
     ) -> None:
         self.sde = sde
         self.num_integration_steps = num_integration_steps
@@ -73,9 +77,11 @@ class WeightedSDEIntegrator:
         self.resampling_interval = resampling_interval
         self.time_range = time_range
         self.num_negative_time_steps = num_negative_time_steps
+        self.dt_negative_time = dt_negative_time
         self.batch_size = batch_size
         self.no_grad = no_grad
         self.resample_at_end = resample_at_end
+        self.do_langevin = do_langevin
         self.lightning_module = lightning_module
 
         self.start_time = time_range if reverse_time else 0.0
@@ -178,12 +184,14 @@ class WeightedSDEIntegrator:
 
         if self.num_negative_time_steps > 0:
             print("doing negative time descent...")
-            samples_langevin = negative_time_descent(
+            samples_negative_time = negative_time_descent(
                 x,
                 energy_function,
                 num_steps=self.num_negative_time_steps,
+                dt=self.dt_negative_time,
+                do_langevin=self.do_langevin,
             )
-            samples = torch.concatenate((samples, samples_langevin), axis=0)
+            samples = torch.concatenate((samples, samples_negative_time), axis=0)
 
         return samples, logweights, num_unique_idxs, sde_terms_all
 

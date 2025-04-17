@@ -69,7 +69,6 @@ class SDETerms:
             if data_list[0].diffusion is not None
             else None
         )
-
         return SDETerms(
             drift_X=drift_X_cat,
             drift_A=drift_A_cat,

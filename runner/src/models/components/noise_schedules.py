@@ -78,15 +78,29 @@ class GeometricNoiseSchedule(BaseNoiseSchedule):
         # Then h(t) = \int_0^t g(z)^2 dz = sigma_min * sqrt{sigma_d^{2t} - 1}
         # see Eq 199 in https://arxiv.org/pdf/2206.00364.pdf
         return (self.sigma_min * (((self.sigma_diff ** (2 * t)) - 1) ** 0.5)) ** 2
-
-
+    
+    def sample_ln_sigma(self, num_samples, device):
+        # Sample from a uniform distribution U[ln(sigma_min), ln(sigma_max)]
+        ln_sigmat = torch.rand(num_samples, device=device) * (np.log(self.sigma_max) - np.log(self.sigma_min)) + np.log(self.sigma_min)
+        return ln_sigmat
+    
+    def get_ln_sigmat_bins(self, num_bins):
+        bin_edges = np.linspace(
+            np.log(self.sigma_min),
+            np.log(self.sigma_max),
+            num_bins + 1,
+        )
+        return bin_edges
+    
 class ElucidatingNoiseSchedule(BaseNoiseSchedule):
-    def __init__(self, sigma_min, sigma_max, rho):
+    def __init__(self, sigma_min, sigma_max, rho, P_mean=-1.2, P_std=1.2):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.rho = rho
         self.term1 = self.sigma_max ** (1 / self.rho)
         self.term2 = self.sigma_min ** (1 / self.rho) - self.sigma_max ** (1 / self.rho)
+        self.P_mean = P_mean
+        self.P_std = P_std
 
     def g(self, t):
         # take derivative of h(t) with respect to t with automatic differentiation
@@ -96,3 +110,19 @@ class ElucidatingNoiseSchedule(BaseNoiseSchedule):
 
     def h(self, t):
         return (self.term1 + (1 - t) * self.term2) ** (2 * self.rho)
+    
+    def sample_ln_sigma(self, num_samples, device):
+        # Sample from a normal distribution N(P_mean, P_std)
+        ln_sigmat = (
+            torch.randn(num_samples, device=device)* self.P_std
+            + self.P_mean
+        )
+        return ln_sigmat
+    
+    def get_ln_sigmat_bins(self, num_bins):
+        bin_edges = np.linspace(
+            self.P_mean - 2 * self.P_std,
+            self.P_mean + 2 * self.P_std,
+            num_bins + 1,
+        )
+        return bin_edges
