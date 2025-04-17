@@ -563,7 +563,7 @@ class energyTempModule(BaseLightningModule):
         if (
             self.trainer.global_step
             % self.hparams.do_energy_matching_loss_every_n_steps
-            != 0
+            == 0
         ):
             loss_dict[f"{prefix}/energy_matching_loss"] = energy_matching_loss
         self.log_dict(loss_dict, sync_dist=True, prog_bar=prefix == "train")
