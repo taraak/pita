@@ -43,12 +43,12 @@ model:
 
   diffusion_scale: 1.0
 
-  num_negative_time_steps: 2
+  num_negative_time_steps: 0
   dt_negative_time: 1e-9
   do_langevin: False
 
-  training_batch_size: 1024
-  inference_batch_size: 512
+  training_batch_size: 512 #1024
+  inference_batch_size: 256 #512
 
   num_samples_to_save: 10000
   num_integration_steps: 1000

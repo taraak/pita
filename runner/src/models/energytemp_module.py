@@ -166,7 +166,7 @@ class energyTempModule(BaseLightningModule):
             diffusion_scale=self.hparams.diffusion_scale,
             resampling_interval=self.hparams.resampling_interval,
             num_negative_time_steps=self.hparams.num_negative_time_steps,
-            dt_negative_time = self.hparams.dt_negative_time,
+            dt_negative_time=self.hparams.dt_negative_time,
             do_langevin=self.hparams.do_langevin,
             start_resampling_step=self.hparams.start_resampling_step,
             end_resampling_step=self.hparams.end_resampling_step,
@@ -337,7 +337,6 @@ class energyTempModule(BaseLightningModule):
             inverse_temp=inverse_temp,
             energy_function=energy_function,
         )
-        breakpoint()
         energy_score_loss = lambda_t * energy_score_loss
         target_score_loss = lambda_t * target_score_loss
         return (
@@ -462,14 +461,15 @@ class energyTempModule(BaseLightningModule):
         energy_matching_loss = (U0_true - U0_pred) ** 2
         energy_matching_loss = ~mask * energy_matching_loss
         return energy_matching_loss
-    
 
     def pre_training_step(self, x0_samples, prefix):
         # ln_sigmat = (
         #     torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std
         #     + self.hparams.P_mean
         # )
-        ln_sigmat = self.hparams.noise_schedule.sample_ln_sigma(len(x0_samples), device=x0_samples.device)
+        ln_sigmat = self.hparams.noise_schedule.sample_ln_sigma(
+            len(x0_samples), device=x0_samples.device
+        )
         ht = torch.exp(2 * ln_sigmat)
         inverse_temp = self.inverse_temperatures[0]
 
@@ -496,7 +496,9 @@ class energyTempModule(BaseLightningModule):
         #     torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std
         #     + self.hparams.P_mean
         # )
-        ln_sigmat = self.hparams.noise_schedule.sample_ln_sigma(len(x0_samples), device=x0_samples.device)
+        ln_sigmat = self.hparams.noise_schedule.sample_ln_sigma(
+            len(x0_samples), device=x0_samples.device
+        )
         ht = torch.exp(2 * ln_sigmat)
 
         inverse_temp = self.inverse_temperatures[temp_index]
@@ -557,8 +559,13 @@ class energyTempModule(BaseLightningModule):
             f"{prefix}/score_loss": score_loss,
             f"{prefix}/target_score_loss": target_score_loss,
             f"{prefix}/dem_energy_loss": dem_energy_loss,
-            f"{prefix}/energy_matching_loss": energy_matching_loss,
         }
+        if (
+            self.trainer.global_step
+            % self.hparams.do_energy_matching_loss_every_n_steps
+            != 0
+        ):
+            loss_dict[f"{prefix}/energy_matching_loss"] = energy_matching_loss
         self.log_dict(loss_dict, sync_dist=True, prog_bar=prefix == "train")
         return loss
 
@@ -599,17 +606,16 @@ class energyTempModule(BaseLightningModule):
         """
         logger.debug(f"Eval step {prefix}")
         val_loss = 0.0
+        num_samples = min(
+            self.hparams.num_eval_samples, self.hparams.training_batch_size
+        )
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
             energy_function = self.energy_functions[temp_index]
 
             if prefix == "test":
-                true_x0_samples = energy_function.sample_test_set(
-                    self.hparams.num_eval_samples
-                )
+                true_x0_samples = energy_function.sample_test_set(num_samples)
             elif prefix == "val":
-                true_x0_samples = energy_function.sample_val_set(
-                    self.hparams.num_eval_samples
-                )
+                true_x0_samples = energy_function.sample_val_set(num_samples)
 
             loss = self.model_step(
                 true_x0_samples,
