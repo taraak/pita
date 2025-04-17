@@ -21,13 +21,11 @@ defaults:
   - override /model/noise_schedule: elucidating
 
 model:
-  net: 
-    _target_: src.models.components.egnn_aldp.EGNN_dynamics
-    _partial_: true
-    n_particles: ${energy.n_particles}
-    n_dimension: ${energy.spatial_dim}
-    hidden_nf: 64
-    n_layers: 5
+#  net: 
+#    n_particles: ${energy.n_particles}
+#    n_dimension: ${energy.spatial_dim}
+    #hidden_nf: 64
+    #n_layers: 5
   
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior

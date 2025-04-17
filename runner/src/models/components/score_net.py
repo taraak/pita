@@ -1,7 +1,4 @@
-from typing import Optional
-
 import torch
-from src.energies.base_energy_function import BaseEnergyFunction
 from torch import nn
 
 
@@ -37,4 +34,25 @@ class ScoreNet(nn.Module):
             score = (D_theta - x_t) / h_t[:, None]
             return D_theta, score
 
+        return D_theta
+
+
+class FlowNet(nn.Module):
+    def __init__(self, model: nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(
+        self,
+        h_t: torch.Tensor,
+        x_t: torch.Tensor,
+        beta: torch.Tensor,
+    ) -> torch.Tensor:
+        D_theta = self.model.forward(h_t, x_t, beta)
+        return D_theta
+
+    def denoiser(
+        self, h_t: torch.Tensor, x_t: torch.Tensor, beta, return_score=False
+    ) -> torch.Tensor:
+        D_theta = self.model.forward(h_t, x_t, beta)
         return D_theta
