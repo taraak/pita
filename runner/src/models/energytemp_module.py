@@ -310,6 +310,7 @@ class energyTempModule(BaseLightningModule):
             dem_energy_loss,
             energy_matching_loss,
         )
+
     def get_energy_score_loss(
         self,
         ht: torch.Tensor,
@@ -317,7 +318,6 @@ class energyTempModule(BaseLightningModule):
         inverse_temp: float,
         predicted_x0_scorenet: torch.Tensor,
     ) -> torch.Tensor:
-    
         if self.hparams.loss_weights["energy_score"] == 0:
             predicted_Ut = torch.zeros(xt.shape[0], device=xt.device)
             if not (self.hparams.loss_weights["dem_energy"] == 0):
