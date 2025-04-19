@@ -47,8 +47,8 @@ model:
   dt_negative_time: 1e-9
   do_langevin: False
 
-  training_batch_size: 512 #1024
-  inference_batch_size: 256 #512
+  training_batch_size: 1024
+  inference_batch_size: 512
 
   num_samples_to_save: 10000
   num_integration_steps: 1000
@@ -67,7 +67,7 @@ model:
   energy_masking_threshold: 1000
  
   temperatures:
-    - 300
+    - 600
 
   loss_weights:
     energy_score: 1.0

@@ -25,6 +25,7 @@ class EGNN_dynamics_AD2_cat(nn.Module):
         pdb_filename="",
         agg="sum",
         M=128,
+        condition_beta=False,
     ):
         super().__init__()
         self._n_particles = n_particles
@@ -38,9 +39,13 @@ class EGNN_dynamics_AD2_cat(nn.Module):
             self.topology = md.load_topology(self.pdb_path)
         # Initial one hot encoding of the different element types
         self.h_initial = self.get_h_initial()
+        self.condition_beta = condition_beta
 
         h_size = self.h_initial.size(1)
         h_size += 1
+
+        if self.condition_beta:
+            h_size += 1
 
         self.egnn = EGNN(
             in_node_nf=h_size,
@@ -152,7 +157,7 @@ class EGNN_dynamics_AD2_cat(nn.Module):
         h_initial = torch.cat([amino_idx_onehot, amino_types_onehot, atom_onehot], dim=1)
         return h_initial
 
-    def forward(self, t, xs, beta=None):
+    def forward(self, t, xs, beta):
         x = xs
         t = t.view(-1, 1)
 
@@ -173,6 +178,12 @@ class EGNN_dynamics_AD2_cat(nn.Module):
             t = t.repeat(n_batch)
         t = t.repeat(1, self._n_particles)
         t = t.reshape(n_batch * self._n_particles, 1)
+
+        if self.condition_beta:
+            beta = beta.view(-1, 1)
+            beta = beta.repeat(1, self._n_particles)
+            beta = beta.reshape(n_batch * self._n_particles, 1)
+            t = torch.cat([t, beta], dim=-1)
 
         h = torch.cat([h, t], dim=-1)
         edge_attr = torch.sum((x[edges[0]] - x[edges[1]]) ** 2, dim=1, keepdim=True)
