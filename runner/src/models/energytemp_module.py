@@ -308,9 +308,9 @@ class energyTempModule(BaseLightningModule):
             ht, xt, inverse_temp, return_score=False
         )
         score_loss = torch.sum((predicted_x0_scorenet - x0) ** 2, dim=(-1))
+        score_loss = lambda_t * score_loss
         if self.hparams.get("only_train_score", False):
             zeros = torch.zeros_like(score_loss)
-            score_loss = lambda_t * score_loss
             return zeros, score_loss, zeros, zeros, zeros
         energy_score_loss, predicted_Ut = self.get_energy_score_loss(
             ht=ht,
@@ -563,7 +563,7 @@ class energyTempModule(BaseLightningModule):
         if (
             self.trainer.global_step
             % self.hparams.do_energy_matching_loss_every_n_steps
-            != 0
+            == 0
         ):
             loss_dict[f"{prefix}/energy_matching_loss"] = energy_matching_loss
         self.log_dict(loss_dict, sync_dist=True, prog_bar=prefix == "train")
