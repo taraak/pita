@@ -4,3 +4,4 @@ n_particles: ${energy.n_particles}
 n_dimensions: ${energy.spatial_dim}
 hidden_nf: 64
 n_layers: 5
+condition_beta: true

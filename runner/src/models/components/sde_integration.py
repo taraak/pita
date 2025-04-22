@@ -26,10 +26,10 @@ def conditional_no_grad(condition):
 
 def grad_E(x, energy_function):
     with torch.enable_grad():
-        x.requires_grad_()
-        grad = torch.autograd.grad(torch.sum(energy_function(x)), x)[0].detach()
+        x = x.requires_grad_()
+        grad = torch.autograd.grad(torch.sum(energy_function(x)), x, create_graph=True)[0]
         x.requires_grad_(False)
-        return grad
+        return grad.detach()
 
 
 def negative_time_descent(x, energy_function, num_steps, dt, do_langevin=False):

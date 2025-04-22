@@ -318,12 +318,21 @@ class energyTempModule(BaseLightningModule):
             inverse_temp=inverse_temp,
             predicted_x0_scorenet=predicted_x0_scorenet,
         )
+        forces=None
+        energy_matching_loss, forces = self.get_energy_matching_loss(
+            h0=h0,
+            x0=x0,
+            inverse_temp=inverse_temp,
+            energy_function=energy_function,
+        )
         target_score_loss = self.get_target_score_loss(
             ht=ht,
             x0=x0,
             xt=xt,
             energy_function=energy_function,
             predicted_x0=predicted_x0_scorenet,
+            true_nabla_U0=forces,
+            weights=lambda_t,
         )
         dem_energy_loss = self.get_dem_energy_loss(
             ht=ht,
@@ -331,14 +340,7 @@ class energyTempModule(BaseLightningModule):
             energy_function=energy_function,
             predicted_Ut=predicted_Ut,
         )
-        energy_matching_loss = self.get_energy_matching_loss(
-            h0=h0,
-            x0=x0,
-            inverse_temp=inverse_temp,
-            energy_function=energy_function,
-        )
         energy_score_loss = lambda_t * energy_score_loss
-        target_score_loss = lambda_t * target_score_loss
         return (
             energy_score_loss,
             score_loss,
@@ -374,23 +376,35 @@ class energyTempModule(BaseLightningModule):
         xt: torch.Tensor,
         energy_function: BaseEnergyFunction,
         predicted_x0: torch.Tensor,
-        time_threshold: float = 0.2,
+        true_nabla_U0: Optional[torch.Tensor] = None,
+        time_threshold: float = 0.1,
+        weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.hparams.loss_weights["target_score"] == 0:
             return torch.zeros(predicted_x0.shape[0], device=x0.device)
 
         h_threshold = self.hparams.noise_schedule.h(torch.tensor(time_threshold))
-        time_mask = ht > h_threshold
+        time_mask = ht < h_threshold
+        if not time_mask.any():
+            return torch.zeros(predicted_x0.shape[0], device=x0.device)
         x0 = x0[time_mask]
         ht = ht[time_mask]
         xt = xt[time_mask]
         predicted_x0 = predicted_x0[time_mask]
-
-        energy = -energy_function(x0).sum()
-        score = torch.autograd.grad(energy, x0, create_graph=True)[0]
+         
+        if true_nabla_U0 is None:
+            energy = -energy_function(x0).sum()
+            score = torch.autograd.grad(energy, x0, create_graph=True)[0]
+        else:
+            score = true_nabla_U0[time_mask]
         score = self.hparams.clipper.clip_scores(score)
         x0 = xt - score * ht[:, None]
-        return torch.sum((x0 - predicted_x0) ** 2, dim=(-1))
+        target_score_loss = torch.sum((x0 - predicted_x0) ** 2, dim=(-1))
+
+        if weights is not None:
+            weights = weights[time_mask]
+            return weights * target_score_loss
+        return target_score_loss
 
     def get_dem_energy_loss(
         self,
@@ -405,7 +419,7 @@ class energyTempModule(BaseLightningModule):
             return torch.zeros_like(predicted_Ut)
 
         h_threshold = self.hparams.noise_schedule.h(torch.tensor(time_threshold))
-        time_mask = ht > h_threshold
+        time_mask = ht < h_threshold
         ht = ht[time_mask]
         xt = xt[time_mask]
         predicted_Ut = predicted_Ut[time_mask]
@@ -446,21 +460,22 @@ class energyTempModule(BaseLightningModule):
     ) -> torch.Tensor:
 
         if self.hparams.loss_weights["energy_matching"] == 0:
-            return torch.zeros(x0.shape[0], device=x0.device)
+            return torch.zeros(x0.shape[0], device=x0.device), None
 
         if (
             self.trainer.global_step
             % self.hparams.do_energy_matching_loss_every_n_steps
             != 0
         ):
-            return torch.zeros(x0.shape[0], device=x0.device)
+            return torch.zeros(x0.shape[0], device=x0.device), None
 
-        U0_true = -energy_function(x0)
+        U0_true, nabla_U0_true = energy_function(x0, return_force=True)
+        U0_true = - U0_true
         mask = U0_true > energy_threshold
         U0_pred = self.energy_net.forward_energy(h0, x0, inverse_temp)
         energy_matching_loss = (U0_true - U0_pred) ** 2
         energy_matching_loss = ~mask * energy_matching_loss
-        return energy_matching_loss
+        return energy_matching_loss, nabla_U0_true
 
     def pre_training_step(self, x0_samples, prefix):
         # ln_sigmat = (

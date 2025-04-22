@@ -102,10 +102,14 @@ class ALPEnergy(BaseMoleculeEnergy):
         )
 
 
-    def __call__(self, samples: torch.Tensor) -> torch.Tensor:
+    def __call__(self, samples: torch.Tensor, return_force=False) -> torch.Tensor:
         if self.should_normalize:
             samples = self.unnormalize(samples)
-        return -self.openmm_energy.energy(samples).squeeze(-1)
+        logprob = -self.openmm_energy.energy(samples).squeeze(-1)
+        if return_force:
+            force = self.openmm_energy.force(samples)
+            return logprob, force
+        return logprob
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)
@@ -205,6 +209,12 @@ class ALPEnergy(BaseMoleculeEnergy):
         samples_metrics = self.get_ramachandran_metrics(
             latest_samples[:num_eval_samples], prefix=prefix + "generated_samples/rama"
         )
+        try: 
+            self.plot_ramachandran(
+                    latest_samples, prefix=prefix + "/generated_samples/rama", wandb_logger=wandb_logger
+            )
+        except ValueError as e:
+            logging.error(f"Error in plotting Ramachandran: {e}")
         logging.info("Ramachandran metrics computed (generated samples)")
         metrics.update(samples_metrics)
 
@@ -236,8 +246,6 @@ class ALPEnergy(BaseMoleculeEnergy):
             }
         )
         self.plot_tica(None, prefix=prefix + "/ground_truth", wandb_logger=wandb_logger)
-
-        logging.info("Ramachandran metrics computed")
 
         return metrics
 
@@ -289,8 +297,8 @@ class ALPEnergy(BaseMoleculeEnergy):
             ticks = np.array(
                 [np.exp(-6) * h.max(), np.exp(-4.0) * h.max(), np.exp(-2) * h.max(), h.max()]
             )
-            ax.set_xlabel(r"$\varphi$", fontsize=45)
-            ax.set_ylabel(r"$\psi$", fontsize=45)
+            ax.set_xlabel(r"$\varphi$", fontsize=25)
+            ax.set_ylabel(r"$\psi$", fontsize=25)
             ax.xaxis.set_tick_params(labelsize=25)
             ax.yaxis.set_tick_params(labelsize=25)
             ax.yaxis.set_ticks([])
@@ -298,7 +306,7 @@ class ALPEnergy(BaseMoleculeEnergy):
             cbar.ax.set_yticklabels([6.0, 4.0, 2.0, 0.0], fontsize=25)
 
             cbar.ax.invert_yaxis()
-            cbar.ax.set_ylabel(r"Free energy / $k_B T$", fontsize=35)
+            cbar.ax.set_ylabel(r"Free energy / $k_B T$", fontsize=25)
             if wandb_logger is not None:
                 wandb_logger.log_image(f"{prefix}/ramachandran/{i}", [fig])
 

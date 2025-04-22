@@ -60,7 +60,7 @@ model:
   num_samples_to_generate_per_epoch: 5000
   resampling_interval: 1
   start_resampling_step: 0
-  end_resampling_step: 1000
+  end_resampling_step: 900
   scale_diffusion: False
   resample_at_end: False
   debias_inference: True #if self to False it just does regular VE reverse sde for debugging
@@ -68,6 +68,7 @@ model:
  
   temperatures:
     - 600
+    - 550
 
   loss_weights:
     energy_score: 1.0
@@ -83,6 +84,7 @@ model:
   num_mc_samples: 1000
 
   num_epochs_per_temp: 
+    - 300
 
   dem:
     noise_schedule: elucidating
