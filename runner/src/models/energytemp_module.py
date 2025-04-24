@@ -308,7 +308,10 @@ class energyTempModule(BaseLightningModule):
         predicted_x0_scorenet = self.score_net.denoiser(
             ht, xt, inverse_temp, return_score=False
         )
-        score_loss = torch.sum((predicted_x0_scorenet - x0) ** 2, dim=(-1))
+        if self.hparams.loss_weights["score"] == 0:
+            score_loss = torch.zeros(x0.shape[0], device=x0.device)
+        else:
+            score_loss = torch.sum((predicted_x0_scorenet - x0) ** 2, dim=(-1))
         score_loss = lambda_t * score_loss
         if self.hparams.get("only_train_score", False):
             zeros = torch.zeros_like(score_loss)
