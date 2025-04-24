@@ -26,9 +26,10 @@ def conditional_no_grad(condition):
 
 def grad_E(x, energy_function):
     with torch.enable_grad():
-        x = x.requires_grad_()
-        grad = torch.autograd.grad(torch.sum(energy_function(x)), x, create_graph=True)[0]
-        x.requires_grad_(False)
+        x_temp = x.clone()
+        x_temp.requires_grad_(True)
+        grad = torch.autograd.grad(torch.sum(energy_function(x_temp)), x_temp, create_graph=True)[0]
+        x_temp.requires_grad_(False)
         return grad.detach()
 
 

@@ -284,6 +284,7 @@ class energyTempModule(BaseLightningModule):
         self,
         ht: torch.Tensor,
         x0: torch.Tensor,
+        x0_energies: torch.Tensor,
         inverse_temp: float,
         energy_function: BaseEnergyFunction,
     ) -> torch.Tensor:
@@ -322,6 +323,7 @@ class energyTempModule(BaseLightningModule):
         energy_matching_loss, forces = self.get_energy_matching_loss(
             h0=h0,
             x0=x0,
+            x0_energies=x0_energies,
             inverse_temp=inverse_temp,
             energy_function=energy_function,
         )
@@ -454,11 +456,12 @@ class energyTempModule(BaseLightningModule):
         self,
         h0: torch.Tensor,
         x0: torch.Tensor,
+        x0_energies: torch.Tensor,
         inverse_temp: float,
         energy_function: BaseEnergyFunction,
         energy_threshold: float = 1e3,
     ) -> torch.Tensor:
-
+    
         if self.hparams.loss_weights["energy_matching"] == 0:
             return torch.zeros(x0.shape[0], device=x0.device), None
 
@@ -469,10 +472,14 @@ class energyTempModule(BaseLightningModule):
         ):
             return torch.zeros(x0.shape[0], device=x0.device), None
 
-        U0_true, nabla_U0_true = energy_function(x0, return_force=True)
-        U0_true = - U0_true
+        # U0_true, nabla_U0_true = energy_function(x0, return_force=True)
+        U0_true = - x0_energies
+        nabla_U0_true = None
         mask = U0_true > energy_threshold
         U0_pred = self.energy_net.forward_energy(h0, x0, inverse_temp)
+
+        # if self.trainer.global_step == 100:
+        #     import ipdb; ipdb.set_trace()
         energy_matching_loss = (U0_true - U0_pred) ** 2
         energy_matching_loss = ~mask * energy_matching_loss
         return energy_matching_loss, nabla_U0_true
@@ -506,7 +513,7 @@ class energyTempModule(BaseLightningModule):
         self.log_dict(loss_dict, sync_dist=True)
         return dem_score_loss
 
-    def model_step(self, x0_samples, temp_index, prefix):
+    def model_step(self, x0_samples, x0_energies, temp_index, prefix):
         # ln_sigmat = (
         #     torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std
         #     + self.hparams.P_mean
@@ -526,7 +533,7 @@ class energyTempModule(BaseLightningModule):
                 dem_energy_loss,
                 energy_matching_loss,
             ) = self.get_loss(
-                ht, x0_samples, inverse_temp, self.energy_functions[temp_index]
+                ht, x0_samples, x0_energies, inverse_temp, self.energy_functions[temp_index]
             )
 
         should_log_stratified_energy_score = (
@@ -596,11 +603,11 @@ class energyTempModule(BaseLightningModule):
         ]
         # TODO: random inverse temperatures for each element in the batch
         temp_index = np.random.randint(0, len(active_inverse_temperatures))
-        x0_samples, _, _ = self.buffers[temp_index].sample(
+        x0_samples, x0_energies, _ = self.buffers[temp_index].sample(
             self.hparams.training_batch_size
         )
 
-        loss = self.model_step(x0_samples, temp_index, prefix="train")
+        loss = self.model_step(x0_samples, x0_energies, temp_index, prefix="train")
         return loss
 
     def on_train_epoch_end(self) -> None:
@@ -631,9 +638,11 @@ class energyTempModule(BaseLightningModule):
                 true_x0_samples = energy_function.sample_test_set(num_samples)
             elif prefix == "val":
                 true_x0_samples = energy_function.sample_val_set(num_samples)
+            true_x0_energies = energy_function(true_x0_samples)
 
             loss = self.model_step(
                 true_x0_samples,
+                true_x0_energies,
                 temp_index,
                 prefix=f"{prefix}/temp={self.temperatures[temp_index]:0.3f}",
             )
@@ -657,7 +666,6 @@ class energyTempModule(BaseLightningModule):
             samples,
             samples_energy,
         )
-
         prefix_plot = f"{prefix}/dem"
         if self.is_molecule:
             self._log_dist_w2(
@@ -668,7 +676,6 @@ class energyTempModule(BaseLightningModule):
             temp_index=0,
             generated_samples=samples,
         )
-
         energy_function.log_on_epoch_end(
             samples,
             samples_energy,
