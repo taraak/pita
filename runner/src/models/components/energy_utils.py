@@ -1,10 +1,12 @@
 from statistics import median
-import numpy as np
-import torch
+
 import networkx as nx
 import networkx.algorithms.isomorphism as iso
+import numpy as np
 import scipy
+import torch
 from networkx import isomorphism
+
 
 def create_adjacency_list(distance_matrix, atom_types):
     adjacency_list = []
@@ -31,6 +33,7 @@ def create_adjacency_list(distance_matrix, atom_types):
                 adjacency_list.append([i, j])
 
     return adjacency_list
+
 
 def align_topology(sample, reference, atom_types):
     sample = sample.reshape(-1, 3)

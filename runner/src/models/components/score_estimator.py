@@ -28,7 +28,7 @@ def log_expectation_reward(
     repeated_x = x.unsqueeze(0).repeat_interleave(num_mc_samples, dim=0)
     repeated_ht = ht.unsqueeze(0).repeat_interleave(num_mc_samples, dim=0)
 
-    samples = repeated_x + (torch.randn_like(repeated_x) * repeated_ht[:, None]**0.5)
+    samples = repeated_x + (torch.randn_like(repeated_x) * repeated_ht[:, None] ** 0.5)
 
     log_rewards = energy_function(samples)
 

@@ -71,7 +71,11 @@ def main(cfg: DictConfig) -> Optional[float]:
     simulation.minimizeEnergy()
     simulation.reporters.append(
         StateDataReporter(
-            os.path.join(cfg.output_dir, "output.txt"), cfg.log_freq, step=True, potentialEnergy=True, temperature=True
+            os.path.join(cfg.output_dir, "output.txt"),
+            cfg.log_freq,
+            step=True,
+            potentialEnergy=True,
+            temperature=True,
         )
     )
     logger.info("Minimized. Running simulation...")

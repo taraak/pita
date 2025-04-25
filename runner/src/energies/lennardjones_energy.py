@@ -142,7 +142,7 @@ class LennardJonesPotential(Energy):
 
     def _log_prob(self, x, smooth=False):
         E = -self._energy(x, smooth=smooth)
-        return (E / self._temperature)
+        return E / self._temperature
 
 
 class LennardJonesEnergy(BaseMoleculeEnergy):
@@ -161,10 +161,9 @@ class LennardJonesEnergy(BaseMoleculeEnergy):
         temperature=1.0,
         should_normalize=False,
         data_normalization_factor=1.0,
-        *args, 
+        *args,
         **kwargs,
     ):
-        
         if n_particles != 13 and n_particles != 55:
             raise NotImplementedError
         if n_particles == 13:

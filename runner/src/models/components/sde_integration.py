@@ -23,13 +23,17 @@ def conditional_no_grad(condition):
     else:
         yield
 
+
 def grad_E(x, energy_function):
     with torch.enable_grad():
         x_temp = x.detach().clone()
         x_temp.requires_grad_(True)
-        grad = torch.autograd.grad(torch.sum(energy_function(x_temp)), x_temp, create_graph=True)[0]
+        grad = torch.autograd.grad(torch.sum(energy_function(x_temp)), x_temp, create_graph=True)[
+            0
+        ]
         x_temp.requires_grad_(False)
         return grad.detach()
+
 
 def negative_time_descent(x, energy_function, num_steps, dt, do_langevin=False):
     samples = []
@@ -39,9 +43,7 @@ def negative_time_descent(x, energy_function, num_steps, dt, do_langevin=False):
         if do_langevin:
             x = x + torch.randn_like(x) * np.sqrt(2 * dt)
         if energy_function.is_molecule:
-            x = remove_mean(
-                x, energy_function.n_particles, energy_function.n_spatial_dim
-            )
+            x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
 
         samples.append(x)
     return torch.stack(samples)
@@ -185,9 +187,7 @@ class WeightedSDEIntegrator:
                     resampling_interval=resampling_interval,
                 )
                 if energy_function.is_molecule:
-                    x = remove_mean(
-                        x, energy_function.n_particles, energy_function.n_spatial_dim
-                    )
+                    x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
 
                 samples.append(x)
                 logweights.append(a)
@@ -197,7 +197,7 @@ class WeightedSDEIntegrator:
             did_resampling = resampling_interval != -1 and resampling_interval < len(times)
             if self.resample_at_end and did_resampling:
                 # t = torch.tensor(self.end_time).to(x.device)
-                t = times[self.end_resampling_step-1]
+                t = times[self.end_resampling_step - 1]
                 print(f"doing resampling at {t}")
                 target_logprob = energy_function(x)
                 if t.dim() == 0:

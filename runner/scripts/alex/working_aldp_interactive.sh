@@ -11,4 +11,3 @@ model.debias_inference=False \
 +model.only_train_score=True \
 #+energy.debug_train_on_test=True \
 #debug=short \
-

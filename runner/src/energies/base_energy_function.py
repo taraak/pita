@@ -36,19 +36,21 @@ class BaseEnergyFunction(ABC):
 
     def setup_val_set(self) -> Optional[torch.Tensor]:
         return None
-    
+
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
         if self._is_molecule:
             return self._normalize_molecule(x)
         return self._normalize(x)
-    
+
     def unnormalize(self, x: torch.Tensor) -> torch.Tensor:
         if self._is_molecule:
             return self._unnormalize_molecule(x)
         return self._unnormalize(x)
-    
+
     def _normalize(self, x: torch.Tensor) -> torch.Tensor:
-        assert self.normalization_min is not None and self.normalization_max is not None, "Normalization min and max should be set"
+        assert (
+            self.normalization_min is not None and self.normalization_max is not None
+        ), "Normalization min and max should be set"
         mins = self.normalization_min
         maxs = self.normalization_max
         ## [ 0, 1 ]
@@ -57,7 +59,9 @@ class BaseEnergyFunction(ABC):
         return x * 2 - 1
 
     def _unnormalize(self, x: torch.Tensor) -> torch.Tensor:
-        assert self.normalization_min is not None and self.normalization_max is not None, "Normalization min and max should be set"
+        assert (
+            self.normalization_min is not None and self.normalization_max is not None
+        ), "Normalization min and max should be set"
         mins = self.normalization_min
         maxs = self.normalization_max
         x = (x + 1) / 2
@@ -65,14 +69,18 @@ class BaseEnergyFunction(ABC):
 
     def _normalize_molecule(self, x: torch.Tensor) -> torch.Tensor:
         assert x.shape[-1] == self._dimensionality
-        assert self.data_normalization_factor is not None, "Standard deviation should be computed first"
+        assert (
+            self.data_normalization_factor is not None
+        ), "Standard deviation should be computed first"
         x = remove_mean(x, self.n_particles, self.n_spatial_dim)
         x = x / self.data_normalization_factor
         return x
 
     def _unnormalize_molecule(self, x: torch.Tensor) -> torch.Tensor:
         assert x.shape[-1] == self._dimensionality
-        assert self.data_normalization_factor is not None, "Standard deviation should be computed first"
+        assert (
+            self.data_normalization_factor is not None
+        ), "Standard deviation should be computed first"
         x = x * self.data_normalization_factor
         return x
 

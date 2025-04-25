@@ -1,6 +1,6 @@
 # import sys
 # import os
-# sys.path.append(os.path.abspath('../'))  
+# sys.path.append(os.path.abspath('../'))
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,6 +11,7 @@ from src.utils.logging_utils import fig_to_image
 
 from fab.fab.target_distributions import gmm
 from fab.fab.utils.plotting import plot_contours, plot_marginal_pair
+
 
 class GMM(BaseEnergyFunction):
     def __init__(
@@ -58,7 +59,6 @@ class GMM(BaseEnergyFunction):
         self.test_set_size = test_set_size
         self.val_set_size = val_set_size
 
-
         self.temperature = temperature
 
         self.name = "gmm"
@@ -94,7 +94,7 @@ class GMM(BaseEnergyFunction):
         return 2
 
     def log_on_start(
-        self, 
+        self,
         samples: torch.Tensor,
         wandb_logger: WandbLogger,
         prefix: str = "",
@@ -131,7 +131,7 @@ class GMM(BaseEnergyFunction):
                 # Don't unnormalize CFM samples since they're in the
                 # unnormalized space
                 latest_samples = self.unnormalize(latest_samples)
-            
+
             samples_fig = self.get_dataset_fig(latest_samples)
             wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 

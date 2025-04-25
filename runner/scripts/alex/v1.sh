@@ -4,7 +4,7 @@ experiment=alp_energytemp \
 trainer=ddp model.resampling_interval=1 \
 tags=["test","ALDP"] \
 model.noise_schedule.sigma_min=0.01 \
-trainer.check_val_every_n_epoch=50 \
+trainer.check_val_every_n_epoch=1 \
 model.dem.num_training_epochs=0 \
 model.debias_inference=True \
 model.loss_weights.energy_matching=1.0 \
@@ -17,6 +17,7 @@ model.inference_batch_size=128 \
 model.num_negative_time_steps=1 \
 model.end_resampling_step=900 \
 model.net.hidden_nf=64 \
+#++model.compile=True
 #debug=short \
 #trainer.gradient_clip_val=100 \
 #model.do_langevin=true \
