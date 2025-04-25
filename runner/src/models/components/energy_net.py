@@ -27,6 +27,7 @@ class EnergyNet(nn.Module):
         c_out = h_t**0.5 * c_in  # sigma / sqrt(1 + sigma^2)
         c_noise = (1 / 8) * torch.log(h_t)  # 1/4 ln(sigma)
 
+
         def f_theta(t, x_t, beta):
             h_theta = self.net(t, x_t, beta)
             return torch.sum(h_theta * x_t, dim=1)
@@ -36,6 +37,8 @@ class EnergyNet(nn.Module):
         E_theta = (1 - c_s) / (2 * h_t) * torch.linalg.norm(x_t, dim=-1) ** 2 - c_out / (
             c_in * h_t
         ) * U_theta
+
+        # E_theta = U_theta
 
         if pin:
             assert t is not None

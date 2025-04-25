@@ -23,7 +23,6 @@ def conditional_no_grad(condition):
     else:
         yield
 
-
 def grad_E(x, energy_function):
     with torch.enable_grad():
         x_temp = x.clone()
@@ -31,7 +30,6 @@ def grad_E(x, energy_function):
         grad = torch.autograd.grad(torch.sum(energy_function(x_temp)), x_temp, create_graph=True)[0]
         x_temp.requires_grad_(False)
         return grad.detach()
-
 
 def negative_time_descent(x, energy_function, num_steps, dt, do_langevin=False):
     samples = []
@@ -184,7 +182,7 @@ class WeightedSDEIntegrator:
         logweights = torch.stack(logweights)
 
         if self.num_negative_time_steps > 0:
-            print("doing negative time descent...")
+            print(f"doing negative time descent for {self.num_negative_time_steps} steps")
             samples_negative_time = negative_time_descent(
                 x,
                 energy_function,

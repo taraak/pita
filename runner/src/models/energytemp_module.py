@@ -846,7 +846,7 @@ class energyTempModule(BaseLightningModule):
 
             for i in range(n_batches):
                 start = time.time()
-                samples, _, _, _ = self.generate_samples(
+                samples, _, _ = self.generate_samples(
                     prior=self.priors[temp_index + 1],
                     energy_function=self.energy_functions[temp_index + 1],
                     num_samples=self.hparams.num_samples_to_save,
@@ -1064,7 +1064,7 @@ class energyTempModule(BaseLightningModule):
                 init_states = self.energy_functions[0].sample_train_set(
                     self.hparams.num_init_samples
                 )
-            init_energies = self.energy_functions[temp_index](init_states)
+            init_energies = self.energy_functions[temp_index](init_states) 
 
             if temp_index == 0:
                 self.buffers[temp_index].add(init_states, init_energies)
