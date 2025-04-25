@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-
 from src.models.components import rotary
 
 # Flags required to enable jit fusion kernels
