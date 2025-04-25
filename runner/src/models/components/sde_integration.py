@@ -38,7 +38,6 @@ def negative_time_descent(x, energy_function, num_steps, dt, do_langevin=False):
         x = x + drift * dt
         if do_langevin:
             x = x + torch.randn_like(x) * np.sqrt(2 * dt)
-
         if energy_function.is_molecule:
             x = remove_mean(
                 x, energy_function.n_particles, energy_function.n_spatial_dim

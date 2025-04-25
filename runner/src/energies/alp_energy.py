@@ -309,30 +309,6 @@ class ALPEnergy(BaseMoleculeEnergy):
             cbar.ax.set_ylabel(r"Free energy / $k_B T$", fontsize=25)
             if wandb_logger is not None:
                 wandb_logger.log_image(f"{prefix}/ramachandran/{i}", [fig])
-
-            phi_tmp = phis[:, i]
-            psi_tmp = psis[:, i]
-            fig, ax = plt.subplots()
-            plot_range = [-np.pi, np.pi]
-            h, x_bins, y_bins, im = ax.hist2d(
-                phi_tmp,
-                psi_tmp,
-                100,
-                norm=LogNorm(),
-                range=[plot_range, plot_range],
-                rasterized=True,
-            )
-            ax.set_xlabel(r"$\varphi$", fontsize=45)
-            ax.set_ylabel(r"$\psi$", fontsize=45)
-            ax.xaxis.set_tick_params(labelsize=25)
-            ax.yaxis.set_tick_params(labelsize=25)
-            ax.yaxis.set_ticks([])
-            cbar = fig.colorbar(im)  # , ticks=ticks)
-            im.set_clim(vmax=samples.shape[0] // 20)
-            cbar.ax.set_ylabel(f"Count, max = {int(h.max())}", fontsize=18)
-            if wandb_logger is not None:
-                wandb_logger.log_image(f"{prefix}/ramachandran_simple/{i}", [fig])
-
         return fig
 
     def plot_tica(self, samples=None, prefix="", wandb_logger=None, ):

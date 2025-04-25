@@ -17,14 +17,17 @@ logger:
 
 defaults:
   - override /energy: aldp
-  - override /model/net: egnn_temp
+  - override /model/net: egnn_dynamics_ad2_cat
   - override /model/noise_schedule: elucidating
 
 model:
   net: 
     hidden_nf: 64
     n_layers: 5
-  
+
+  # net: 
+  #   hidden_layers: 5
+
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
@@ -84,7 +87,7 @@ model:
   num_mc_samples: 1000
 
   num_epochs_per_temp: 
-    - 300
+    - 100
 
   dem:
     noise_schedule: elucidating
