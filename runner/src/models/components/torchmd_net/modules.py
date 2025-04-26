@@ -117,9 +117,7 @@ class EquivariantVectorOutput(OutputModel):
 
 class EquivariantVectorAndScalarOutput(OutputModel):
     def __init__(self, hidden_channels, activation="silu", reduce_op="sum"):
-        super().__init__(
-            allow_prior_model=False, reduce_op="sum"
-        )
+        super().__init__(allow_prior_model=False, reduce_op="sum")
 
         self.output_network = nn.ModuleList(
             [
