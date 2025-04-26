@@ -2,25 +2,24 @@ import math
 from typing import Union
 
 import numpy as np
-import torch
-
-
-
 import ot as pot
+import torch
 from scipy.optimize import linear_sum_assignment
 
 from .mmd import linear_mmd2, mix_rbf_mmd2, poly_mmd2
 from .optimal_transport import wasserstein
 
 
-def energy_distances(pred, true, prefix=""):
+def energy_distances(pred, true, prefix="", energy_threshold=1000):
     pred = pred.cpu().numpy()
     true = true.cpu().numpy()
     energy_w2 = math.sqrt(pot.emd2_1d(true, pred))
     energy_w1 = pot.emd2_1d(true, pred, metric="euclidean")
     mean_dist = np.abs(pred.mean() - true.mean())
-    cropped_pred = np.clip(pred, -1000, 1000)
-    cropped_true = np.clip(true, -1000, 1000)
+    mask = (pred < -energy_threshold) | (pred > energy_threshold)
+    cropped_pred = ~mask * pred
+    cropped_true = ~mask * true
+    num_cropped = np.sum(mask)
     cropped_energy_w2 = math.sqrt(pot.emd2_1d(cropped_true, cropped_pred))
     cropped_energy_w1 = pot.emd2_1d(cropped_true, cropped_pred, metric="euclidean")
     return_dict = {
@@ -29,8 +28,10 @@ def energy_distances(pred, true, prefix=""):
         f"{prefix}/mean_dist": mean_dist,
         f"{prefix}/cropped_energy_w2": cropped_energy_w2,
         f"{prefix}/cropped_energy_w1": cropped_energy_w1,
+        f"{prefix}/num_cropped": num_cropped,
     }
     return return_dict
+
 
 def compute_distances(pred, true):
     """Computes distances between vectors."""

@@ -26,22 +26,68 @@ def conditional_no_grad(condition):
 
 def grad_E(x, energy_function):
     with torch.enable_grad():
-        x = x.requires_grad_()
-        return torch.autograd.grad(torch.sum(energy_function(x)), x)[0].detach()
+        x_temp = x.detach().clone()
+        x_temp.requires_grad_(True)
+        grad = torch.autograd.grad(torch.sum(energy_function(x_temp)), x_temp, create_graph=True)[
+            0
+        ]
+        x_temp.requires_grad_(False)
+        return grad.detach()
 
 
-def negative_time_descent(x, energy_function, num_steps, dt=1e-4):
+def negative_time_descent(x, energy_function, num_steps, dt, do_langevin=False):
     samples = []
     for _ in range(num_steps):
         drift = grad_E(x, energy_function)
         x = x + drift * dt
-
+        if do_langevin:
+            x = x + torch.randn_like(x) * np.sqrt(2 * dt)
         if energy_function.is_molecule:
             x = remove_mean(x, energy_function.n_particles, energy_function.n_spatial_dim)
 
         samples.append(x)
     return torch.stack(samples)
 
+def metropolis_hastings_mala(x, energy_function, num_steps, dt):
+    x_curr = x.clone()
+    logp_curr = energy_function(x_curr)
+    samples = []
+    for _ in range(num_steps):
+        x_prop, log_q_forward, log_q_backward = mala_proposal(x_curr, energy_function, dt)
+        logp_prop = energy_function(x_prop)
+
+        log_accept_ratio = (logp_prop - logp_curr) + (log_q_backward - log_q_forward)
+        accept_prob = torch.exp(torch.minimum(log_accept_ratio, torch.zeros_like(log_accept_ratio)))
+
+        accept = (torch.rand_like(accept_prob) < accept_prob).float().unsqueeze(-1)
+        x_curr = accept * x_prop + (1 - accept) * x_curr
+        logp_curr = accept.squeeze() * logp_prop + (1 - accept.squeeze()) * logp_curr
+        
+        if energy_function.is_molecule:
+            x_curr = remove_mean(
+                x_curr, energy_function.n_particles, energy_function.n_spatial_dim
+            )
+        samples.append(x_curr)
+
+    return torch.stack(samples)
+
+def mala_proposal(x, energy_function, dt): 
+    grad = grad_E(x, energy_function) 
+    
+    noise = torch.randn_like(x)
+    x_prop = x + 0.5 * dt * grad + torch.sqrt(torch.tensor(dt)) * noise
+
+    # Forward proposal: q(x' | x)
+    forward_mean = x + 0.5 * dt * grad
+    log_q_forward = -((x_prop - forward_mean) ** 2).sum(dim=1) / (2 * dt)
+
+    # Backward proposal: q(x | x')
+    grad_prop = grad_E(x_prop, energy_function)
+
+    backward_mean = x_prop + 0.5 * dt * grad_prop
+    log_q_backward = -((x.detach() - backward_mean) ** 2).sum(dim=1) / (2 * dt)
+
+    return x_prop.detach(), log_q_forward.detach(), log_q_backward.detach()
 
 class WeightedSDEIntegrator:
     def __init__(
@@ -56,9 +102,12 @@ class WeightedSDEIntegrator:
         time_range=1.0,
         resampling_interval=-1,
         num_negative_time_steps=100,
+        post_mcmc_steps=100,
         batch_size=None,
         no_grad=True,
         resample_at_end=False,
+        dt_negative_time=1e-4,
+        do_langevin=False,
     ) -> None:
         self.sde = sde
         self.num_integration_steps = num_integration_steps
@@ -69,9 +118,12 @@ class WeightedSDEIntegrator:
         self.resampling_interval = resampling_interval
         self.time_range = time_range
         self.num_negative_time_steps = num_negative_time_steps
+        self.post_mcmc_steps = post_mcmc_steps
+        self.dt_negative_time = dt_negative_time
         self.batch_size = batch_size
         self.no_grad = no_grad
         self.resample_at_end = resample_at_end
+        self.do_langevin = do_langevin
         self.lightning_module = lightning_module
 
         self.start_time = time_range if reverse_time else 0.0
@@ -94,7 +146,10 @@ class WeightedSDEIntegrator:
         print("The resampling interval is: ", resampling_interval)
 
         times = torch.linspace(
-            self.start_time, self.end_time, self.num_integration_steps + 1, device=x1.device
+            self.start_time,
+            self.end_time,
+            self.num_integration_steps + 1,
+            device=x1.device,
         )[:-1]
 
         dt = self.time_range / self.num_integration_steps
@@ -119,7 +174,7 @@ class WeightedSDEIntegrator:
             for step, t in enumerate(
                 tqdm(times, position=0, leave=True, dynamic_ncols=True, disable=disable)
             ):
-            # for step, t in enumerate(times):
+                # for step, t in enumerate(times):
                 x, a, idxs, sde_terms = self.ddp_batched_euler_maruyama_step(
                     t,
                     x,
@@ -139,8 +194,11 @@ class WeightedSDEIntegrator:
                 num_unique_idxs.append(idxs)
                 sde_terms_all.append(sde_terms)
 
-            if self.resample_at_end:
-                t = torch.tensor(self.end_time).to(x.device)
+            did_resampling = resampling_interval != -1 and resampling_interval < len(times)
+            if self.resample_at_end and did_resampling:
+                # t = torch.tensor(self.end_time).to(x.device)
+                t = times[self.end_resampling_step - 1]
+                print(f"doing resampling at {t}")
                 target_logprob = energy_function(x)
                 if t.dim() == 0:
                     t = t * (torch.ones(x.shape[0])).to(x.device)
@@ -153,7 +211,7 @@ class WeightedSDEIntegrator:
                     energy_function=energy_function,
                     t=t,
                 )
-                logq_0 = -model_energy
+                logq_0 = -model_energy * annealing_factor
                 a_next = target_logprob - logq_0 + a
                 choice, _ = sample_cat_sys(x.shape[0], a_next)
                 x = x[choice]
@@ -165,13 +223,26 @@ class WeightedSDEIntegrator:
         logweights = torch.stack(logweights)
 
         if self.num_negative_time_steps > 0:
-            print("doing negative time descent...")
-            samples_langevin = negative_time_descent(
+            print(f"doing negative time descent for {self.num_negative_time_steps} steps")
+            samples_negative_time = negative_time_descent(
                 x,
                 energy_function,
                 num_steps=self.num_negative_time_steps,
+                dt=self.dt_negative_time,
+                do_langevin=self.do_langevin,
             )
-            samples = torch.concatenate((samples, samples_langevin), axis=0)
+            samples = torch.concatenate((samples, samples_negative_time), axis=0)
+
+        if self.post_mcmc_steps > 0:
+            print(f"doing mcmc steps post-generation for {self.post_mcmc_steps} steps")
+            samples_corr = metropolis_hastings_mala(
+                x,
+                energy_function,
+                num_steps = self.post_mcmc_steps, 
+                dt = self.dt_negative_time,
+            )
+            samples = torch.concatenate((samples, samples_corr), axis=0)
+
         return samples, logweights, num_unique_idxs, sde_terms_all
 
     def ddp_batched_euler_maruyama_step(
@@ -211,6 +282,8 @@ class WeightedSDEIntegrator:
 
         sde_terms = self.lightning_module.all_gather(asdict(sde_terms))
         for term in fields(SDETerms):
+            if sde_terms[term.name] is None:
+                continue
             sde_terms[term.name] = sde_terms[term.name].reshape(
                 -1, *sde_terms[term.name].shape[2:]
             )
@@ -261,7 +334,9 @@ class WeightedSDEIntegrator:
                 energy_function=energy_function,
             )
             sde_term.diffusion = self.sde.diffusion(
-                t, x[i * self.batch_size : (i + 1) * self.batch_size], self.diffusion_scale
+                t,
+                x[i * self.batch_size : (i + 1) * self.batch_size],
+                self.diffusion_scale,
             )
             sde_terms.append(sde_term)
 

@@ -25,7 +25,7 @@ model:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
     n_particles: ${energy.n_particles}
-    spatial_dim: ${energy.spatial_dim} 
+    spatial_dim: ${energy.spatial_dim}
 
   clipper:
     _target_: src.models.components.clipper.Clipper

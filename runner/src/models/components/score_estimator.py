@@ -28,7 +28,7 @@ def log_expectation_reward(
     repeated_x = x.unsqueeze(0).repeat_interleave(num_mc_samples, dim=0)
     repeated_ht = ht.unsqueeze(0).repeat_interleave(num_mc_samples, dim=0)
 
-    samples = repeated_x + (torch.randn_like(repeated_x) * repeated_ht[:, None]**0.5)
+    samples = repeated_x + (torch.randn_like(repeated_x) * repeated_ht[:, None] ** 0.5)
 
     log_rewards = energy_function(samples)
 
@@ -49,7 +49,6 @@ def estimate_grad_Rt(
 
     grad_fxn = torch.func.grad(log_expectation_reward, argnums=1)
     vmapped_fxn = torch.vmap(grad_fxn, in_dims=(0, 0, None, None), randomness="different")
-
     return vmapped_fxn(ht, x, energy_function, num_mc_samples)
 
 
@@ -65,5 +64,4 @@ def estimate_Rt(
     vmapped_fxn = torch.vmap(
         log_expectation_reward, in_dims=(0, 0, None, None), randomness="different"
     )
-
     return vmapped_fxn(ht, x, energy_function, num_mc_samples)

@@ -22,7 +22,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         n_particles: int,
         spatial_dim: int,
         data_path: str,
-        data_name: str, 
+        data_name: str,
         device="cpu",
         plot_samples_epoch_period=5,
         plotting_buffer_sample_size=512,
@@ -31,7 +31,6 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         should_normalize=False,
         data_normalization_factor=1.0,
     ):
-                
         self.temperature = temperature
         self.n_particles = n_particles
         self.n_spatial_dim = spatial_dim
@@ -59,9 +58,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
             + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/test_split_{data_name}{self.n_particles}-10000.npy"
         )
 
-        super().__init__(dimensionality=dimensionality,
-                         is_molecule=is_molecule)
-
+        super().__init__(dimensionality=dimensionality, is_molecule=is_molecule)
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)
@@ -86,7 +83,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
     def setup_train_set(self):
         if self.data_path_train is None:
             raise ValueError("Data path for training data is not provided")
-        data = np.load(self.data_path_val, allow_pickle=True)
+        data = np.load(self.data_path_train, allow_pickle=True)
         if self.should_normalize:
             data = self.normalize(data)
         else:
@@ -115,7 +112,7 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
         latest_samples: torch.Tensor,
         latest_energies: torch.Tensor,
         wandb_logger: WandbLogger,
-        latest_samples_not_resampled: Optional[torch.Tensor]=None,
+        latest_samples_not_resampled: Optional[torch.Tensor] = None,
         prefix: str = "",
     ) -> None:
         if latest_samples is None:
@@ -128,9 +125,11 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
             prefix += "/"
 
         if self.curr_epoch % self.plot_samples_epoch_period == 0:
-            samples_fig = self.get_dataset_fig(latest_samples,
-                                               energy_samples=latest_energies,
-                                               samples_not_resampled=latest_samples_not_resampled)
+            samples_fig = self.get_dataset_fig(
+                latest_samples,
+                energy_samples=latest_energies,
+                samples_not_resampled=latest_samples_not_resampled,
+            )
 
             wandb_logger.log_image(f"{prefix}generated_samples", [samples_fig])
 
@@ -178,7 +177,9 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
             label="generated data",
         )
         if samples_not_resampled is not None:
-            dist_samples_not_resampled = self.interatomic_dist(samples_not_resampled).detach().cpu()
+            dist_samples_not_resampled = (
+                self.interatomic_dist(samples_not_resampled).detach().cpu()
+            )
             axs[0].hist(
                 dist_samples_not_resampled.view(-1),
                 bins=bins,
@@ -194,13 +195,11 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
 
         if energy_samples is None:
             energy_samples = self(samples)
-        energy_samples = - energy_samples.detach().cpu()
+        energy_samples = -energy_samples.detach().cpu()
         energy_test = -self(test_data_smaller).detach().cpu()
-
 
         min_energy = energy_test.min().item() - 10
         max_energy = energy_test.max().item() + 10
-
 
         _, bins, _ = axs[1].hist(
             energy_test.cpu(),

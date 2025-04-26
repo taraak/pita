@@ -17,31 +17,18 @@ logger:
 
 defaults:
   - override /energy: aldp
-  - override /model/net: egnn_temp
+  - override /model/net: egnn_dynamics_ad2_cat
   - override /model/noise_schedule: elucidating
 
 model:
-  net: 
-    _target_: src.models.components.egnn_temp_conditioned.EGNN_dynamics
-    _partial_: true
-    n_particles: ${energy.n_particles}
-    n_dimension: ${energy.spatial_dim}
-    hidden_nf: 32
-    n_layers: 3
-    act_fn:
-      _target_: torch.nn.SiLU
-    recurrent: True
-    tanh: True
-    attention: True
-    condition_time: True
-    condition_temperature: True
-    agg: "sum"
-  
+  net:
+    hidden_nf: 64
+    n_layers: 5
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
     n_particles: ${energy.n_particles}
-    spatial_dim: ${energy.spatial_dim} 
+    spatial_dim: ${energy.spatial_dim}
 
   clipper:
     _target_: src.models.components.clipper.Clipper
@@ -54,32 +41,34 @@ model:
     spatial_dim: ${energy.spatial_dim}
 
   diffusion_scale: 1.0
+
   num_negative_time_steps: 2
-  num_samples_to_sample_from_buffer: 512
+  post_mcmc_steps: 0
+  dt_negative_time: 1e-9
+  do_langevin: False
+
+  training_batch_size: 1024
+  inference_batch_size: 128
 
   num_samples_to_save: 10000
   num_integration_steps: 1000
-
-  # Elucidating noise schedule
-  P_mean: -1.2
-  P_std: 1.2
 
   # energytemp parameters
   num_init_samples: 10000
   test_batch_size: 5000
   num_eval_samples: 2048
   num_samples_to_generate_per_epoch: 5000
-  inference_batch_size: 512
   resampling_interval: 1
   start_resampling_step: 0
-  end_resampling_step: 950
+  end_resampling_step: 900
   scale_diffusion: False
   resample_at_end: False
+  debias_inference: True #if self to False it just does regular VE reverse sde for debugging
+  energy_masking_threshold: 1000
 
   temperatures:
     - 600
     - 550
-
 
   loss_weights:
     energy_score: 1.0
@@ -88,10 +77,27 @@ model:
     target_score: 0.0
     dem_energy: 0.0
 
+  do_energy_matching_loss_every_n_steps: 1
+
   init_from_prior: false
 
   num_mc_samples: 1000
 
-  update_temp_epoch: 
-    - 100
-    - 200
+  num_epochs_per_temp:
+    - 300
+
+  dem:
+    noise_schedule: elucidating
+    num_training_epochs: 0
+    training_batch_size: 512
+    num_samples_to_generate_per_epoch: 512
+    check_val_every_n_epochs: 10
+    clipper:
+      _target_: src.models.components.clipper.Clipper
+      should_clip_scores: True
+      should_clip_log_rewards: False
+      max_score_norm: 100
+      min_log_reward: null
+      n_particles: ${energy.n_particles}
+      dimensionality: ${energy.dimensionality}
+      spatial_dim: ${energy.spatial_dim}

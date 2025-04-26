@@ -6,4 +6,3 @@ tags=["test","LJ13"] \
 model.noise_schedule.sigma_min=0.05 \
 trainer.check_val_every_n_epoch=1 \
 data.n_train_batches_per_epoch=250 \
-

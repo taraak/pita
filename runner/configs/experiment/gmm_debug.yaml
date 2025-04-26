@@ -52,7 +52,7 @@ model:
     # _target_: src.models.components.lambda_weighter.NoLambdaWeighter
     _partial_: true
     epsilon: 1e-3
-  
+
   optimizer:
     lr: 1e-3
 
@@ -63,30 +63,29 @@ model:
   # energytemp parameters
   num_init_samples: 10000
   test_batch_size: 5000
-  num_eval_samples: 2048        # 1024
-  inference_batch_size: 512 
+  num_eval_samples: 2048 # 1024
+  inference_batch_size: 512
   resampling_interval: 1
   start_resampling_step: 0
-  end_resampling_step: 900    
+  end_resampling_step: 900
   scale_diffusion: False
   resample_at_end: True
 
-  lower_temperature: 0.1      # currently not used
-  higher_temperature: 1.0     # currently not used
-  d_temp: 0.1                 # currently not used
+  lower_temperature: 0.1 # currently not used
+  higher_temperature: 1.0 # currently not used
+  d_temp: 0.1 # currently not used
 
-  temperatures:               # currently used
+  temperatures: # currently used
     - 1.0
-    
+
   loss_weights:
     energy_score: 1.0
     score: 1.0
     energy_matching: 1.0
     target_score: 0.0
     dem_energy: 0.0
-  
-  init_from_prior: false      # default
+
+  init_from_prior: false # default
 
 trainer:
   check_val_every_n_epoch: 5
-

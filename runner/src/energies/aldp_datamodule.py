@@ -10,7 +10,6 @@ import torchvision
 from bgmol.datasets import AImplicitUnconstrained
 from lightning.pytorch.loggers import WandbLogger
 from matplotlib.colors import LogNorm
-
 from src.data.base_datamodule import BaseDataModule
 from src.data.components.center_of_mass import CenterOfMassTransform
 from src.data.components.rotation import Random3DRotationTransform
@@ -167,7 +166,9 @@ class ALDPDataModule(BaseDataModule):
 
         logging.info("Align and compute metrics done")
 
-        resampled_samples = resample(samples, -self.energy(samples, use_com_energy=use_com_energy) - log_p_samples)
+        resampled_samples = resample(
+            samples, -self.energy(samples, use_com_energy=use_com_energy) - log_p_samples
+        )
         resampled_metrics = self.align_and_compute_metrics(
             resampled_samples,
             prefix=prefix + "/resampled/rama",

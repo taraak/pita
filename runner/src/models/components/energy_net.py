@@ -37,6 +37,8 @@ class EnergyNet(nn.Module):
             c_in * h_t
         ) * U_theta
 
+        # E_theta = U_theta
+
         if pin:
             assert t is not None
             assert energy_function is not None
@@ -58,15 +60,11 @@ class EnergyNet(nn.Module):
         nabla_U = torch.autograd.grad(U.sum(), x_t, create_graph=True)[0]
         return nabla_U
 
-    def denoiser(
-        self, h_t: torch.Tensor, x_t: torch.Tensor, beta
-    ) -> torch.Tensor:
+    def denoiser(self, h_t: torch.Tensor, x_t: torch.Tensor, beta) -> torch.Tensor:
         nabla_U = self.forward(h_t, x_t, beta)
         return x_t - h_t[:, None] * nabla_U
-    
-    def denoiser_and_energy(
-        self, h_t: torch.Tensor, x_t: torch.Tensor, beta
-    ) -> torch.Tensor:
+
+    def denoiser_and_energy(self, h_t: torch.Tensor, x_t: torch.Tensor, beta) -> torch.Tensor:
         U = self.forward_energy(h_t, x_t, beta)
         nabla_U = torch.autograd.grad(U.sum(), x_t, create_graph=True)[0]
         return x_t - h_t[:, None] * nabla_U, U

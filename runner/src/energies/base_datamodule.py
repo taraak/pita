@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import hydra
 import matplotlib.pyplot as plt
+import mdtraj as md
 import numpy as np
 import requests
 import scipy
@@ -13,15 +14,12 @@ from bgflow import MultiDoubleWellPotential
 from bgflow.utils import distance_vectors, distances_from_vectors
 from lightning import LightningDataModule
 from lightning.pytorch.loggers import WandbLogger
-from torch.utils.data import DataLoader, Dataset
-
-import mdtraj as md
-
 from src.energies.components.distribution_distances import (
     compute_distribution_distances_with_prefix,
 )
+from src.energies.components.tica import plot_tic01, run_tica, tica_features
+from torch.utils.data import DataLoader, Dataset
 
-from src.energies.components.tica import run_tica, tica_features, plot_tic01
 
 class BaseDataModule(LightningDataModule):
     def __init__(
@@ -186,10 +184,8 @@ class BaseDataModule(LightningDataModule):
         return x
 
     def energy(self, x, use_com_energy=False):
-
         if use_com_energy:
-
-            # logging.info("Using CoM energy")
+            # logging.info("Using CoM energy")
 
             sigma = self.proposal_com_std
 
@@ -213,7 +209,7 @@ class BaseDataModule(LightningDataModule):
         samples,
         log_p_samples: torch.Tensor,
         samples_jarzynski: torch.Tensor = None,
-        num_eval_samples: int = 5000, #  for compatibility
+        num_eval_samples: int = 5000,  #  for compatibility
         use_com_energy: bool = False,
         loggers: List[Any] = None,
         prefix: str = "",
@@ -493,10 +489,12 @@ class BaseDataModule(LightningDataModule):
         return fig
 
     def plot_tica(self, samples=None, prefix="", wandb_logger=None):
-
         lagtime = 10 if self.n_particles == 33 else 100
 
-        traj_samples_test = md.Trajectory(self.data_test_full.reshape(-1, self.n_particles, self.n_dimensions).numpy(), topology=self.topology)
+        traj_samples_test = md.Trajectory(
+            self.data_test_full.reshape(-1, self.n_particles, self.n_dimensions).numpy(),
+            topology=self.topology,
+        )
 
         # the tica projection is computed based on reference data
         # the lagtime can be changed in order to get well seperated states
@@ -506,7 +504,10 @@ class BaseDataModule(LightningDataModule):
             # we can then map other data, e.g. generated with the same transformation
             features = tica_features(traj_samples_test)
         else:
-            samples = md.Trajectory(samples.reshape(-1, self.n_particles, self.n_dimensions).numpy(), topology=self.topology)
+            samples = md.Trajectory(
+                samples.reshape(-1, self.n_particles, self.n_dimensions).numpy(),
+                topology=self.topology,
+            )
             features = tica_features(samples)
         tics = tica_model.transform(features)
 
@@ -519,23 +520,33 @@ class BaseDataModule(LightningDataModule):
         return fig
 
     def tica_metric(self, samples, prefix=""):
-
         lagtime = 10 if self.n_particles == 33 else 100
 
-        traj_samples_test = md.Trajectory(self.unnormalize(self.data_test_full).reshape(-1, self.n_particles, self.n_dimensions).numpy(), topology=self.topology)
+        traj_samples_test = md.Trajectory(
+            self.unnormalize(self.data_test_full)
+            .reshape(-1, self.n_particles, self.n_dimensions)
+            .numpy(),
+            topology=self.topology,
+        )
 
         # the tica projection is computed based on reference data
         # the lagtime can be changed in order to get well seperated states
         tica_model = run_tica(traj_samples_test, lagtime=lagtime)
 
-        traj_samples = md.Trajectory(samples.reshape(-1, self.n_particles, self.n_dimensions).numpy(), topology=self.topology)
-        
+        traj_samples = md.Trajectory(
+            samples.reshape(-1, self.n_particles, self.n_dimensions).numpy(),
+            topology=self.topology,
+        )
+
         features_test = tica_features(traj_samples_test)
         features = tica_features(traj_samples)
         n = min(10000, len(features_test), len(features))
         tics_test = torch.Tensor(tica_model.transform(features_test))[:n, 0:2]
         tics = torch.Tensor(tica_model.transform(features))[:n, 0:2]
-        return compute_distribution_distances_with_prefix(tics_test, tics, prefix=prefix + "/tica/")
+        return compute_distribution_distances_with_prefix(
+            tics_test, tics, prefix=prefix + "/tica/"
+        )
+
 
 if __name__ == "__main__":
     _ = BaseDataModule()

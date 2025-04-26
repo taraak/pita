@@ -2,12 +2,10 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Optional
 
-import numpy as np
 import torch
 from src.models.components.temperature_schedules import ConstantInvTempSchedule
 from src.models.components.utils import (
     compute_divergence_exact,
-    compute_divergence_forloop,
     compute_laplacian_exact,
 )
 
@@ -69,7 +67,6 @@ class SDETerms:
             if data_list[0].diffusion is not None
             else None
         )
-
         return SDETerms(
             drift_X=drift_X_cat,
             drift_A=drift_A_cat,
@@ -82,7 +79,12 @@ class SDETerms:
 
 class VEReverseSDE(torch.nn.Module):
     def __init__(
-        self, energy_net, noise_schedule, score_net=None, pin_energy=False, debias_inference=True
+        self,
+        noise_schedule,
+        energy_net=None,
+        score_net=None,
+        pin_energy=False,
+        debias_inference=True,
     ):
         super().__init__()
         self.energy_net = energy_net
@@ -96,9 +98,14 @@ class VEReverseSDE(torch.nn.Module):
         h_t = self.noise_schedule.h(t)
         drift_X = self.score_net(h_t, x, beta) * self.g(t).pow(2).unsqueeze(-1)
         drift_A = torch.zeros(x.shape[0]).to(x.device)
-        return drift_X, drift_A
+        sde_terms = SDETerms(
+            drift_X=drift_X,
+            drift_A=drift_A,
+        )
+        return sde_terms
 
     def f(self, t, x, beta, gamma, energy_function, resampling_interval=-1):
+        assert self.energy_net is not None
         if t.dim() == 0:
             # repeat the same time for all points if we have a scalar time
             t = t * torch.ones(x.shape[0]).to(x.device)
