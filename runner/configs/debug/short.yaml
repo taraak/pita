@@ -2,8 +2,8 @@
 task_name: "debug_short"
 
 model:
-  num_integration_steps: 10
-  num_negative_time_steps: 4
+  num_integration_steps: 2
+  num_negative_time_steps: 2
   num_mc_samples: 10
   dem:
     training_batch_size: 3

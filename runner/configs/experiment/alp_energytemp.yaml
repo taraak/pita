@@ -69,6 +69,9 @@ model:
   temperatures:
     - 600
     - 550
+  temps_to_anneal_test:
+    - [600, 600]
+    - [600, 550]
 
   loss_weights:
     energy_score: 1.0

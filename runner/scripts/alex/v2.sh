@@ -6,7 +6,7 @@ model=energytemp \
 experiment=alp_energytemp \
 trainer=ddp model.resampling_interval=1 \
 tags=["test","ALDP"] \
-model.noise_schedule.sigma_min=0.02,0.01,0.005 \
+model.noise_schedule.sigma_min=0.005 \
 trainer.check_val_every_n_epoch=100 \
 model.dem.num_training_epochs=0 \
 model.debias_inference=True \

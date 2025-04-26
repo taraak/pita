@@ -29,6 +29,9 @@ from .components.score_estimator import estimate_grad_Rt, estimate_Rt
 
 logger = logging.getLogger(__name__)
 
+# set matmul precision to medium
+torch.set_float32_matmul_precision("medium")
+
 
 class energyTempModule(BaseLightningModule):
     def __init__(
@@ -780,7 +783,7 @@ class energyTempModule(BaseLightningModule):
         logger.debug(f"Finished eval epoch end {prefix}")
 
     def on_test_epoch_end(self) -> None:
-        if self.hparams.temps_to_anneal_test is None:
+        if self.hparams.get("temps_to_anneal_test", False):
             inverse_temps_to_anneal = [
                 (self.inverse_temperatures[i], self.inverse_temperatures[i + 1])
                 for i in range(len(self.inverse_temperatures) - 1)
@@ -796,11 +799,11 @@ class energyTempModule(BaseLightningModule):
             ]
 
         for temps in inverse_temps_to_anneal:
-            inverse_temp = temps[0]
-            inverse_lower_temp = temps[1]
+            inverse_temp = temps[0].item()
+            inverse_lower_temp = temps[1].item()
             # get the index of the inverse temperature
-            temp_index = self.inverse_temperatures.index(inverse_temp)
-            temp_index_lower = self.inverse_temperatures.index(inverse_lower_temp)
+            temp_index = torch.nonzero(self.inverse_temperatures == inverse_temp)[0].item()
+            temp_index_lower = torch.nonzero(self.inverse_temperatures == inverse_lower_temp)[0].item()
             logger.info(
                 f"Generating samples for temperature {inverse_temp:0.3f} annealed to temperature {inverse_lower_temp:0.3f}"
             )
@@ -841,12 +844,12 @@ class energyTempModule(BaseLightningModule):
             self._log_energy_distances(
                 inverse_temp,
                 prefix="test",
-                test_generated_samples=batch_generated_samples,
+                generated_samples=batch_generated_samples,
             )
             self._log_dist_w2(
                 inverse_temp,
                 prefix="test",
-                test_generated_samples=batch_generated_samples,
+                generated_samples=batch_generated_samples,
             )
 
     def _log_logweights(self, logweights, prefix="val"):
