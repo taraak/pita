@@ -41,9 +41,7 @@ class Clipper:
 
         score_norms = torch.linalg.vector_norm(scores, dim=-1).detach()
 
-        clip_coefficient = torch.clamp(
-            self.max_score_norm / (score_norms + _EPSILON), max=1
-        )
+        clip_coefficient = torch.clamp(self.max_score_norm / (score_norms + _EPSILON), max=1)
 
         clipped_scores = scores * clip_coefficient.unsqueeze(-1)
 

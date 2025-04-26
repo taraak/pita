@@ -2,11 +2,8 @@ import math
 from typing import Union
 
 import numpy as np
-import torch
-
-
-
 import ot as pot
+import torch
 from scipy.optimize import linear_sum_assignment
 
 from .mmd import linear_mmd2, mix_rbf_mmd2, poly_mmd2
@@ -27,13 +24,14 @@ def energy_distances(pred, true, prefix="", energy_threshold=1000):
     cropped_energy_w1 = pot.emd2_1d(cropped_true, cropped_pred, metric="euclidean")
     return_dict = {
         f"{prefix}/energy_w2": energy_w2,
-        f"{prefix}/energy_w1": energy_w1, 
+        f"{prefix}/energy_w1": energy_w1,
         f"{prefix}/mean_dist": mean_dist,
         f"{prefix}/cropped_energy_w2": cropped_energy_w2,
         f"{prefix}/cropped_energy_w1": cropped_energy_w1,
         f"{prefix}/num_cropped": num_cropped,
     }
     return return_dict
+
 
 def compute_distances(pred, true):
     """Computes distances between vectors."""

@@ -4,7 +4,6 @@ import mdtraj as md
 import numpy as np
 import torch
 import torch.nn as nn
-
 from src.models.components.egnn import EGNN
 from src.models.components.utils import remove_mean
 
@@ -122,7 +121,6 @@ class EGNN_dynamics_AD2_cat(nn.Module):
         amino_idx = []
         amino_types = []
         for i, amino in enumerate(self.topology.residues):
-
             for atom_name in amino.atoms:
                 amino_idx.append(i)
                 amino_types.append(amino_dict[amino.name])

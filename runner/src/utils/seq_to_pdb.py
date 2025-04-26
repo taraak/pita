@@ -94,13 +94,9 @@ if __name__ == "__main__":
         "AAAAAAAAA",
     ]:
         print(f"Generating zwitter-ion form peptide {sequence} into '{sequence}.pdb'")
-        make_peptide_with_tleap(
-            translate_1letter_to_3letter(sequence), f"{sequence}.pdb"
-        )
+        make_peptide_with_tleap(translate_1letter_to_3letter(sequence), f"{sequence}.pdb")
         print(f"Generating capped peptide {sequence} into '{sequence}_capped.pdb'")
         make_peptide_with_tleap(
-            ["ACE"]
-            + translate_1letter_to_3letter(sequence, zwitter_ion=False)
-            + ["NME"],
+            ["ACE"] + translate_1letter_to_3letter(sequence, zwitter_ion=False) + ["NME"],
             f"{sequence}_capped.pdb",
         )

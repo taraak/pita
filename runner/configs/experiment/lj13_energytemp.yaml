@@ -25,7 +25,7 @@ model:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
     n_particles: ${energy.n_particles}
-    spatial_dim: ${energy.spatial_dim} 
+    spatial_dim: ${energy.spatial_dim}
 
   clipper:
     _target_: src.models.components.clipper.Clipper
@@ -39,8 +39,8 @@ model:
 
   diffusion_scale: 1.0
 
-
   num_negative_time_steps: 1
+  post_mcmc_steps: 0
   dt_negative_time: 1e-4
   do_langevin: False
 
@@ -86,14 +86,14 @@ model:
 
   num_mc_samples: 1000
 
-  num_epochs_per_temp: 
+  num_epochs_per_temp:
     - 100
     - 200
     - 300
-    - 300 
+    - 300
     - 200
 
-# parametrs for training DEM at the high temperature to collect samples instead of MCMC
+  # parametrs for training DEM at the high temperature to collect samples instead of MCMC
   dem:
     noise_schedule: elucidating
     num_training_epochs: 0

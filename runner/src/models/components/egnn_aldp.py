@@ -1,7 +1,7 @@
+import numpy as np
 import torch
 import torch.nn as nn
 from src.utils.data_utils import remove_mean
-import numpy as np
 
 
 ### EGNN from Equivariant FM
@@ -19,8 +19,7 @@ class EGNN_dynamics(nn.Module):
         tanh=False,
         agg="sum",
         condition_temperature=False,
-    ):  
-
+    ):
         self._n_particles = n_particles
         self._n_dimension = n_dimension
         self.edges = self._create_edges()
@@ -108,7 +107,6 @@ class EGNN_dynamics(nn.Module):
         amino_idx = []
         amino_types = []
         for i, amino in enumerate(self.topology.residues):
-
             for atom_name in amino.atoms:
                 amino_idx.append(i)
                 amino_types.append(amino_dict[amino.name])
@@ -155,14 +153,14 @@ class EGNN_dynamics(nn.Module):
 
         if self.condition_time:
             h_t = torch.ones(n_batch, self._n_particles, 1).to(xs.device)
-            h_t = (h_t * t.unsqueeze(-1))
+            h_t = h_t * t.unsqueeze(-1)
             h = torch.cat([h, h_t], dim=-1)
 
         if self.condition_temperature:
             h_beta = torch.ones(n_batch, self._n_particles, 1).to(xs.device)
-            h_beta = (h_beta * beta.unsqueeze(-1))
+            h_beta = h_beta * beta.unsqueeze(-1)
             h = torch.cat([h, h_beta], dim=-1)
-        
+
         h = h.reshape(n_batch * self._n_particles, self.in_node_nf)
 
         edge_attr = torch.sum((x[edges[0]] - x[edges[1]]) ** 2, dim=1, keepdim=True)
@@ -225,7 +223,7 @@ class EGNN(nn.Module):
             self.coords_range_layer = self.coords_range_layer * 19
 
         # Encoder
-        # 
+        #
         self.embedding = nn.Linear(in_node_nf, self.hidden_nf)
         self.embedding_out = nn.Linear(self.hidden_nf, out_node_nf)
         for i in range(0, n_layers):

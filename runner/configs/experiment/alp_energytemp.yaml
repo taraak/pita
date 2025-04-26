@@ -21,18 +21,14 @@ defaults:
   - override /model/noise_schedule: elucidating
 
 model:
-  net: 
+  net:
     hidden_nf: 64
     n_layers: 5
-
-  # net: 
-  #   hidden_layers: 5
-
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
     n_particles: ${energy.n_particles}
-    spatial_dim: ${energy.spatial_dim} 
+    spatial_dim: ${energy.spatial_dim}
 
   clipper:
     _target_: src.models.components.clipper.Clipper
@@ -47,6 +43,7 @@ model:
   diffusion_scale: 1.0
 
   num_negative_time_steps: 2
+  post_mcmc_steps: 0
   dt_negative_time: 1e-9
   do_langevin: False
 
@@ -68,7 +65,7 @@ model:
   resample_at_end: False
   debias_inference: True #if self to False it just does regular VE reverse sde for debugging
   energy_masking_threshold: 1000
- 
+
   temperatures:
     - 600
     - 550
@@ -86,8 +83,8 @@ model:
 
   num_mc_samples: 1000
 
-  num_epochs_per_temp: 
-    - 100
+  num_epochs_per_temp:
+    - 300
 
   dem:
     noise_schedule: elucidating

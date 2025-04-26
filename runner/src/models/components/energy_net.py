@@ -27,7 +27,6 @@ class EnergyNet(nn.Module):
         c_out = h_t**0.5 * c_in  # sigma / sqrt(1 + sigma^2)
         c_noise = (1 / 8) * torch.log(h_t)  # 1/4 ln(sigma)
 
-
         def f_theta(t, x_t, beta):
             h_theta = self.net(t, x_t, beta)
             return torch.sum(h_theta * x_t, dim=1)
@@ -61,15 +60,11 @@ class EnergyNet(nn.Module):
         nabla_U = torch.autograd.grad(U.sum(), x_t, create_graph=True)[0]
         return nabla_U
 
-    def denoiser(
-        self, h_t: torch.Tensor, x_t: torch.Tensor, beta
-    ) -> torch.Tensor:
+    def denoiser(self, h_t: torch.Tensor, x_t: torch.Tensor, beta) -> torch.Tensor:
         nabla_U = self.forward(h_t, x_t, beta)
         return x_t - h_t[:, None] * nabla_U
-    
-    def denoiser_and_energy(
-        self, h_t: torch.Tensor, x_t: torch.Tensor, beta
-    ) -> torch.Tensor:
+
+    def denoiser_and_energy(self, h_t: torch.Tensor, x_t: torch.Tensor, beta) -> torch.Tensor:
         U = self.forward_energy(h_t, x_t, beta)
         nabla_U = torch.autograd.grad(U.sum(), x_t, create_graph=True)[0]
         return x_t - h_t[:, None] * nabla_U, U

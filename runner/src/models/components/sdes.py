@@ -2,12 +2,10 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Optional
 
-import numpy as np
 import torch
 from src.models.components.temperature_schedules import ConstantInvTempSchedule
 from src.models.components.utils import (
     compute_divergence_exact,
-    compute_divergence_forloop,
     compute_laplacian_exact,
 )
 
@@ -81,7 +79,12 @@ class SDETerms:
 
 class VEReverseSDE(torch.nn.Module):
     def __init__(
-        self, noise_schedule, energy_net=None, score_net=None, pin_energy=False, debias_inference=True
+        self,
+        noise_schedule,
+        energy_net=None,
+        score_net=None,
+        pin_energy=False,
+        debias_inference=True,
     ):
         super().__init__()
         self.energy_net = energy_net

@@ -12,15 +12,14 @@ from bgflow import OpenMMBridge, OpenMMEnergy
 from lightning.pytorch.loggers import WandbLogger
 from matplotlib.colors import LogNorm
 from openmm import app
-
 from src.energies.base_datamodule import BaseDataModule
 from src.energies.components.center_of_mass import CenterOfMassTransform
-from src.energies.components.rotation import Random3DRotationTransform
-from src.energies.components.transform_dataset import TransformDataset
 from src.energies.components.distribution_distances import (
     compute_distribution_distances_with_prefix,
 )
 from src.energies.components.optimal_transport import torus_wasserstein
+from src.energies.components.rotation import Random3DRotationTransform
+from src.energies.components.transform_dataset import TransformDataset
 from src.energies.components.utils import (
     check_symmetry_change,
     compute_chirality_sign,
@@ -83,7 +82,6 @@ class ALPDataModule(BaseDataModule):
         self.adj_list, self.atom_types = self.compute_adj_list_and_atom_types()
 
         if n_particles != 42:
-
             forcefield = app.ForceField("amber14-all.xml", "implicit/obc1.xml")
 
             system = forcefield.createSystem(
@@ -103,7 +101,6 @@ class ALPDataModule(BaseDataModule):
             )
 
         else:
-
             forcefield = openmm.app.ForceField("amber99sbildn.xml", "tip3p.xml", "amber99_obc.xml")
 
             system = forcefield.createSystem(
@@ -251,7 +248,9 @@ class ALPDataModule(BaseDataModule):
         logging.info("Base plots done")
 
         metrics = {}
-        resampled_samples = resample(samples, -self.energy(samples, use_com_energy=use_com_energy) - log_p_samples)
+        resampled_samples = resample(
+            samples, -self.energy(samples, use_com_energy=use_com_energy) - log_p_samples
+        )
         samples = self.unnormalize(samples).cpu()
         samples_metrics = self.get_ramachandran_metrics(
             samples[:num_eval_samples], prefix=prefix + "/rama"
@@ -295,7 +294,9 @@ class ALPDataModule(BaseDataModule):
             )
             metrics.update(resampled_metrics)
             logging.info("Ramachandran metrics computed (resampled)")
-            self.plot_tica(resampled_samples, prefix=prefix + "/resampled", wandb_logger=wandb_logger)
+            self.plot_tica(
+                resampled_samples, prefix=prefix + "/resampled", wandb_logger=wandb_logger
+            )
             metrics.update(self.tica_metric(resampled_samples, prefix=prefix + "/resampled"))
             self.plot_ramachandran(
                 resampled_samples, prefix=prefix + "/resampled/rama", wandb_logger=wandb_logger
@@ -309,7 +310,9 @@ class ALPDataModule(BaseDataModule):
                 samples_jarzynski[:num_eval_samples], prefix=prefix + "/jarzynski/rama"
             )
             logging.info("Ramachandran metrics computed (jarzynski)")
-            self.plot_tica(samples_jarzynski, prefix=prefix + "/jarzynski", wandb_logger=wandb_logger)
+            self.plot_tica(
+                samples_jarzynski, prefix=prefix + "/jarzynski", wandb_logger=wandb_logger
+            )
             metrics.update(self.tica_metric(samples_jarzynski, prefix=prefix + "/jarzynski"))
             self.plot_ramachandran(
                 samples_jarzynski,

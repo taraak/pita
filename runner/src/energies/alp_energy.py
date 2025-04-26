@@ -14,16 +14,16 @@ from matplotlib.colors import LogNorm
 from openmm import app
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.energies.base_molecule_energy_function import BaseMoleculeEnergy
+from src.energies.components.tica import plot_tic01, run_tica, tica_features
 from src.models.components.distribution_distances import (
     compute_distribution_distances_with_prefix,
 )
-from src.energies.components.tica import run_tica, tica_features, plot_tic01
-from src.models.components.optimal_transport import torus_wasserstein
 from src.models.components.energy_utils import (
     check_symmetry_change,
     compute_chirality_sign,
     find_chirality_centers,
 )
+from src.models.components.optimal_transport import torus_wasserstein
 from src.utils.data_utils import remove_mean
 
 logger = logging.getLogger(__name__)
@@ -35,18 +35,18 @@ class ALPEnergy(BaseMoleculeEnergy):
         data_path: str,
         pdb_filename: str,
         atom_encoding_filename: str = "atom_types_ecoding.npy",
-        dimensionality: int=99,
-        n_particles: int=33,
-        spatial_dim: int=3,
-        device: str="cpu",
-        plot_samples_epoch_period: int=5,
-        plotting_buffer_sample_size: int=512,
-        data_normalization_factor: float=1.0,
-        is_molecule: bool=True,
-        temperature: float=1.0,
-        should_normalize: bool=True,
-        device_index: int=0,
-        debug_train_on_test: bool=False,
+        dimensionality: int = 99,
+        n_particles: int = 33,
+        spatial_dim: int = 3,
+        device: str = "cpu",
+        plot_samples_epoch_period: int = 5,
+        plotting_buffer_sample_size: int = 512,
+        data_normalization_factor: float = 1.0,
+        is_molecule: bool = True,
+        temperature: float = 1.0,
+        should_normalize: bool = True,
+        device_index: int = 0,
+        debug_train_on_test: bool = False,
     ):
         super().__init__(
             dimensionality=dimensionality,
@@ -62,21 +62,21 @@ class ALPEnergy(BaseMoleculeEnergy):
             plotting_buffer_sample_size=plotting_buffer_sample_size,
             is_molecule=is_molecule,
         )
-        
+
         self.debug_train_on_test = debug_train_on_test
         self.adj_list = None
         self.atom_types = None
         self.atom_encoding_filename = atom_encoding_filename
-        self.atom_types_encoding = np.load(data_path + f"/{atom_encoding_filename}", allow_pickle=True
+        self.atom_types_encoding = np.load(
+            data_path + f"/{atom_encoding_filename}", allow_pickle=True
         ).item()
 
-        self.pdb_path =  f"{pdb_filename}"
+        self.pdb_path = f"{pdb_filename}"
         logger.info(f"Loading pdb file from {self.pdb_path}")
         self.topology = md.load_topology(self.pdb_path)
         self.pdb = app.PDBFile(self.pdb_path)
 
         self.adj_list, self.atom_types = self.compute_adj_list_and_atom_types()
-
 
         forcefield = app.ForceField("amber14-all.xml", "implicit/obc1.xml")
 
@@ -93,14 +93,19 @@ class ALPEnergy(BaseMoleculeEnergy):
         )
 
         platform_name = "CUDA"
-        platform_properties =  dict(Precision='single', DeviceIndex=device_index) if platform_name == 'CUDA' else dict()
-        self.openmm_energy = OpenMMEnergy(
-            bridge=OpenMMBridge(system,
-                                integrator,
-                                platform_name=platform_name,
-                                platform_properties=platform_properties), 
+        platform_properties = (
+            dict(Precision="single", DeviceIndex=device_index)
+            if platform_name == "CUDA"
+            else dict()
         )
-
+        self.openmm_energy = OpenMMEnergy(
+            bridge=OpenMMBridge(
+                system,
+                integrator,
+                platform_name=platform_name,
+                platform_properties=platform_properties,
+            ),
+        )
 
     def __call__(self, samples: torch.Tensor, return_force=False) -> torch.Tensor:
         if self.should_normalize:
@@ -209,9 +214,11 @@ class ALPEnergy(BaseMoleculeEnergy):
         samples_metrics = self.get_ramachandran_metrics(
             latest_samples[:num_eval_samples], prefix=prefix + "generated_samples/rama"
         )
-        try: 
+        try:
             self.plot_ramachandran(
-                    latest_samples, prefix=prefix + "/generated_samples/rama", wandb_logger=wandb_logger
+                latest_samples,
+                prefix=prefix + "/generated_samples/rama",
+                wandb_logger=wandb_logger,
             )
         except ValueError as e:
             logging.error(f"Error in plotting Ramachandran: {e}")
@@ -224,16 +231,21 @@ class ALPEnergy(BaseMoleculeEnergy):
             reference_samples = self.sample_test_set(5000)
         chirality_centers = find_chirality_centers(self.adj_list, self.atom_types)
         reference_signs = compute_chirality_sign(
-            reference_samples.reshape(-1, self.n_particles, self.n_spatial_dim)[[1]], chirality_centers
+            reference_samples.reshape(-1, self.n_particles, self.n_spatial_dim)[[1]],
+            chirality_centers,
         )
         symmetry_change = check_symmetry_change(
-            latest_samples.reshape(-1, self.n_particles, self.n_spatial_dim), chirality_centers, reference_signs
+            latest_samples.reshape(-1, self.n_particles, self.n_spatial_dim),
+            chirality_centers,
+            reference_signs,
         )
         print("Symmetry change frac:", (symmetry_change).float().mean())
         latest_samples[symmetry_change] *= -1
         correct_symmetry_rate = 1 - symmetry_change.sum() / len(symmetry_change)
         symmetry_change = check_symmetry_change(
-            latest_samples.reshape(-1, self.n_particles, self.n_spatial_dim), chirality_centers, reference_signs
+            latest_samples.reshape(-1, self.n_particles, self.n_spatial_dim),
+            chirality_centers,
+            reference_signs,
         )
         latest_samples = latest_samples[~symmetry_change]
         uncorrectable_symmetry_rate = symmetry_change.sum() / len(symmetry_change)
@@ -272,10 +284,7 @@ class ALPEnergy(BaseMoleculeEnergy):
         x = torch.cat([torch.from_numpy(phis), torch.from_numpy(psis)], dim=1)
         return x
 
-    def plot_ramachandran(self,
-                          samples,
-                          prefix: str = "",
-                          wandb_logger: WandbLogger = None):
+    def plot_ramachandran(self, samples, prefix: str = "", wandb_logger: WandbLogger = None):
         samples = samples.reshape(-1, self.n_particles, self.n_spatial_dim)
         traj_samples = md.Trajectory(samples, topology=self.topology)
         phis = md.compute_phi(traj_samples)[1]
@@ -311,13 +320,19 @@ class ALPEnergy(BaseMoleculeEnergy):
                 wandb_logger.log_image(f"{prefix}/ramachandran/{i}", [fig])
         return fig
 
-    def plot_tica(self, samples=None, prefix="", wandb_logger=None, ):
-
+    def plot_tica(
+        self,
+        samples=None,
+        prefix="",
+        wandb_logger=None,
+    ):
         lagtime = 10 if self.n_particles == 33 else 100
-        
 
         test_samples = self.sample_test_set(5000).cpu()
-        traj_samples_test = md.Trajectory(test_samples.reshape(-1, self.n_particles, self.n_spatial_dim).numpy(), topology=self.topology)
+        traj_samples_test = md.Trajectory(
+            test_samples.reshape(-1, self.n_particles, self.n_spatial_dim).numpy(),
+            topology=self.topology,
+        )
 
         # the tica projection is computed based on reference data
         # the lagtime can be changed in order to get well seperated states
@@ -327,8 +342,10 @@ class ALPEnergy(BaseMoleculeEnergy):
             # we can then map other data, e.g. generated with the same transformation
             features = tica_features(traj_samples_test)
         else:
-            samples = md.Trajectory(samples.reshape(-1, self.n_particles, self.n_spatial_dim).cpu().numpy(),
-                                    topology=self.topology)
+            samples = md.Trajectory(
+                samples.reshape(-1, self.n_particles, self.n_spatial_dim).cpu().numpy(),
+                topology=self.topology,
+            )
             features = tica_features(samples)
         tics = tica_model.transform(features)
 

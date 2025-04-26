@@ -6,8 +6,8 @@ Benchmarking on Mila Cluster March 10 2025
 
 on AL6 (uncapped)
 A100: 0.99 s/it
-L40s: 0.59 s/it
-RTX8000: 0.66 s/it
+l40s: 0.59 s/it
+rtx8000: 0.66 s/it
 CPU (cn-h001):
     1x: 8.05 s/it
     2x: 5.95 s/it
@@ -28,16 +28,16 @@ import numpy as np
 import openmm
 import tqdm
 from omegaconf import DictConfig
-from openmm import Platform, unit
-from openmm.app import ForceField, Simulation, StateDataReporter
-
+from openmm import Platform
+from openmm.app import ForceField, Simulation, StateDataReporter, CheckpointReporter
+from openmm import XmlSerializer
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 @hydra.main(version_base="1.3", config_path="../configs", config_name="md.yaml")
 def main(cfg: DictConfig) -> Optional[float]:
-    pdb_path = os.path.join(cfg.pdb_dir, (cfg.pdb_filename + ".pdb"))
+    pdb_path = os.path.join(cfg.pdb_dir, f"{cfg.pdb_filename}.pdb")
     topology = md.load_topology(pdb_path).to_openmm()
     positions = md.load_pdb(pdb_path).xyz[0]
     platform_properties = {}
@@ -71,22 +71,38 @@ def main(cfg: DictConfig) -> Optional[float]:
     simulation.minimizeEnergy()
     simulation.reporters.append(
         StateDataReporter(
-            os.path.join(cfg.output_dir, "output.txt"), cfg.log_freq, step=True, potentialEnergy=True, temperature=True
+            os.path.join(cfg.output_dir, "output.txt"), 
+            cfg.log_freq * cfg.step_size,
+            step=True, potentialEnergy=True, temperature=True,
+            progress=True,
+            totalSteps=cfg.num_steps * cfg.step_size,
+            remainingTime=True,
+            speed=True,
+            elapsedTime=True,
+            append=True,
         )
     )
-    logger.info("Minimized. Running simulation...")
+    simulation.reporters.append(
+        CheckpointReporter(f"{cfg.output_dir}/checkpoint.chk", cfg.ckpt_freq * cfg.step_size)
+    )
+    logger.info("minimized. running simulation...")
     simulation.step(cfg.warmup_steps)
     all_positions = []
     for step in tqdm.tqdm(range(cfg.num_steps)):
         simulation.step(cfg.step_size)
         st = simulation.context.getState(getPositions=True)
-        coords = st.getPositions(asNumpy=True) / unit.nanometer
+        coords = st.getPositions(asNumpy=True) / openmm.unit.nanometer
         all_positions.append(coords)
-    all_positions = np.array(all_positions, dtype=np.float32)
-    save_path = os.path.join(cfg.output_dir, cfg.output_filename)
-    logger.info(f"saving to {save_path} with shape {all_positions.shape}")
-    os.makedirs(cfg.output_dir, exist_ok=True)
-    np.savez_compressed(save_path, all_positions=all_positions)
+        if step % cfg.ckpt_freq == 0:
+            output_filename = f"{step}.npz"
+            all_positions = np.array(all_positions, dtype=np.float32)
+            save_path = os.path.join(cfg.output_dir, cfg.output_filename, output_filename)
+            logger.info(f"saving to {save_path} with shape {all_positions.shape}")
+            os.makedirs(os.path.join(cfg.output_dir, cfg.output_filename), exist_ok=True)
+            np.savez_compressed(save_path, all_positions=all_positions)
+            with open(f'{cfg.output_dir}/system.xml', 'w') as output:
+                output.write(XmlSerializer.serialize(system))
+            all_positions = []
 
 
 if __name__ == "__main__":
