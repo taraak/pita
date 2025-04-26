@@ -1,7 +1,7 @@
-from typing import Any, Dict
-import torch
 import logging
+from typing import Any, Dict
 
+import torch
 from lightning import LightningModule
 
 logger = logging.getLogger(__name__)

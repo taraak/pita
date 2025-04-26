@@ -1,9 +1,9 @@
 import numpy as np
 import torch
+from lightning.pytorch.loggers import WandbLogger
 from scipy.stats import qmc
 from torch import vmap
 from torch.func import hessian, jacrev
-from lightning.pytorch.loggers import WandbLogger
 
 
 def get_wandb_logger(loggers):

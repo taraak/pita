@@ -100,13 +100,9 @@ class ExpNormalSmearing(nn.Module):
     def _initial_params(self):
         # initialize means and betas according to the default values in PhysNet
         # https://pubs.acs.org/doi/10.1021/acs.jctc.9b00181
-        start_value = torch.exp(
-            torch.scalar_tensor(-self.cutoff_upper + self.cutoff_lower)
-        )
+        start_value = torch.exp(torch.scalar_tensor(-self.cutoff_upper + self.cutoff_lower))
         means = torch.linspace(start_value, 1, self.num_rbf)
-        betas = torch.tensor(
-            [(2 / self.num_rbf * (1 - start_value)) ** -2] * self.num_rbf
-        )
+        betas = torch.tensor([(2 / self.num_rbf * (1 - start_value)) ** -2] * self.num_rbf)
         return means, betas
 
     def reset_parameters(self):
@@ -117,8 +113,7 @@ class ExpNormalSmearing(nn.Module):
     def forward(self, dist):
         dist = dist.unsqueeze(-1)
         return self.cutoff_fn(dist) * torch.exp(
-            -self.betas
-            * (torch.exp(self.alpha * (-dist + self.cutoff_lower)) - self.means) ** 2
+            -self.betas * (torch.exp(self.alpha * (-dist + self.cutoff_lower)) - self.means) ** 2
         )
 
 
@@ -138,7 +133,7 @@ class CosineCutoff(nn.Module):
         self.cutoff_upper = cutoff_upper
 
     def forward(self, distances):
-        # DEBUG 
+        # DEBUG
         # nan_count = torch.isnan(distances).sum()
         # inf_count = torch.isinf(distances).sum()
         # Log counts without control flow
@@ -179,7 +174,7 @@ class Distance(nn.Module):
         return_vecs=False,
         loop=False,
     ):
-        super(Distance, self).__init__()
+        super().__init__()
         self.cutoff_lower = cutoff_lower
         self.cutoff_upper = cutoff_upper
         self.max_num_neighbors = max_num_neighbors
@@ -305,9 +300,7 @@ class GatedEquivariantBlock(nn.Module):
         vec1_buffer = self.vec1_proj(v)
 
         # detach zero-entries to avoid NaN gradients during force loss backpropagation
-        vec1 = torch.zeros(
-            vec1_buffer.size(0), vec1_buffer.size(2), device=vec1_buffer.device
-        )
+        vec1 = torch.zeros(vec1_buffer.size(0), vec1_buffer.size(2), device=vec1_buffer.device)
 
         # mask = (vec1_buffer != 0).view(vec1_buffer.size(0), -1).any(dim=1)
         mask = (vec1_buffer != 0).view(vec1_buffer.size(0), -1).all(dim=1)

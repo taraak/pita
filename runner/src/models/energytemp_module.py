@@ -2,7 +2,7 @@ import copy
 import logging
 import time
 from dataclasses import fields
-from typing import Optional, List
+from typing import List, Optional
 
 import hydra
 import matplotlib.pyplot as plt
@@ -12,12 +12,13 @@ import PIL
 import torch
 import wandb
 from src.energies.base_energy_function import BaseEnergyFunction
+from src.models.base import BaseLightningModule
 from src.models.components.energy_net import EnergyNet
 from src.models.components.noise_schedules import BaseNoiseSchedule
 from src.models.components.score_net import FlowNet, ScoreNet
 from src.models.components.sde_integration import WeightedSDEIntegrator
 from src.models.components.sdes import SDETerms, VEReverseSDE
-from src.models.components.utils import sample_from_tensor, get_wandb_logger
+from src.models.components.utils import get_wandb_logger, sample_from_tensor
 from src.utils.data_utils import remove_mean
 from torchmetrics import MeanMetric
 
@@ -25,7 +26,6 @@ from .components.clipper import Clipper
 from .components.distribution_distances import energy_distances
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.score_estimator import estimate_grad_Rt, estimate_Rt
-from src.models.base import BaseLightningModule
 
 logger = logging.getLogger(__name__)
 

@@ -28,9 +28,9 @@ import numpy as np
 import openmm
 import tqdm
 from omegaconf import DictConfig
-from openmm import Platform
-from openmm.app import ForceField, Simulation, StateDataReporter, CheckpointReporter
-from openmm import XmlSerializer
+from openmm import Platform, XmlSerializer
+from openmm.app import CheckpointReporter, ForceField, Simulation, StateDataReporter
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -71,9 +71,11 @@ def main(cfg: DictConfig) -> Optional[float]:
     simulation.minimizeEnergy()
     simulation.reporters.append(
         StateDataReporter(
-            os.path.join(cfg.output_dir, "output.txt"), 
+            os.path.join(cfg.output_dir, "output.txt"),
             cfg.log_freq * cfg.step_size,
-            step=True, potentialEnergy=True, temperature=True,
+            step=True,
+            potentialEnergy=True,
+            temperature=True,
             progress=True,
             totalSteps=cfg.num_steps * cfg.step_size,
             remainingTime=True,
@@ -100,7 +102,7 @@ def main(cfg: DictConfig) -> Optional[float]:
             logger.info(f"saving to {save_path} with shape {all_positions.shape}")
             os.makedirs(os.path.join(cfg.output_dir, cfg.output_filename), exist_ok=True)
             np.savez_compressed(save_path, all_positions=all_positions)
-            with open(f'{cfg.output_dir}/system.xml', 'w') as output:
+            with open(f"{cfg.output_dir}/system.xml", "w") as output:
                 output.write(XmlSerializer.serialize(system))
             all_positions = []
 
