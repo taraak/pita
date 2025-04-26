@@ -15,6 +15,10 @@ platform_name: "CUDA"
 warmup_steps: 5000
 step_size: 10000
 num_steps: 100000
-log_freq: 100000
+log_freq: 100
+ckpt_freq: 1000
 output_dir: ${paths.data_dir}/md/${pdb_filename}
-output_filename: ${pdb_filename}_${temperature}_${num_steps}.npz
+hydra:
+  run:
+    dir: ${output_dir}
+output_filename: ${pdb_filename}_${temperature}_${num_steps}
