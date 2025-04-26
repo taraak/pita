@@ -1,27 +1,26 @@
-HYDRA_FULL_ERROR=1 python src/train.py -m +trainer.num_sanity_val_steps=0 \
-launcher=mila_rtx \
-hydra.launcher.gres=gpu:rtx8000:4 \
-hydra.launcher.tasks_per_node=4 \
+HYDRA_FULL_ERROR=1 python src/train.py +trainer.num_sanity_val_steps=0 \
+train=False \
 model=energytemp \
 experiment=alp_energytemp \
 trainer=ddp model.resampling_interval=1 \
 tags=["test","ALDP"] \
-model.noise_schedule.sigma_min=0.02,0.01,0.005 \
-trainer.check_val_every_n_epoch=100 \
+model.noise_schedule.sigma_min=0.01 \
+trainer.check_val_every_n_epoch=50 \
 model.dem.num_training_epochs=0 \
 model.debias_inference=True \
 model.loss_weights.energy_matching=1.0 \
 model.do_energy_matching_loss_every_n_steps=1 \
 model.loss_weights.energy_score=1.0 \
 model.loss_weights.score=1.0 \
-model.loss_weights.target_score=0.01,0.001 \
+model.loss_weights.target_score=0.01 \
 model/net=egnn_dynamics_ad2_cat \
 model.inference_batch_size=64 \
 model.num_negative_time_steps=1 \
 model.end_resampling_step=900 \
 model.net.hidden_nf=64 \
+ckpt_path=/network/scratch/a/alexander.tong/energy_temp/logs/train/runs/2025-04-24_21-50-16/checkpoints/last.ckpt \
+debug=short \
 #++model.compile=True
-#debug=short \
 #trainer.gradient_clip_val=100 \
 #model.do_langevin=true \
 #debug=short \

@@ -2,7 +2,7 @@ import copy
 import logging
 import time
 from dataclasses import fields
-from typing import Any, Dict, List, Optional
+from typing import Optional, List
 
 import hydra
 import matplotlib.pyplot as plt
@@ -11,15 +11,13 @@ import ot as pot
 import PIL
 import torch
 import wandb
-from lightning import LightningModule
-from lightning.pytorch.loggers import WandbLogger
 from src.energies.base_energy_function import BaseEnergyFunction
 from src.models.components.energy_net import EnergyNet
 from src.models.components.noise_schedules import BaseNoiseSchedule
 from src.models.components.score_net import FlowNet, ScoreNet
 from src.models.components.sde_integration import WeightedSDEIntegrator
 from src.models.components.sdes import SDETerms, VEReverseSDE
-from src.models.components.utils import sample_from_tensor
+from src.models.components.utils import sample_from_tensor, get_wandb_logger
 from src.utils.data_utils import remove_mean
 from torchmetrics import MeanMetric
 
@@ -27,58 +25,9 @@ from .components.clipper import Clipper
 from .components.distribution_distances import energy_distances
 from .components.prioritised_replay_buffer import PrioritisedReplayBuffer
 from .components.score_estimator import estimate_grad_Rt, estimate_Rt
+from src.models.base import BaseLightningModule
 
 logger = logging.getLogger(__name__)
-
-
-class BaseLightningModule(LightningModule):
-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> None:
-        self.eval_step("val", batch, batch_idx)
-
-    def test_step(self, batch: torch.Tensor, batch_idx: int) -> None:
-        self.eval_step("test", batch, batch_idx)
-
-    def on_validation_epoch_end(self) -> None:
-        if self.trainer.sanity_checking:
-            logger.info("Skipping validation epoch end during sanity check.")
-            return
-        if self.trainer.global_step == 0:
-            logger.info("Skipping validation epoch end during first step.")
-            return
-        self.eval_epoch_end("val")
-
-    def configure_optimizers(self) -> Dict[str, Any]:
-        """Choose what optimizers and learning-rate schedulers to use in your optimization.
-        Normally you'd need one. But in the case of GANs or similar you might have multiple.
-
-        Examples:
-            https://lightning.ai/docs/pytorch/latest/common/lightning_module.html#configure-optimizers
-
-        :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
-        """
-        optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
-        if self.hparams.scheduler is not None:
-            scheduler = self.hparams.scheduler(optimizer=optimizer)
-            return {
-                "optimizer": optimizer,
-                "lr_scheduler": {
-                    "scheduler": scheduler,
-                    "monitor": "val/loss",
-                    "interval": "epoch",
-                    "frequency": self.hparams.lr_scheduler_update_frequency,
-                },
-            }
-        return {"optimizer": optimizer}
-
-
-def get_wandb_logger(loggers):
-    """Gets the wandb logger if it is the list of loggers otherwise returns None."""
-    wandb_logger = None
-    for logger in loggers:
-        if isinstance(logger, WandbLogger):
-            wandb_logger = logger
-            break
-    return wandb_logger
 
 
 class energyTempModule(BaseLightningModule):
@@ -307,6 +256,7 @@ class energyTempModule(BaseLightningModule):
             score_loss = torch.sum((vt - (x0 - z)) ** 2, dim=(-1))
             zeros = torch.zeros_like(score_loss)
             return zeros, score_loss, zeros, zeros, zeros
+
         xt = x0 + z * ht[:, None] ** 0.5
         # TODO: should probably do weighting
         lambda_t = (ht + 1) / ht
@@ -1043,17 +993,3 @@ class energyTempModule(BaseLightningModule):
         if self.is_molecule:
             self.n_particles = self.energy_functions[0].n_particles
             self.n_spatial_dim = self.energy_functions[0].n_spatial_dim
-
-
-if __name__ == "__main__":
-    _ = energyTempModule(
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
