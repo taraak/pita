@@ -241,6 +241,7 @@ class energyTempModule(BaseLightningModule):
         ht: torch.Tensor,
         x0: torch.Tensor,
         x0_energies: torch.Tensor,
+        x0_forces: torch.Tensor,
         inverse_temp: float,
         energy_function: BaseEnergyFunction,
     ) -> torch.Tensor:
@@ -290,7 +291,7 @@ class energyTempModule(BaseLightningModule):
             xt=xt,
             energy_function=energy_function,
             predicted_x0=predicted_x0_scorenet,
-            true_nabla_U0=forces,
+            true_nabla_U0=x0_forces,
             weights=lambda_t,
         )
         dem_energy_loss = self.get_dem_energy_loss(
@@ -413,28 +414,31 @@ class energyTempModule(BaseLightningModule):
         self,
         h0: torch.Tensor,
         x0: torch.Tensor,
-        x0_energies: torch.Tensor,
         inverse_temp: float,
         energy_function: BaseEnergyFunction,
+        x0_energies: Optional[torch.Tensor] = None,
         energy_threshold: float = 1e3,
     ) -> torch.Tensor:
         if self.hparams.loss_weights["energy_matching"] == 0:
-            return torch.zeros(x0.shape[0], device=x0.device), None
+            return torch.zeros(x0.shape[0], device=x0.device)
 
-        if self.trainer.global_step % self.hparams.do_energy_matching_loss_every_n_steps != 0:
+        if (
+            self.trainer.global_step
+            % self.hparams.do_energy_matching_loss_every_n_steps
+            != 0
+        ):
             return torch.zeros(x0.shape[0], device=x0.device), None
+        
+        if x0_energies is None:
+            x0_energies = energy_function(x0)
 
-        # U0_true, nabla_U0_true = energy_function(x0, return_force=True)
-        U0_true = -x0_energies
-        nabla_U0_true = None
+        U0_true = - x0_energies
         mask = U0_true > energy_threshold
         U0_pred = self.energy_net.forward_energy(h0, x0, inverse_temp)
 
-        # if self.trainer.global_step == 100:
-        #     import ipdb; ipdb.set_trace()
         energy_matching_loss = (U0_true - U0_pred) ** 2
         energy_matching_loss = ~mask * energy_matching_loss
-        return energy_matching_loss, nabla_U0_true
+        return energy_matching_loss
 
     def pre_training_step(self, x0_samples, prefix):
         # ln_sigmat = (
@@ -465,7 +469,7 @@ class energyTempModule(BaseLightningModule):
         self.log_dict(loss_dict, sync_dist=True)
         return dem_score_loss
 
-    def model_step(self, x0_samples, x0_energies, temp_index, prefix):
+    def model_step(self, x0_samples, x0_energies, x0_forces, temp_index, prefix):
         # ln_sigmat = (
         #     torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std
         #     + self.hparams.P_mean
@@ -485,7 +489,7 @@ class energyTempModule(BaseLightningModule):
                 dem_energy_loss,
                 energy_matching_loss,
             ) = self.get_loss(
-                ht, x0_samples, x0_energies, inverse_temp, self.energy_functions[temp_index]
+                ht, x0_samples, x0_energies, x0_forces, inverse_temp, self.energy_functions[temp_index]
             )
 
         should_log_stratified_energy_score = (
@@ -547,11 +551,15 @@ class energyTempModule(BaseLightningModule):
         ]
         # TODO: random inverse temperatures for each element in the batch
         temp_index = np.random.randint(0, len(active_inverse_temperatures))
-        x0_samples, x0_energies, _ = self.buffers[temp_index].sample(
+        x0_samples, x0_energies, x0_forces, _ = self.buffers[temp_index].sample(
             self.hparams.training_batch_size
         )
 
-        loss = self.model_step(x0_samples, x0_energies, temp_index, prefix="train")
+        loss = self.model_step(x0_samples, 
+                               x0_energies,
+                               x0_forces,
+                               temp_index,
+                               prefix="train")
         return loss
 
     def on_train_epoch_end(self) -> None:
@@ -580,11 +588,12 @@ class energyTempModule(BaseLightningModule):
                 true_x0_samples = energy_function.sample_test_set(num_samples)
             elif prefix == "val":
                 true_x0_samples = energy_function.sample_val_set(num_samples)
-            true_x0_energies = energy_function(true_x0_samples)
+            true_x0_energies, true_x0_forces = energy_function(true_x0_samples, return_force=True)
 
             loss = self.model_step(
                 true_x0_samples,
                 true_x0_energies,
+                true_x0_forces,
                 temp_index,
                 prefix=f"{prefix}/temp={self.temperatures[temp_index]:0.3f}",
             )
@@ -689,7 +698,8 @@ class energyTempModule(BaseLightningModule):
             annealing_factor=inverse_lower_temp / inverse_temp,
         )
         # import ipdb; ipdb.set_trace()
-        samples_energy = energy_function(samples)
+        samples_energy, samples_forces = energy_function(samples, return_force=True)
+        samples_not_resampled_energy = energy_function(samples_not_resampled)
         if temp_index_lower != temp_index:
             # mask out samples with high energy
             mask = (samples_energy > self.hparams.energy_masking_threshold) | (
@@ -699,6 +709,7 @@ class energyTempModule(BaseLightningModule):
             self.buffers[temp_index_lower].add(
                 samples[~mask],
                 samples_energy[~mask],
+                samples_forces[~mask],
             )
             output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
             # append time to avoid overwriting
@@ -739,6 +750,7 @@ class energyTempModule(BaseLightningModule):
             prefix=prefix_plot,
         )
         self.log(f"{prefix_plot}/energy_mean", -samples_energy.mean(), sync_dist=True)
+        self.log(f"{prefix_plot}/energy_mean_no_resampling", samples_not_resampled_energy.mean(), sync_dist=True)
         if self.hparams.resampling_interval != -1:
             self._log_logweights(
                 logweights,
@@ -768,10 +780,29 @@ class energyTempModule(BaseLightningModule):
         logger.debug(f"Finished eval epoch end {prefix}")
 
     def on_test_epoch_end(self) -> None:
-        for temp_index, inverse_temp in enumerate(self.inverse_temperatures[:-1]):
-            inverse_lower_temp = self.inverse_temperatures[temp_index + 1]
-            final_samples = []
+    
+        if self.hparams.temps_to_anneal_test is None:
+            inverse_temps_to_anneal = [(self.inverse_temperatures[i], self.inverse_temperatures[i+1])
+                                for i in range(len(self.inverse_temperatures)-1)]
+        else:
+            highest_temp = self.temperatures[0]
+            inverse_temps_to_anneal = [(torch.round(highest_temp/ a, decimals=2),
+                                        torch.round(highest_temp/ b, decimals=2))
+                                        for a, b in self.hparams.temps_to_anneal_test]
 
+
+        for temps in inverse_temps_to_anneal:
+            inverse_temp = temps[0]
+            inverse_lower_temp = temps[1]
+            # get the index of the inverse temperature
+            temp_index = self.inverse_temperatures.index(inverse_temp)
+            temp_index_lower = self.inverse_temperatures.index(inverse_lower_temp)
+            logger.info(
+                f"Generating samples for temperature {inverse_temp:0.3f} annealed to temperature {inverse_lower_temp:0.3f}"
+            )
+            logger.info(f"temp_index is {temp_index} and temp_index_lower is {temp_index_lower}")
+            
+            final_samples = []
             batch_size = self.hparams.num_eval_samples
             n_batches = self.hparams.num_samples_to_save // batch_size
             logger.info(
@@ -795,7 +826,7 @@ class energyTempModule(BaseLightningModule):
             final_samples = torch.cat(final_samples, dim=0)
             output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
             # append time to avoid overwriting
-            path = f"{output_dir}/samples_temperature_{inverse_lower_temp}_{self.hparams.num_samples_to_save}.pt"
+            path = f"{output_dir}/samples_temperature_{self.temperatures[temp_index]:0.3f}_annealed_to_{self.temperatures[temp_index_lower]}.pt"
             torch.save(final_samples, path)
             logger.info(f"Saving samples to {path}")
 
@@ -984,10 +1015,10 @@ class energyTempModule(BaseLightningModule):
                 init_states = self.energy_functions[0].sample_train_set(
                     self.hparams.num_init_samples
                 )
-            init_energies = self.energy_functions[temp_index](init_states)
+            init_energies, init_forces = self.energy_functions[temp_index](init_states, return_force=True) 
 
             if temp_index == 0:
-                self.buffers[temp_index].add(init_states, init_energies)
+                self.buffers[temp_index].add(init_states, init_energies, init_forces)
 
         self.is_molecule = self.energy_functions[0].is_molecule
         if self.is_molecule:
