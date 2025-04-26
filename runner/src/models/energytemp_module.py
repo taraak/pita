@@ -277,8 +277,7 @@ class energyTempModule(BaseLightningModule):
             inverse_temp=inverse_temp,
             predicted_x0_scorenet=predicted_x0_scorenet,
         )
-        forces = None
-        energy_matching_loss, forces = self.get_energy_matching_loss(
+        energy_matching_loss = self.get_energy_matching_loss(
             h0=h0,
             x0=x0,
             x0_energies=x0_energies,
