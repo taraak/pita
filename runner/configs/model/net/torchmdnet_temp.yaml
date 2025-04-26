@@ -5,7 +5,7 @@ n_dimension: ${energy.spatial_dim}
 hidden_nf: 32
 n_layers: 6
 n_heads: 1
-is_alanine: True   
+is_alanine: True
 activation: "silu"
 condition_time: True
 condition_temperature: True

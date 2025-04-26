@@ -48,6 +48,7 @@ def negative_time_descent(x, energy_function, num_steps, dt, do_langevin=False):
         samples.append(x)
     return torch.stack(samples)
 
+
 def metropolis_hastings_mala(x, energy_function, num_steps, dt):
     x_curr = x.clone()
     logp_curr = energy_function(x_curr)
@@ -57,12 +58,14 @@ def metropolis_hastings_mala(x, energy_function, num_steps, dt):
         logp_prop = energy_function(x_prop)
 
         log_accept_ratio = (logp_prop - logp_curr) + (log_q_backward - log_q_forward)
-        accept_prob = torch.exp(torch.minimum(log_accept_ratio, torch.zeros_like(log_accept_ratio)))
+        accept_prob = torch.exp(
+            torch.minimum(log_accept_ratio, torch.zeros_like(log_accept_ratio))
+        )
 
         accept = (torch.rand_like(accept_prob) < accept_prob).float().unsqueeze(-1)
         x_curr = accept * x_prop + (1 - accept) * x_curr
         logp_curr = accept.squeeze() * logp_prop + (1 - accept.squeeze()) * logp_curr
-        
+
         if energy_function.is_molecule:
             x_curr = remove_mean(
                 x_curr, energy_function.n_particles, energy_function.n_spatial_dim
@@ -71,9 +74,10 @@ def metropolis_hastings_mala(x, energy_function, num_steps, dt):
 
     return torch.stack(samples)
 
-def mala_proposal(x, energy_function, dt): 
-    grad = grad_E(x, energy_function) 
-    
+
+def mala_proposal(x, energy_function, dt):
+    grad = grad_E(x, energy_function)
+
     noise = torch.randn_like(x)
     x_prop = x + 0.5 * dt * grad + torch.sqrt(torch.tensor(dt)) * noise
 
@@ -88,6 +92,7 @@ def mala_proposal(x, energy_function, dt):
     log_q_backward = -((x.detach() - backward_mean) ** 2).sum(dim=1) / (2 * dt)
 
     return x_prop.detach(), log_q_forward.detach(), log_q_backward.detach()
+
 
 class WeightedSDEIntegrator:
     def __init__(
@@ -238,8 +243,8 @@ class WeightedSDEIntegrator:
             samples_corr = metropolis_hastings_mala(
                 x,
                 energy_function,
-                num_steps = self.post_mcmc_steps, 
-                dt = self.dt_negative_time,
+                num_steps=self.post_mcmc_steps,
+                dt=self.dt_negative_time,
             )
             samples = torch.concatenate((samples, samples_corr), axis=0)
 

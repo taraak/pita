@@ -1,14 +1,15 @@
 from typing import Optional, Tuple
 
+import numpy as np
 import torch
+from src.utils.data_utils import remove_mean
 from torch import Tensor, nn
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import scatter
 
 from .modules import CoorsNorm, EquivariantVectorOutput
 from .utils import CosineCutoff, NeighborEmbedding, act_class_mapping, rbf_class_mapping
-from src.utils.data_utils import remove_mean
-import numpy as np
+
 
 def center(pos, batch):
     pos_center = pos - scatter(pos, batch, dim=0, reduce="mean")[batch]
@@ -33,7 +34,7 @@ class EquivariantMultiHeadAttention(MessagePassing):
         norm_coors_scale_init: float = 1e-2,
         so3_equivariant: bool = False,
     ):
-        super(EquivariantMultiHeadAttention, self).__init__(aggr="add", node_dim=0)
+        super().__init__(aggr="add", node_dim=0)
         assert hidden_channels % num_heads == 0, (
             f"The number of hidden channels ({hidden_channels}) "
             f"must be evenly divisible by the number of "
@@ -61,9 +62,7 @@ class EquivariantMultiHeadAttention(MessagePassing):
         # input_channels = (
         #     hidden_channels + 1 + (hidden_channels if node_attr_dim > 0 else 0)
         # )
-        input_channels = (
-            hidden_channels + (hidden_channels if node_attr_dim > 0 else 0)
-        )
+        input_channels = hidden_channels + (hidden_channels if node_attr_dim > 0 else 0)
         # print(f"input_channels:{input_channels}")
         self.mixing_mlp = nn.Sequential(
             nn.Linear(input_channels, hidden_channels),
@@ -85,9 +84,7 @@ class EquivariantMultiHeadAttention(MessagePassing):
         else:
             self.q_proj = nn.Linear(hidden_channels, hidden_channels)
             self.k_proj = nn.Linear(hidden_channels, hidden_channels)
-        self.v_proj = nn.Linear(
-            hidden_channels, hidden_channels * (3 + int(so3_equivariant))
-        )
+        self.v_proj = nn.Linear(hidden_channels, hidden_channels * (3 + int(so3_equivariant)))
         self.o_proj = nn.Linear(hidden_channels, hidden_channels * 3)
         self.vec_proj = nn.Linear(hidden_channels, hidden_channels * 3, bias=False)
 
@@ -123,9 +120,9 @@ class EquivariantMultiHeadAttention(MessagePassing):
 
     def forward(self, x, vec, edge_index, r_ij, f_ij, d_ij, node_attr):
         # Mix x with node_attr(time, beta)
-        x = self.mixing_mlp(torch.cat([x, node_attr], dim=1))           
+        x = self.mixing_mlp(torch.cat([x, node_attr], dim=1))
         # zeros | (h_z), h_t,h_beta OR embedding(z), h_t,h_beta
-        
+
         # Input features: (BSxnum_atoms, hidden_channels)
         x = self.layernorm(x)
         # key/query features: (BSxnum_atoms, num_heads, head_dim)
@@ -210,13 +207,10 @@ class EquivariantMultiHeadAttention(MessagePassing):
             vec = (
                 vec_j * vec1.unsqueeze(1)
                 + vec2.unsqueeze(1) * d_ij.unsqueeze(2).unsqueeze(3)
-                + vec3.unsqueeze(1)
-                * torch.cross(d_ij.unsqueeze(2).unsqueeze(3), vec_j, dim=1)
+                + vec3.unsqueeze(1) * torch.cross(d_ij.unsqueeze(2).unsqueeze(3), vec_j, dim=1)
             )
         else:
-            vec = vec_j * vec1.unsqueeze(1) + vec2.unsqueeze(1) * d_ij.unsqueeze(
-                2
-            ).unsqueeze(3)
+            vec = vec_j * vec1.unsqueeze(1) + vec2.unsqueeze(1) * d_ij.unsqueeze(2).unsqueeze(3)
         return x, vec
 
     def aggregate(
@@ -293,8 +287,8 @@ class TorchMD_ET_dynamics(nn.Module):
         cutoff_lower: float = 0.0,
         cutoff_upper: float = 10.0,
         max_z: int = 100,
-        node_attr_dim: int = 2,     # 2 
-        edge_attr_dim: int = 1,     # 1
+        node_attr_dim: int = 2,  # 2
+        edge_attr_dim: int = 1,  # 1
         qk_norm: bool = False,
         norm_coors: bool = False,
         norm_coors_scale_init: float = 1e-2,
@@ -303,7 +297,7 @@ class TorchMD_ET_dynamics(nn.Module):
         condition_time: bool = True,
         condition_temperature: bool = True,
     ):
-        super(TorchMD_ET_dynamics, self).__init__()
+        super().__init__()
 
         assert distance_influence in ["keys", "values", "both", "none"]
         assert rbf_type in rbf_class_mapping, (
@@ -403,7 +397,7 @@ class TorchMD_ET_dynamics(nn.Module):
     def forward(
         self,
         # t: Tensor,
-        h: Tensor, 
+        h: Tensor,
         pos: Tensor,
         # batch: Tensor,
         edge_index: Optional[Tensor] = None,
@@ -430,12 +424,14 @@ class TorchMD_ET_dynamics(nn.Module):
         # mask = edge_index[0] == edge_index[1]
         # masked_edge_weight = edge_weight.masked_fill(mask, 1).unsqueeze(1)
         edge_weight = edge_attr.clone().squeeze(-1)  # shape: [79872]
-        mask = edge_index[0] == edge_index[1]        # shape: [79872]
+        mask = edge_index[0] == edge_index[1]  # shape: [79872]
         masked_edge_weight = edge_weight.masked_fill(mask, 1.0).unsqueeze(-1)  # shape: [79872, 1]
-        
+
         # print(f"edge_weight.shape:{edge_weight.shape}, masked_edge_weight.shape:{masked_edge_weight.shape}, edge_vec.shape:{edge_vec.shape}")
 
-        if self.clip_during_norm:    # clip edge_weight to avoid exploding values if two nodes are close
+        if (
+            self.clip_during_norm
+        ):  # clip edge_weight to avoid exploding values if two nodes are close
             masked_edge_weight = masked_edge_weight.clamp(min=1.0e-2)
 
         edge_vec = edge_vec / masked_edge_weight
@@ -448,22 +444,24 @@ class TorchMD_ET_dynamics(nn.Module):
             # print(f"edge_attr_cat.shape:{edge_attr_cat.shape}")
             edge_attr = torch.cat(
                 [edge_attr_cat, edge_attr], dim=-1
-            )   # (num_edges, num_rbf + edge_attr_dim)
+            )  # (num_edges, num_rbf + edge_attr_dim)
         else:
             edge_attr = self.distance_expansion(edge_attr)  # (num_edges, num_rbf)
 
         # embed atomic numbers using an embedding layer
-        if z is not None:           # h_initial, already one-hot
+        if z is not None:  # h_initial, already one-hot
             # if z.dim() > 1:
             #     z = z.squeeze()     # (num_atoms,)
-            x = self.embedding(z)   # (BSxnum_atoms, self.hidden_channels)
+            x = self.embedding(z)  # (BSxnum_atoms, self.hidden_channels)
         else:
-            x = torch.zeros(pos.size(0), self.hidden_channels).to(pos.device)   # (BS, hidden_dim)
+            x = torch.zeros(pos.size(0), self.hidden_channels).to(pos.device)  # (BS, hidden_dim)
         # if self.neighbor_embedding is not None:
         #     x = self.neighbor_embedding(z, x, edge_index, edge_weight, edge_attr)
         # vec here is invariant values, we are not modifying the vectors.
         # (BS x num_atoms, 3, hidden_channels)
-        vec = torch.zeros(pos.size(0), 3, self.hidden_channels, device=pos.device)      # (BS*n_particles, n_dimension, hidden_dim) i.e. vector feat
+        vec = torch.zeros(
+            pos.size(0), 3, self.hidden_channels, device=pos.device
+        )  # (BS*n_particles, n_dimension, hidden_dim) i.e. vector feat
         for attn in self.attention_layers:
             dx, dvec = attn(
                 x,
@@ -500,7 +498,7 @@ class TorchMD_ET_dynamics(nn.Module):
 
 
 class TorchMDDynamics(nn.Module):
-    """
+    r"""
     TorchMDDynamics Model for DDPM training.
 
     Parameters
@@ -610,15 +608,13 @@ class TorchMDDynamics(nn.Module):
             attn_activation=attn_activation,
             num_heads=n_heads,
             distance_influence=distance_influence,
-
             node_attr_dim=self.node_attr_dim,
             edge_attr_dim=self.edge_attr_dim,
-
             qk_norm=qk_norm,
             clip_during_norm=clip_during_norm,
             so3_equivariant=so3_equivariant,
             condition_time=condition_time,
-            condition_temperature=condition_temperature
+            condition_temperature=condition_temperature,
         )
         self.output_model = EquivariantVectorOutput(
             hidden_channels=hidden_nf,
@@ -713,7 +709,6 @@ class TorchMDDynamics(nn.Module):
         amino_idx = []
         amino_types = []
         for i, amino in enumerate(self.topology.residues):
-
             for atom_name in amino.atoms:
                 amino_idx.append(i)
                 amino_types.append(amino_dict[amino.name])
@@ -752,7 +747,7 @@ class TorchMDDynamics(nn.Module):
         self,
         t: Tensor,
         pos: Tensor,
-        beta: Tensor, 
+        beta: Tensor,
         # z: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Forward pass over torchmd-net model.
@@ -777,7 +772,7 @@ class TorchMDDynamics(nn.Module):
 
         # Changed by Leon
         pos_rs = pos.reshape(n_batch * self._n_particles, self._n_dimension).clone()
-    
+
         if t.shape != (n_batch, 1):
             t = t.repeat(n_batch)
         t = t.repeat(1, self._n_particles)
@@ -794,29 +789,29 @@ class TorchMDDynamics(nn.Module):
             h = h.repeat(n_batch, 1)
             h = h.reshape(n_batch * self._n_particles, -1)
             h = torch.cat([h, t], dim=-1)
-            '''
+            """
             h = self.h_initial.to(pos.device).unsqueeze(0).expand(n_batch, -1, -1)
             h = torch.cat([h, h_t, h_beta], dim=-1)
-            # alternatively, 
+            # alternatively,
             # z = self.h_initial.to(pos.device).unsqueeze(0).expand(n_batch, -1, -1)
             # h = torch.cat([h_t, h_beta], dim=-1) #i.e. node_attr
-            '''
-        else:              
+            """
+        else:
             # h = torch.cat([h_t, h_beta], dim=-1)
             h = t
 
         # h = torch.cat([h, t], dim=-1)
 
-        ### 
+        ###
         # t = t.unsqueeze(-1)
         # beta = beta.unsqueeze(-1)
         # if self.condition_time:
         #     h_t = torch.ones(n_batch, self._n_particles).to(pos.device) * t
         # if self.condition_temperature:
         #     h_beta = torch.ones(n_batch, self._n_particles).to(pos.device) * beta
-        # h = h.reshape(n_batch * self._n_particles, self.node_attr_dim)       
-        ###  
-                         
+        # h = h.reshape(n_batch * self._n_particles, self.node_attr_dim)
+        ###
+
         edge_attr = torch.sum((pos_rs[edges[0]] - pos_rs[edges[1]]) ** 2, dim=1, keepdim=True)
         edge_vec = pos_rs[edges[0]] - pos_rs[edges[1]]
 

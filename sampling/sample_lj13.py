@@ -41,8 +41,7 @@ class Langevin(RandomWalkKernel):
         new_params = {
             k: v
             - step_size * param_grad[k]
-            + math.sqrt(2 * step_size)
-            * torch.randn(v.shape, dtype=v.dtype, device=v.device)
+            + math.sqrt(2 * step_size) * torch.randn(v.shape, dtype=v.dtype, device=v.device)
             for k, v in params.items()
         }
         energy_proposal = self.potential_fn(new_params)
@@ -50,7 +49,7 @@ class Langevin(RandomWalkKernel):
 
         accept_prob = (-delta_energy).exp().clamp(max=1.0).item()
         rand = pyro.sample(
-            "rand_t={}".format(self._t),
+            f"rand_t={self._t}",
             dist.Uniform(0.0, 1.0),
         )
         accepted = False
@@ -61,9 +60,7 @@ class Langevin(RandomWalkKernel):
 
         if self._t <= self._warmup_steps:
             adaptation_speed = max(0.001, 0.1 / math.sqrt(1 + self._t))
-            self._log_step_size += adaptation_speed * (
-                accept_prob - self.target_accept_prob
-            )
+            self._log_step_size += adaptation_speed * (accept_prob - self.target_accept_prob)
 
         self._t += 1
 
@@ -103,7 +100,7 @@ if __name__ == "__main__":
         "--from_file",
         type=str,
         default=None,
-        #default="/home/mila/a/alexander.tong/feynman-kac-diffusion/data/train_split_LJ13-1000.npy",
+        # default="/home/mila/a/alexander.tong/feynman-kac-diffusion/data/train_split_LJ13-1000.npy",
     )
     parser.add_argument("--i", type=int, default=0)
     args = parser.parse_args()
@@ -120,7 +117,7 @@ if __name__ == "__main__":
         )
     if args.from_file:
         data = np.load(args.from_file)
-        data = data[args.i:args.i+1]
+        data = data[args.i : args.i + 1]
         mcmc = MCMC(
             kernel,
             num_samples=args.num_samples,
@@ -129,9 +126,7 @@ if __name__ == "__main__":
             num_chains=data.shape[0],
         )
     else:
-        mcmc = MCMC(
-            kernel, num_samples=args.num_samples, warmup_steps=args.warmup_steps
-        )
+        mcmc = MCMC(kernel, num_samples=args.num_samples, warmup_steps=args.warmup_steps)
     mcmc.run()
     samples = mcmc.get_samples()
     print(samples)
