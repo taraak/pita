@@ -1,8 +1,19 @@
 import numpy as np
 import torch
+from lightning.pytorch.loggers import WandbLogger
 from scipy.stats import qmc
 from torch import vmap
 from torch.func import hessian, jacrev
+
+
+def get_wandb_logger(loggers):
+    """Gets the wandb logger if it is the list of loggers otherwise returns None."""
+    wandb_logger = None
+    for logger in loggers:
+        if isinstance(logger, WandbLogger):
+            wandb_logger = logger
+            break
+    return wandb_logger
 
 
 def sample_from_tensor(tensor, num_samples):
