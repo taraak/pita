@@ -19,10 +19,11 @@ class SimpleReplayData(NamedTuple):
 
 
 class ReplayDataModule(torch.nn.Module):
-    def __init__(self, x: torch.Tensor, energy: torch.Tensor):
+    def __init__(self, x: torch.Tensor, energy: torch.Tensor, force: torch.Tensor):
         super().__init__()
         self.register_buffer("x", x)
         self.register_buffer("energy", energy)
+        self.register_buffer("force", torch.zeros_like(x))
 
 
 def sample_without_replacement(logits: torch.Tensor, n: int) -> torch.Tensor:
@@ -257,6 +258,7 @@ class SimpleBuffer:
             energy=torch.zeros(
                 self.max_length,
             ).to(device),
+            force=torch.zeros(self.max_length, dim).to(device),
         )
         self.possible_indices = torch.arange(self.max_length).to(device)
         self.device = device
@@ -281,7 +283,11 @@ class SimpleBuffer:
             return self.current_index
 
     @torch.no_grad()
-    def add(self, x: torch.Tensor, energy: torch.Tensor) -> None:
+    def add(self,
+            x: torch.Tensor,
+            energy: torch.Tensor,
+            force: Optional[torch.Tensor]=None,
+            ) -> None:
         """Add a new batch of generated data to the replay buffer."""
         batch_size = x.shape[0]
         x = x.to(self.device)
@@ -289,6 +295,11 @@ class SimpleBuffer:
         indices = (torch.arange(batch_size) + self.current_index).to(self.device) % self.max_length
         self.buffer.x[indices] = x
         self.buffer.energy[indices] = energy
+
+        if force is not None:
+            force = force.to(self.device)
+            self.buffer.force[indices] = force
+        
         new_index = self.current_index + batch_size
         if not self.is_full:
             self.is_full = new_index >= self.max_length
@@ -308,7 +319,7 @@ class SimpleBuffer:
 
         idx = torch.cat(idxs)
 
-        return self.buffer.x[idx], self.buffer.energy[idx]
+        return self.buffer.x[idx], self.buffer.energy[idx], self.buffer.force[idx]
 
     @torch.no_grad()
     def sample(
@@ -337,24 +348,26 @@ class SimpleBuffer:
                 ).to(self.device)
             else:
                 indices = torch.randperm(max_index)[:batch_size].to(self.device)
-        x, energy, indices = (
+        x, energy, force, indices = (
             self.buffer.x[indices],
             self.buffer.energy[indices],
+            self.buffer.force[indices],
             indices,
         )
-        return x, energy, indices
+        return x, energy, force, indices
 
     def sample_n_batches(
         self, batch_size: int, n_batches: int
     ) -> Iterable[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Returns a list of batches."""
-        x, energy, indices = self.sample(batch_size * n_batches)
+        x, energy, force, indices = self.sample(batch_size * n_batches)
         x_batches = torch.chunk(x, n_batches)
         energy_batches = torch.chunk(energy, n_batches)
+        force_batches = torch.chunk(force, n_batches)
         indices_batches = torch.chunk(indices, n_batches)
         dataset = [
-            (x, energy, indxs)
-            for x, energy, indxs in zip(x_batches, energy_batches, indices_batches)
+            (x, energy, force, indxs)
+            for x, energy, force, indxs in zip(x_batches, energy_batches, force_batches, indices_batches)
         ]
         return dataset
 
@@ -363,6 +376,7 @@ class SimpleBuffer:
         to_save = {
             "x": self.buffer.x.detach().cpu(),
             "energy": self.buffer.energy.detach().cpu(),
+            "force": self.buffer.force.detach().cpu(),
             "current_index": self.current_index,
             "is_full": self.is_full,
             "can_sample": self.can_sample,
@@ -375,6 +389,7 @@ class SimpleBuffer:
         indices = torch.arange(self.max_length)
         self.buffer.x[indices] = old_buffer["x"].to(self.device)
         self.buffer.energy[indices] = old_buffer["energy"].to(self.device)
+        self.buffer.force[indices] = old_buffer["force"].to(self.device)
         self.current_index = old_buffer["current_index"]
         self.is_full = old_buffer["is_full"]
         self.can_sample = old_buffer["can_sample"]
@@ -383,12 +398,13 @@ class SimpleBuffer:
         self, batch_size: int, n_batches: int
     ) -> Iterable[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Returns a list of batches."""
-        x, log_w, indices = self.sample(batch_size * n_batches)
+        x, log_w, force, indices = self.sample(batch_size * n_batches)
         x_batches = torch.chunk(x, n_batches)
         log_w_batches = torch.chunk(log_w, n_batches)
+        force_batches = torch.chunk(force, n_batches)
         indices_batches = torch.chunk(indices, n_batches)
         dataset = [
-            (x, log_w, indxs) for x, log_w, indxs in zip(x_batches, log_w_batches, indices_batches)
+            (x, log_w, force, indxs) for x, log_w, indxs in zip(x_batches, force_batches, log_w_batches, indices_batches)
         ]
         return dataset
 
@@ -397,6 +413,7 @@ class SimpleBuffer:
         to_save = {
             "x": self.buffer.x.detach().cpu(),
             "log_w": self.buffer.log_w.detach().cpu(),
+            "force": self.buffer.force.detach().cpu(),
             "current_index": self.current_index,
             "is_full": self.is_full,
             "can_sample": self.can_sample,
@@ -409,6 +426,7 @@ class SimpleBuffer:
         indices = torch.arange(self.max_length)
         self.buffer.x[indices] = old_buffer["x"].to(self.device)
         self.buffer.log_w[indices] = old_buffer["log_w"].to(self.device)
+        self.buffer.force[indices] = old_buffer["force"].to(self.device)
         self.current_index = old_buffer["current_index"]
         self.is_full = old_buffer["is_full"]
         self.can_sample = old_buffer["can_sample"]
