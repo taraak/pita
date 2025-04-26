@@ -42,7 +42,7 @@ class energyTempModule(BaseLightningModule):
         clipper: Clipper,
         noise_schedule: BaseNoiseSchedule,
         partial_buffer: PrioritisedReplayBuffer,
-        num_temp_annealed_buffer_samples: int,
+        # num_temp_annealed_buffer_samples: int,
         training_batch_size: int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
@@ -809,7 +809,6 @@ class energyTempModule(BaseLightningModule):
             )
             logger.info(f"temp_index is {temp_index} and temp_index_lower is {temp_index_lower}")
             logger.info(f"Resampling interval is {self.hparams.resampling_interval}")
-    
             final_samples, _, _ = self.generate_samples(
                 prior=self.priors[temp_index + 1],
                 energy_function=self.energy_functions[temp_index + 1],
