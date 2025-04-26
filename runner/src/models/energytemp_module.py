@@ -42,7 +42,7 @@ class energyTempModule(BaseLightningModule):
         clipper: Clipper,
         noise_schedule: BaseNoiseSchedule,
         partial_buffer: PrioritisedReplayBuffer,
-        num_samples_to_generate_per_epoch: int,
+        num_temp_annealed_buffer_samples: int,
         training_batch_size: int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
@@ -805,32 +805,19 @@ class energyTempModule(BaseLightningModule):
             temp_index = torch.nonzero(self.inverse_temperatures == inverse_temp)[0].item()
             temp_index_lower = torch.nonzero(self.inverse_temperatures == inverse_lower_temp)[0].item()
             logger.info(
-                f"Generating samples for temperature {inverse_temp:0.3f} annealed to temperature {inverse_lower_temp:0.3f}"
+                f"Generating {self.hparams.num_samples_to_save} samples for temperature {inverse_temp:0.3f} annealed to temperature {inverse_lower_temp:0.3f}"
             )
             logger.info(f"temp_index is {temp_index} and temp_index_lower is {temp_index_lower}")
-
-            final_samples = []
-            batch_size = self.hparams.num_eval_samples
-            n_batches = self.hparams.num_samples_to_save // batch_size
-            logger.info(
-                f"Generating {n_batches} batches of annealed samples of size {batch_size}."
-            )
             logger.info(f"Resampling interval is {self.hparams.resampling_interval}")
+    
+            final_samples, _, _ = self.generate_samples(
+                prior=self.priors[temp_index + 1],
+                energy_function=self.energy_functions[temp_index + 1],
+                num_samples=self.hparams.num_samples_to_save,
+                inverse_temp=inverse_temp,
+                annealing_factor=inverse_lower_temp / inverse_temp,
+            )
 
-            for i in range(n_batches):
-                start = time.time()
-                samples, _, _ = self.generate_samples(
-                    prior=self.priors[temp_index + 1],
-                    energy_function=self.energy_functions[temp_index + 1],
-                    num_samples=self.hparams.num_samples_to_save,
-                    inverse_temp=inverse_temp,
-                    annealing_factor=inverse_lower_temp / inverse_temp,
-                )
-                final_samples.append(samples)
-                end = time.time()
-                logger.info(f"batch {i} took {end - start:0.2f}s")
-
-            final_samples = torch.cat(final_samples, dim=0)
             output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
             # append time to avoid overwriting
             path = f"{output_dir}/samples_temperature_{self.temperatures[temp_index]:0.3f}_annealed_to_{self.temperatures[temp_index_lower]}.pt"
