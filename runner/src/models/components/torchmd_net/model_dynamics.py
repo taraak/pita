@@ -563,7 +563,7 @@ class TorchMDDynamics(nn.Module):
         cutoff_upper: float = 10.0,
         max_z: int = 100,
         attn_activation: str = "silu",
-        n_heads: int = 2,
+        n_heads: int = 1,
         distance_influence: str = "both",
         reduce_op: str = "sum",
         qk_norm: bool = False,
@@ -572,7 +572,7 @@ class TorchMDDynamics(nn.Module):
         so3_equivariant: bool = False,
         condition_time=True,
         condition_temperature=True,
-        is_alanine=False,
+        is_alanine=True,
     ):
         super().__init__()
         self._n_particles = n_particles
