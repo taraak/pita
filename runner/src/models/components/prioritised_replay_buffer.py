@@ -283,11 +283,12 @@ class SimpleBuffer:
             return self.current_index
 
     @torch.no_grad()
-    def add(self,
-            x: torch.Tensor,
-            energy: torch.Tensor,
-            force: Optional[torch.Tensor]=None,
-            ) -> None:
+    def add(
+        self,
+        x: torch.Tensor,
+        energy: torch.Tensor,
+        force: Optional[torch.Tensor] = None,
+    ) -> None:
         """Add a new batch of generated data to the replay buffer."""
         batch_size = x.shape[0]
         x = x.to(self.device)
@@ -299,7 +300,7 @@ class SimpleBuffer:
         if force is not None:
             force = force.to(self.device)
             self.buffer.force[indices] = force
-        
+
         new_index = self.current_index + batch_size
         if not self.is_full:
             self.is_full = new_index >= self.max_length
@@ -367,7 +368,9 @@ class SimpleBuffer:
         indices_batches = torch.chunk(indices, n_batches)
         dataset = [
             (x, energy, force, indxs)
-            for x, energy, force, indxs in zip(x_batches, energy_batches, force_batches, indices_batches)
+            for x, energy, force, indxs in zip(
+                x_batches, energy_batches, force_batches, indices_batches
+            )
         ]
         return dataset
 
@@ -404,7 +407,8 @@ class SimpleBuffer:
         force_batches = torch.chunk(force, n_batches)
         indices_batches = torch.chunk(indices, n_batches)
         dataset = [
-            (x, log_w, force, indxs) for x, log_w, indxs in zip(x_batches, force_batches, log_w_batches, indices_batches)
+            (x, log_w, force, indxs)
+            for x, log_w, indxs in zip(x_batches, force_batches, log_w_batches, indices_batches)
         ]
         return dataset
 

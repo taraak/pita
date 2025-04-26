@@ -422,17 +422,13 @@ class energyTempModule(BaseLightningModule):
         if self.hparams.loss_weights["energy_matching"] == 0:
             return torch.zeros(x0.shape[0], device=x0.device)
 
-        if (
-            self.trainer.global_step
-            % self.hparams.do_energy_matching_loss_every_n_steps
-            != 0
-        ):
+        if self.trainer.global_step % self.hparams.do_energy_matching_loss_every_n_steps != 0:
             return torch.zeros(x0.shape[0], device=x0.device), None
-        
+
         if x0_energies is None:
             x0_energies = energy_function(x0)
 
-        U0_true = - x0_energies
+        U0_true = -x0_energies
         mask = U0_true > energy_threshold
         U0_pred = self.energy_net.forward_energy(h0, x0, inverse_temp)
 
@@ -489,7 +485,12 @@ class energyTempModule(BaseLightningModule):
                 dem_energy_loss,
                 energy_matching_loss,
             ) = self.get_loss(
-                ht, x0_samples, x0_energies, x0_forces, inverse_temp, self.energy_functions[temp_index]
+                ht,
+                x0_samples,
+                x0_energies,
+                x0_forces,
+                inverse_temp,
+                self.energy_functions[temp_index],
             )
 
         should_log_stratified_energy_score = (
@@ -555,11 +556,7 @@ class energyTempModule(BaseLightningModule):
             self.hparams.training_batch_size
         )
 
-        loss = self.model_step(x0_samples, 
-                               x0_energies,
-                               x0_forces,
-                               temp_index,
-                               prefix="train")
+        loss = self.model_step(x0_samples, x0_energies, x0_forces, temp_index, prefix="train")
         return loss
 
     def on_train_epoch_end(self) -> None:
@@ -750,7 +747,11 @@ class energyTempModule(BaseLightningModule):
             prefix=prefix_plot,
         )
         self.log(f"{prefix_plot}/energy_mean", -samples_energy.mean(), sync_dist=True)
-        self.log(f"{prefix_plot}/energy_mean_no_resampling", samples_not_resampled_energy.mean(), sync_dist=True)
+        self.log(
+            f"{prefix_plot}/energy_mean_no_resampling",
+            samples_not_resampled_energy.mean(),
+            sync_dist=True,
+        )
         if self.hparams.resampling_interval != -1:
             self._log_logweights(
                 logweights,
@@ -780,16 +781,20 @@ class energyTempModule(BaseLightningModule):
         logger.debug(f"Finished eval epoch end {prefix}")
 
     def on_test_epoch_end(self) -> None:
-    
         if self.hparams.temps_to_anneal_test is None:
-            inverse_temps_to_anneal = [(self.inverse_temperatures[i], self.inverse_temperatures[i+1])
-                                for i in range(len(self.inverse_temperatures)-1)]
+            inverse_temps_to_anneal = [
+                (self.inverse_temperatures[i], self.inverse_temperatures[i + 1])
+                for i in range(len(self.inverse_temperatures) - 1)
+            ]
         else:
             highest_temp = self.temperatures[0]
-            inverse_temps_to_anneal = [(torch.round(highest_temp/ a, decimals=2),
-                                        torch.round(highest_temp/ b, decimals=2))
-                                        for a, b in self.hparams.temps_to_anneal_test]
-
+            inverse_temps_to_anneal = [
+                (
+                    torch.round(highest_temp / a, decimals=2),
+                    torch.round(highest_temp / b, decimals=2),
+                )
+                for a, b in self.hparams.temps_to_anneal_test
+            ]
 
         for temps in inverse_temps_to_anneal:
             inverse_temp = temps[0]
@@ -801,7 +806,7 @@ class energyTempModule(BaseLightningModule):
                 f"Generating samples for temperature {inverse_temp:0.3f} annealed to temperature {inverse_lower_temp:0.3f}"
             )
             logger.info(f"temp_index is {temp_index} and temp_index_lower is {temp_index_lower}")
-            
+
             final_samples = []
             batch_size = self.hparams.num_eval_samples
             n_batches = self.hparams.num_samples_to_save // batch_size
@@ -1015,7 +1020,9 @@ class energyTempModule(BaseLightningModule):
                 init_states = self.energy_functions[0].sample_train_set(
                     self.hparams.num_init_samples
                 )
-            init_energies, init_forces = self.energy_functions[temp_index](init_states, return_force=True) 
+            init_energies, init_forces = self.energy_functions[temp_index](
+                init_states, return_force=True
+            )
 
             if temp_index == 0:
                 self.buffers[temp_index].add(init_states, init_energies, init_forces)
