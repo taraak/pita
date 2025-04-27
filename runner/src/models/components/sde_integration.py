@@ -48,32 +48,39 @@ def negative_time_descent(x, energy_function, num_steps, dt, do_langevin=False):
         samples.append(x)
     return torch.stack(samples)
 
-
+'''updated MALA with filtering'''
 def metropolis_hastings_mala(x, energy_function, num_steps, dt):
     x_curr = x.clone()
-    logp_curr = energy_function(x_curr)
+    logp_curr = energy_function(x_curr)  
+    valid_mask = torch.isfinite(logp_curr).squeeze()  
+    # print(f"number of valid samples:{valid_mask.sum().item()} out of {x_curr.size(0)} samples")
+    
+    x_valid = x_curr[valid_mask]  
+    x_invalid = x_curr[~valid_mask] 
     samples = []
-    for _ in range(num_steps):
-        x_prop, log_q_forward, log_q_backward = mala_proposal(x_curr, energy_function, dt)
-        logp_prop = energy_function(x_prop)
-
-        log_accept_ratio = (logp_prop - logp_curr) + (log_q_backward - log_q_forward)
-        accept_prob = torch.exp(
-            torch.minimum(log_accept_ratio, torch.zeros_like(log_accept_ratio))
-        )
-
-        accept = (torch.rand_like(accept_prob) < accept_prob).float().unsqueeze(-1)
-        x_curr = accept * x_prop + (1 - accept) * x_curr
-        logp_curr = accept.squeeze() * logp_prop + (1 - accept.squeeze()) * logp_curr
-
-        if energy_function.is_molecule:
-            x_curr = remove_mean(
-                x_curr, energy_function.n_particles, energy_function.n_spatial_dim
-            )
+    for i in range(num_steps):
+        try:
+            # Propose updates for valid rows
+            if x_valid.size(0) > 0:  
+                x_valid_prop, log_q_forward, log_q_backward = mala_proposal(x_valid, energy_function, dt)
+                logp_valid_prop = energy_function(x_valid_prop)
+                
+                log_accept_ratio = (logp_valid_prop - logp_curr[valid_mask]) + (log_q_backward - log_q_forward)
+                accept_prob = torch.exp(torch.minimum(log_accept_ratio, torch.zeros_like(log_accept_ratio)))
+                
+                # Accept or reject the proposal for valid rows
+                accept_valid = (torch.rand_like(accept_prob) < accept_prob).float().unsqueeze(-1)
+                
+                # Update valid rows based on acceptance
+                x_valid = accept_valid * x_valid_prop + (1 - accept_valid) * x_valid
+                logp_curr[valid_mask] = accept_valid.squeeze() * logp_valid_prop + (1 - accept_valid.squeeze()) * logp_curr[valid_mask]
+                if energy_function.is_molecule:
+                    x_valid = remove_mean(x_valid, energy_function.n_particles, energy_function.n_spatial_dim)
+                x_curr = torch.cat([x_valid, x_invalid], dim=0)
+        except Exception as e:
+            print(f"Error during MALA step: {e}")
         samples.append(x_curr)
-
     return torch.stack(samples)
-
 
 def mala_proposal(x, energy_function, dt):
     grad = grad_E(x, energy_function)
