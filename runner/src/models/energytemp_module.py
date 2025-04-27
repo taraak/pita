@@ -1,6 +1,5 @@
 import copy
 import logging
-import time
 from dataclasses import fields
 from typing import List, Optional
 
@@ -809,7 +808,7 @@ class energyTempModule(BaseLightningModule):
             )
             logger.info(f"temp_index is {temp_index} and temp_index_lower is {temp_index_lower}")
             logger.info(f"Resampling interval is {self.hparams.resampling_interval}")
-            final_samples, _, _ = self.generate_samples(
+            final_samples, _, sde_terms = self.generate_samples(
                 prior=self.priors[temp_index + 1],
                 energy_function=self.energy_functions[temp_index + 1],
                 num_samples=self.hparams.num_samples_to_save,
@@ -837,6 +836,27 @@ class energyTempModule(BaseLightningModule):
                 prefix="test",
                 generated_samples=batch_generated_samples,
             )
+            prefix_plot = f"test/inverse_temp= {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}"
+            for term in fields(SDETerms):
+                if (
+                    term.name == "drift_X"
+                    or term.name == "drift_A"
+                    or getattr(sde_terms[0], term.name) is None
+                ):
+                    continue
+                self._log_sde_term(sde_terms, term.name, prefix=prefix_plot)
+
+            energy_function = self.energy_functions[temp_index + 1]
+            samples_energy = energy_function(final_samples)
+            wandb_logger = get_wandb_logger(self.loggers)
+            energy_function.log_on_epoch_end(
+                final_samples,
+                samples_energy,
+                wandb_logger,
+                prefix=prefix_plot,
+            )
+            self.log(f"{prefix_plot}/energy_mean", -samples_energy.mean(), sync_dist=True)
+            logger.debug("Finished eval epoch end test")
 
     def _log_logweights(self, logweights, prefix="val"):
         wandb_logger = get_wandb_logger(self.loggers)

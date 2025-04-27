@@ -1,5 +1,7 @@
 HYDRA_FULL_ERROR=1 python src/train.py -m +trainer.num_sanity_val_steps=0 \
+  launcher=mila_ddp \
 train=False \
+hydra.launcher.tasks_per_node=4 \
 model=energytemp \
 experiment=alp_energytemp \
 trainer=ddp model.resampling_interval=1 \
@@ -13,11 +15,12 @@ model.do_energy_matching_loss_every_n_steps=1 \
 model.loss_weights.energy_score=1.0 \
 model.loss_weights.score=1.0 \
 model.loss_weights.target_score=0.01 \
-model.num_samples_to_save=4096 \
+model.num_samples_to_save=4000 \
 model/net=egnn_dynamics_ad2_cat \
-model.inference_batch_size=96 \
-model.num_negative_time_steps=1 \
-model.end_resampling_step=900 \
+model.inference_batch_size=80 \
+model.num_negative_time_steps=1,100 \
+model.end_resampling_step=900,1000 \
+model.resample_at_end=False,True \
 model.net.hidden_nf=64 \
 ckpt_path=/network/scratch/a/alexander.tong/energy_temp/logs/train/runs/2025-04-24_21-50-16/checkpoints/last.ckpt \
 #debug=short \
