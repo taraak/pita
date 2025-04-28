@@ -437,6 +437,8 @@ class TorchMD_ET_dynamics(nn.Module):
         else:
             x = torch.zeros(pos.size(0), self.hidden_channels).to(pos.device)  # (BSxnum_atoms, hidden_dim)
         if self.neighbor_embedding is not None:
+            if isinstance(edge_index, list):  # If it's a list
+                edge_index = torch.stack(edge_index, dim=0)  # Convert to [2, num_edges] tensor
             x = self.neighbor_embedding(z, x, edge_index, edge_weight, edge_attr)
        # vec here is invariant values, we are not modifying the vectors.
        # (BS x num_atoms, 3, hidden_channels)
@@ -536,7 +538,7 @@ class TorchMDDynamicsV2(nn.Module):
         rbf_type: str = "expnorm",
         trainable_rbf: bool = False,
         activation: str = "silu",
-        neighbor_embedding: int = True,
+        neighbor_embedding: int = False,
         cutoff_lower: float = 0.0,
         cutoff_upper: float = 10.0,
         max_z: int = 22,                       # change accordingly to system size
