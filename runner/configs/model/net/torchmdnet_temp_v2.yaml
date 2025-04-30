@@ -1,4 +1,4 @@
-_target_: src.models.components.torchmd_net.TorchMDDynamics
+_target_: src.models.components.torchmd_net.TorchMDDynamicsV2
 _partial_: true
 n_particles: ${energy.n_particles}
 n_dimension: ${energy.spatial_dim}
@@ -10,6 +10,8 @@ activation: "silu"
 condition_time: True
 condition_temperature: True
 reduce_op: "sum"
+max_z: 22
+neighbor_embedding: True
 qk_norm: True
 clip_during_norm: True
 so3_equivariant: True
