@@ -2,6 +2,7 @@ import math
 import typing
 import warnings
 
+import torchtune
 import flash_attn
 
 # from flash_attn.layers import rotary
@@ -79,7 +80,9 @@ def bias_dropout_add_scale_fused_inference(
 
 
 @torch.jit.script
-def modulate_fused(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+def modulate_fused(
+    x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor
+) -> torch.Tensor:
     return modulate(x, shift, scale)
 
 
@@ -130,7 +133,7 @@ class LayerNorm(nn.Module):
         self.dim = dim
 
     def forward(self, x):
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast("cuda", enabled=False):
             x = F.layer_norm(x.float(), [self.dim])
         return x * self.weight[None, None, :]
 
@@ -173,12 +176,16 @@ class TimestepEmbedder(nn.Module):
         # https://github.com/openai/glide-text2im/blob/main/glide_text2im/nn.py
         half = dim // 2
         freqs = torch.exp(
-            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
+            -math.log(max_period)
+            * torch.arange(start=0, end=half, dtype=torch.float32)
+            / half
         ).to(device=t.device)
         args = t[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
-            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+            embedding = torch.cat(
+                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1
+            )
         return embedding
 
     def forward(self, t):
@@ -244,37 +251,53 @@ class DDiTBlock(nn.Module):
 
         bias_dropout_scale_fn = self._get_bias_dropout_scale()
 
-        (shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp) = self.adaLN_modulation(
-            c
-        )[:, None].chunk(6, dim=2)
+        (shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp) = (
+            self.adaLN_modulation(c)[:, None].chunk(6, dim=2)
+        )
 
         # attention operation
         x_skip = x
         x = modulate_fused(self.norm1(x), shift_msa, scale_msa)
 
         qkv = self.attn_qkv(x)
-        qkv = rearrange(qkv, "b s (three h d) -> b s three h d", three=3, h=self.n_heads)
-        with torch.cuda.amp.autocast(enabled=False):
-            cos, sin = rotary_cos_sin
-            qkv = apply_rotary_pos_emb(qkv, cos.to(qkv.dtype), sin.to(qkv.dtype))
-        qkv = rearrange(qkv, "b s ... -> (b s) ...")
-        if seqlens is None:
-            cu_seqlens = torch.arange(
-                0,
-                (batch_size + 1) * seq_len,
-                step=seq_len,
-                dtype=torch.int32,
-                device=qkv.device,
-            )
-        else:
-            cu_seqlens = seqlens.cumsum(-1)
-        x = flash_attn.flash_attn_interface.flash_attn_varlen_qkvpacked_func(
-            qkv, cu_seqlens, seq_len, 0.0, causal=False
+        qkv = rearrange(
+            qkv, "b s (three h d) -> b s three h d", three=3, h=self.n_heads
         )
-
-        x = rearrange(x, "(b s) h d -> b s (h d)", b=batch_size)
-
-        x = bias_dropout_scale_fn(self.attn_out(x), None, gate_msa, x_skip, self.dropout)
+        #with torch.amp.autocast("cuda", enabled=False):
+        #    cos, sin = rotary_cos_sin
+        #    qkv = apply_rotary_pos_emb(qkv, cos.to(qkv.dtype), sin.to(qkv.dtype))
+        if False:
+            qkv = rearrange(qkv, "b s ... -> (b s) ...")
+            if seqlens is None:
+                cu_seqlens = torch.arange(
+                    0,
+                    (batch_size + 1) * seq_len,
+                    step=seq_len,
+                    dtype=torch.int32,
+                    device=qkv.device,
+                )
+            else:
+                cu_seqlens = seqlens.cumsum(-1)
+            x = flash_attn.flash_attn_interface.flash_attn_varlen_qkvpacked_func(
+                qkv, cu_seqlens, seq_len, 0.0, causal=False
+            )
+            x = rearrange(x, "(b s) h d -> b s (h d)", b=batch_size)
+        # else:
+        # from torch.nn.attention import SDPBackend, sdpa_kernel
+        # with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+        # qkv = rearrange(qkv, "(b s) ... -> b s ...", b=batch_size)
+        # qkv = rearrange(qkv, "b s three h d -> b h three s d")
+        q = rotary_cos_sin(qkv[:, :, 0])
+        k = rotary_cos_sin(qkv[:, :, 1])
+        v = qkv[:, :, 2]
+        q = rearrange(q, "b s h d -> b h s d")
+        k = rearrange(k, "b s h d -> b h s d")
+        v = rearrange(v, "b s h d -> b h s d")
+        x = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+        x = rearrange(x, "b h s d -> b s (h d)")
+        x = bias_dropout_scale_fn(
+            self.attn_out(x), None, gate_msa, x_skip, self.dropout
+        )
 
         # mlp operation
         x = bias_dropout_scale_fn(
@@ -363,10 +386,10 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         x_init = x
         c = F.silu(self.sigma_map(sigma))
 
-        rotary_cos_sin = self.rotary_emb(x)
+        rotary_cos_sin = self.rotary_emb
 
         logZ = None
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
             for i in range(len(self.blocks)):
                 x = self.blocks[i](x, rotary_cos_sin, c, seqlens=None)
             logits = self.output_layer(x, c)
@@ -421,7 +444,9 @@ class WrappedPretrainedDIT(torch.nn.Module):
             if isinstance(pretrained_backbone, DIT):
                 vocab_size = pretrained_backbone.vocab_size
             elif check_instance_UNetVDM(pretrained_backbone):
-                vocab_size = 257  # hard-coded for celeba #pretrained_backbone.cfg.vocab_size
+                vocab_size = (
+                    257  # hard-coded for celeba #pretrained_backbone.cfg.vocab_size
+                )
             else:
                 vocab_size = pretrained_backbone.config.vocab_size
             self.logZ_net = DITBetterHydra(
@@ -489,7 +514,9 @@ class WrappedPretrainedDIT(torch.nn.Module):
                 # warn that it may be unsupported
                 warnings.warn("Using default sigma_map for WrappedPretrainedDIT")
 
-            logZ = self.logZ_layer(hidden_states[-1].detach(), cond.detach()).mean(dim=1)
+            logZ = self.logZ_layer(hidden_states[-1].detach(), cond.detach()).mean(
+                dim=1
+            )
 
         return logits, logZ
 
@@ -544,7 +571,12 @@ class DIT3D(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         self.vocab_size = vocab_size
         self.vocab_embed = torch.nn.Linear(vocab_size, config.model.hidden_size)
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
-        self.rotary_emb = Rotary(config.model.hidden_size // config.model.n_heads)
+        #self.rotary_emb = Rotary(config.model.hidden_size // config.model.n_heads)
+        self.rotary_emb = torchtune.modules.RotaryPositionalEmbeddings(
+            dim=config.model.hidden_size // config.model.n_heads,
+            base=10000,
+            max_seq_len=1024
+        )
 
         blocks = []
         for _ in range(config.model.n_blocks):
@@ -577,8 +609,8 @@ class DIT3D(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         x = x.reshape(-1, self.n_particles, self.vocab_size)
         x = self.vocab_embed(x)
         c = F.silu(self.sigma_map(t))
-        rotary_cos_sin = self.rotary_emb(x)
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        rotary_cos_sin = self.rotary_emb
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
             for i in range(len(self.blocks)):
                 x = self.blocks[i](x, rotary_cos_sin, c, seqlens=None)
             out = self.output_layer(x, c)

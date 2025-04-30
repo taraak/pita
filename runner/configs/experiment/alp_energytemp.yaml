@@ -21,9 +21,9 @@ defaults:
   - override /model/noise_schedule: elucidating
 
 model:
-  net:
-    hidden_nf: 64
-    n_layers: 5
+#  net:
+#    hidden_nf: 64
+#    n_layers: 5
 
   # net: 
   #   hidden_layers: 5

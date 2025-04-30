@@ -66,3 +66,8 @@ dependencies:
       #AttributeError: 'FigureCanvasInterAgg' object has no attribute 'tostring_rgb'. Did you mean: 'tostring_argb'?
       - -e fab
       - -e runner/
+      # dit requires
+      # --no-build-isolation flash-attn
+      # huggingface_hub
+      # torchtune
+      # torchao
