@@ -1,6 +1,6 @@
 _target_: src.models.components.dit.DIT3D
 _partial_: true
-vocab_size: ${energy.n_dimensions}
+vocab_size: ${energy.spatial_dim}
 n_particles: ${energy.n_particles}
 #hidden_size: 512
 hidden_size: 768
