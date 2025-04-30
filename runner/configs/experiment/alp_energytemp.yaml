@@ -24,6 +24,10 @@ model:
   net:
     hidden_nf: 64
     n_layers: 5
+
+  # net: 
+  #   hidden_layers: 5
+
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
@@ -69,6 +73,9 @@ model:
   temperatures:
     - 600
     - 550
+  temps_to_anneal_test:
+    - [600, 600]
+    - [600, 550]
 
   loss_weights:
     energy_score: 1.0
@@ -83,8 +90,8 @@ model:
 
   num_mc_samples: 1000
 
-  num_epochs_per_temp:
-    - 300
+  num_epochs_per_temp: 
+    - 100
 
   dem:
     noise_schedule: elucidating

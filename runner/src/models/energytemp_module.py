@@ -1,6 +1,5 @@
 import copy
 import logging
-import time
 from dataclasses import fields
 from typing import List, Optional
 
@@ -29,6 +28,9 @@ from .components.score_estimator import estimate_grad_Rt, estimate_Rt
 
 logger = logging.getLogger(__name__)
 
+# set matmul precision to medium
+torch.set_float32_matmul_precision("medium")
+
 
 class energyTempModule(BaseLightningModule):
     def __init__(
@@ -39,7 +41,7 @@ class energyTempModule(BaseLightningModule):
         clipper: Clipper,
         noise_schedule: BaseNoiseSchedule,
         partial_buffer: PrioritisedReplayBuffer,
-        num_samples_to_generate_per_epoch: int,
+        # num_temp_annealed_buffer_samples: int,
         training_batch_size: int,
         num_integration_steps: int,
         lr_scheduler_update_frequency: int,
@@ -780,7 +782,7 @@ class energyTempModule(BaseLightningModule):
         logger.debug(f"Finished eval epoch end {prefix}")
 
     def on_test_epoch_end(self) -> None:
-        if self.hparams.temps_to_anneal_test is None:
+        if self.hparams.get("temps_to_anneal_test", False):
             inverse_temps_to_anneal = [
                 (self.inverse_temperatures[i], self.inverse_temperatures[i + 1])
                 for i in range(len(self.inverse_temperatures) - 1)
@@ -796,38 +798,24 @@ class energyTempModule(BaseLightningModule):
             ]
 
         for temps in inverse_temps_to_anneal:
-            inverse_temp = temps[0]
-            inverse_lower_temp = temps[1]
+            inverse_temp = temps[0].item()
+            inverse_lower_temp = temps[1].item()
             # get the index of the inverse temperature
-            temp_index = self.inverse_temperatures.index(inverse_temp)
-            temp_index_lower = self.inverse_temperatures.index(inverse_lower_temp)
+            temp_index = torch.nonzero(self.inverse_temperatures == inverse_temp)[0].item()
+            temp_index_lower = torch.nonzero(self.inverse_temperatures == inverse_lower_temp)[0].item()
             logger.info(
-                f"Generating samples for temperature {inverse_temp:0.3f} annealed to temperature {inverse_lower_temp:0.3f}"
+                f"Generating {self.hparams.num_samples_to_save} samples for temperature {inverse_temp:0.3f} annealed to temperature {inverse_lower_temp:0.3f}"
             )
             logger.info(f"temp_index is {temp_index} and temp_index_lower is {temp_index_lower}")
-
-            final_samples = []
-            batch_size = self.hparams.num_eval_samples
-            n_batches = self.hparams.num_samples_to_save // batch_size
-            logger.info(
-                f"Generating {n_batches} batches of annealed samples of size {batch_size}."
-            )
             logger.info(f"Resampling interval is {self.hparams.resampling_interval}")
+            final_samples, _, sde_terms = self.generate_samples(
+                prior=self.priors[temp_index + 1],
+                energy_function=self.energy_functions[temp_index + 1],
+                num_samples=self.hparams.num_samples_to_save,
+                inverse_temp=inverse_temp,
+                annealing_factor=inverse_lower_temp / inverse_temp,
+            )
 
-            for i in range(n_batches):
-                start = time.time()
-                samples, _, _ = self.generate_samples(
-                    prior=self.priors[temp_index + 1],
-                    energy_function=self.energy_functions[temp_index + 1],
-                    num_samples=self.hparams.num_samples_to_save,
-                    inverse_temp=inverse_temp,
-                    annealing_factor=inverse_lower_temp / inverse_temp,
-                )
-                final_samples.append(samples)
-                end = time.time()
-                logger.info(f"batch {i} took {end - start:0.2f}s")
-
-            final_samples = torch.cat(final_samples, dim=0)
             output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
             # append time to avoid overwriting
             path = f"{output_dir}/samples_temperature_{self.temperatures[temp_index]:0.3f}_annealed_to_{self.temperatures[temp_index_lower]}.pt"
@@ -841,13 +829,34 @@ class energyTempModule(BaseLightningModule):
             self._log_energy_distances(
                 inverse_temp,
                 prefix="test",
-                test_generated_samples=batch_generated_samples,
+                generated_samples=batch_generated_samples,
             )
             self._log_dist_w2(
                 inverse_temp,
                 prefix="test",
-                test_generated_samples=batch_generated_samples,
+                generated_samples=batch_generated_samples,
             )
+            prefix_plot = f"test/inverse_temp= {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}"
+            for term in fields(SDETerms):
+                if (
+                    term.name == "drift_X"
+                    or term.name == "drift_A"
+                    or getattr(sde_terms[0], term.name) is None
+                ):
+                    continue
+                self._log_sde_term(sde_terms, term.name, prefix=prefix_plot)
+
+            energy_function = self.energy_functions[temp_index + 1]
+            samples_energy = energy_function(final_samples)
+            wandb_logger = get_wandb_logger(self.loggers)
+            energy_function.log_on_epoch_end(
+                final_samples,
+                samples_energy,
+                wandb_logger,
+                prefix=prefix_plot,
+            )
+            self.log(f"{prefix_plot}/energy_mean", -samples_energy.mean(), sync_dist=True)
+            logger.debug("Finished eval epoch end test")
 
     def _log_logweights(self, logweights, prefix="val"):
         wandb_logger = get_wandb_logger(self.loggers)

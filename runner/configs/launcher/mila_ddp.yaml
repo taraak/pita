@@ -20,7 +20,7 @@ hydra:
     partition: short-unkillable
     cpus_per_task: 6
     mem_gb: 128
-    gres: gpu:h100:4
+    gres: gpu:a100l:4
     timeout_min: 180
     array_parallelism: 10 # max num of tasks to run in parallel (via job array)
     setup:
