@@ -35,7 +35,7 @@ dependencies:
   # --------- loggers --------- #
   - wandb
   - ambertools # Required for MD generation
-  - openmm
+  #- openmm
   # - neptune-client
   # - mlflow
   # - comet-ml
@@ -67,8 +67,9 @@ dependencies:
       #AttributeError: 'FigureCanvasInterAgg' object has no attribute 'tostring_rgb'. Did you mean: 'tostring_argb'?
       - -e fab
       - -e runner/
+      - deeptime
       # dit requires
       # --no-build-isolation flash-attn
-      # huggingface_hub
-      # torchtune
-      # torchao
+      - huggingface_hub
+      - torchtune
+      - torchao

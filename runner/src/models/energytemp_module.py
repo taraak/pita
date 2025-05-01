@@ -29,7 +29,7 @@ from .components.score_estimator import estimate_grad_Rt, estimate_Rt
 logger = logging.getLogger(__name__)
 
 # set matmul precision to medium
-torch.set_float32_matmul_precision("medium")
+torch.set_float32_matmul_precision("high")
 
 
 class energyTempModule(BaseLightningModule):
@@ -782,11 +782,7 @@ class energyTempModule(BaseLightningModule):
 
     def on_test_epoch_end(self) -> None:
         if self.hparams.get("temps_to_anneal_test", False):
-            inverse_temps_to_anneal = [
-                (self.inverse_temperatures[i], self.inverse_temperatures[i + 1])
-                for i in range(len(self.inverse_temperatures) - 1)
-            ]
-        else:
+            logger.info("Found temps to anneal test")
             highest_temp = self.temperatures[0]
             inverse_temps_to_anneal = [
                 (
@@ -794,6 +790,12 @@ class energyTempModule(BaseLightningModule):
                     torch.round(highest_temp / b, decimals=2),
                 )
                 for a, b in self.hparams.temps_to_anneal_test
+            ]
+        else:
+            logger.info("No temps to anneal test")
+            inverse_temps_to_anneal = [
+                (self.inverse_temperatures[i], self.inverse_temperatures[i + 1])
+                for i in range(len(self.inverse_temperatures) - 1)
             ]
 
         for temps in inverse_temps_to_anneal:

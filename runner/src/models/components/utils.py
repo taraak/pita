@@ -37,7 +37,7 @@ def compiled_divergence_fn(f):
         divergence = jacobian_matrix.diagonal(offset=0, dim1=-2, dim2=-1).sum(dim=-1)
         return divergence.detach()
 
-    return g
+    return torch.compile(g)
 
 
 def compute_divergence_exact(f, t, xt, beta):
