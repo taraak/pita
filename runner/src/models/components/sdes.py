@@ -39,6 +39,18 @@ class SDETerms:
     dUt_dt: Optional[torch.Tensor] = None
     diffusion: Optional[torch.Tensor] = None
 
+    @ staticmethod
+    def cpu(data):
+        """Moves all tensors in the SDETerms instance to CPU."""
+        return SDETerms(
+            drift_X=data.drift_X.cpu(),
+            drift_A=data.drift_A.cpu(),
+            divergence_score=data.divergence_score.cpu() if data.divergence_score is not None else None,
+            cross_term=data.cross_term.cpu() if data.cross_term is not None else None,
+            dUt_dt=data.dUt_dt.cpu() if data.dUt_dt is not None else None,
+            diffusion=data.diffusion.cpu() if data.diffusion is not None else None,
+        )
+
     @staticmethod
     def concatenate(data_list):
         """Concatenates corresponding tensors from a list of DataClass instances."""
