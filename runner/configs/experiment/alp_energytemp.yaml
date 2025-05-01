@@ -17,10 +17,12 @@ logger:
 
 defaults:
   - override /energy: aldp
-  - override /model/net: torchmdnet_temp
+  - override /model/net: torchmdnet_temp #mlp_temp #torchmdnet_temp
   - override /model/noise_schedule: elucidating
 
 model:
+  # net:
+  #   hidden_layers: 5
   # net:
   #   hidden_nf: 64
   #   n_layers: 5
@@ -58,7 +60,7 @@ model:
   num_init_samples: 10000
   test_batch_size: 5000
   num_eval_samples: 2048
-  num_temp_annealed_buffer_samples: 2000 #5000 here
+  num_temp_annealed_samples_to_generate: 5000
   resampling_interval: 1
   start_resampling_step: 0
   end_resampling_step: 900
