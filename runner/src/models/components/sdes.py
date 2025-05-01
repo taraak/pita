@@ -1,16 +1,15 @@
+import time
 from dataclasses import dataclass
 from functools import partial
 from typing import Optional
 
-import time
 import torch
 from src.models.components.temperature_schedules import ConstantInvTempSchedule
 from src.models.components.utils import (
+    compiled_divergence_fn,
     compute_divergence_exact,
     compute_laplacian_exact,
-    compiled_divergence_fn,
 )
-
 
 
 class SDE(torch.nn.Module):

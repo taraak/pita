@@ -2,7 +2,6 @@ import math
 import typing
 import warnings
 
-import torchtune
 import flash_attn
 
 # from flash_attn.layers import rotary
@@ -11,6 +10,7 @@ import omegaconf
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchtune
 from einops import rearrange
 from src.models.components import rotary
 
@@ -80,9 +80,7 @@ def bias_dropout_add_scale_fused_inference(
 
 
 @torch.jit.script
-def modulate_fused(
-    x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor
-) -> torch.Tensor:
+def modulate_fused(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
     return modulate(x, shift, scale)
 
 
@@ -176,16 +174,12 @@ class TimestepEmbedder(nn.Module):
         # https://github.com/openai/glide-text2im/blob/main/glide_text2im/nn.py
         half = dim // 2
         freqs = torch.exp(
-            -math.log(max_period)
-            * torch.arange(start=0, end=half, dtype=torch.float32)
-            / half
+            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
         ).to(device=t.device)
         args = t[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
-            embedding = torch.cat(
-                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1
-            )
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
         return embedding
 
     def forward(self, t):
@@ -216,9 +210,11 @@ class LabelEmbedder(nn.Module):
 #                                 Core Model                                    #
 #################################################################################
 
+
 # Efficient implementation equivalent to the following:
-def scaled_dot_product_attention(query, key, value, attn_mask=None, dropout_p=0.0,
-        is_causal=False, scale=None, enable_gqa=False) -> torch.Tensor:
+def scaled_dot_product_attention(
+    query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None, enable_gqa=False
+) -> torch.Tensor:
     L, S = query.size(-2), key.size(-2)
     scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
     attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
@@ -235,8 +231,8 @@ def scaled_dot_product_attention(query, key, value, attn_mask=None, dropout_p=0.
             attn_bias = attn_mask + attn_bias
 
     if enable_gqa:
-        key = key.repeat_interleave(query.size(-3)//key.size(-3), -3)
-        value = value.repeat_interleave(query.size(-3)//value.size(-3), -3)
+        key = key.repeat_interleave(query.size(-3) // key.size(-3), -3)
+        value = value.repeat_interleave(query.size(-3) // value.size(-3), -3)
 
     attn_weight = query @ key.transpose(-2, -1) * scale_factor
     attn_weight += attn_bias
@@ -279,19 +275,17 @@ class DDiTBlock(nn.Module):
 
         bias_dropout_scale_fn = self._get_bias_dropout_scale()
 
-        (shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp) = (
-            self.adaLN_modulation(c)[:, None].chunk(6, dim=2)
-        )
+        (shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp) = self.adaLN_modulation(
+            c
+        )[:, None].chunk(6, dim=2)
 
         # attention operation
         x_skip = x
         x = modulate_fused(self.norm1(x), shift_msa, scale_msa)
 
         qkv = self.attn_qkv(x)
-        qkv = rearrange(
-            qkv, "b s (three h d) -> b s three h d", three=3, h=self.n_heads
-        )
-        #with torch.amp.autocast("cuda", enabled=False):
+        qkv = rearrange(qkv, "b s (three h d) -> b s three h d", three=3, h=self.n_heads)
+        # with torch.amp.autocast("cuda", enabled=False):
         #    cos, sin = rotary_cos_sin
         #    qkv = apply_rotary_pos_emb(qkv, cos.to(qkv.dtype), sin.to(qkv.dtype))
         if False:
@@ -312,6 +306,7 @@ class DDiTBlock(nn.Module):
             x = rearrange(x, "(b s) h d -> b s (h d)", b=batch_size)
         # else:
         from torch.nn.attention import SDPBackend, sdpa_kernel
+
         # qkv = rearrange(qkv, "(b s) ... -> b s ...", b=batch_size)
         # qkv = rearrange(qkv, "b s three h d -> b h three s d")
         q = rotary_cos_sin(qkv[:, :, 0])
@@ -320,15 +315,13 @@ class DDiTBlock(nn.Module):
         q = rearrange(q, "b s h d -> b h s d")
         k = rearrange(k, "b s h d -> b h s d")
         v = rearrange(v, "b s h d -> b h s d")
-        #with sdpa_kernel(SDPBackend.MATH):
-        #with sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION):
-        #with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+        # with sdpa_kernel(SDPBackend.MATH):
+        # with sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION):
+        # with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
         x = scaled_dot_product_attention(q, k, v)
-            #x = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+        # x = torch.nn.functional.scaled_dot_product_attention(q, k, v)
         x = rearrange(x, "b h s d -> b s (h d)")
-        x = bias_dropout_scale_fn(
-            self.attn_out(x), None, gate_msa, x_skip, self.dropout
-        )
+        x = bias_dropout_scale_fn(self.attn_out(x), None, gate_msa, x_skip, self.dropout)
 
         # mlp operation
         x = bias_dropout_scale_fn(
@@ -475,9 +468,7 @@ class WrappedPretrainedDIT(torch.nn.Module):
             if isinstance(pretrained_backbone, DIT):
                 vocab_size = pretrained_backbone.vocab_size
             elif check_instance_UNetVDM(pretrained_backbone):
-                vocab_size = (
-                    257  # hard-coded for celeba #pretrained_backbone.cfg.vocab_size
-                )
+                vocab_size = 257  # hard-coded for celeba #pretrained_backbone.cfg.vocab_size
             else:
                 vocab_size = pretrained_backbone.config.vocab_size
             self.logZ_net = DITBetterHydra(
@@ -545,9 +536,7 @@ class WrappedPretrainedDIT(torch.nn.Module):
                 # warn that it may be unsupported
                 warnings.warn("Using default sigma_map for WrappedPretrainedDIT")
 
-            logZ = self.logZ_layer(hidden_states[-1].detach(), cond.detach()).mean(
-                dim=1
-            )
+            logZ = self.logZ_layer(hidden_states[-1].detach(), cond.detach()).mean(dim=1)
 
         return logits, logZ
 
@@ -602,11 +591,9 @@ class DIT3D(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         self.vocab_size = vocab_size
         self.vocab_embed = torch.nn.Linear(vocab_size, config.model.hidden_size)
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
-        #self.rotary_emb = Rotary(config.model.hidden_size // config.model.n_heads)
+        # self.rotary_emb = Rotary(config.model.hidden_size // config.model.n_heads)
         self.rotary_emb = torchtune.modules.RotaryPositionalEmbeddings(
-            dim=config.model.hidden_size // config.model.n_heads,
-            base=10000,
-            max_seq_len=1024
+            dim=config.model.hidden_size // config.model.n_heads, base=10000, max_seq_len=1024
         )
 
         blocks = []

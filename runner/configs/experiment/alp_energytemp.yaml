@@ -21,11 +21,11 @@ defaults:
   - override /model/noise_schedule: elucidating
 
 model:
-#  net:
-#    hidden_nf: 64
-#    n_layers: 5
+  #  net:
+  #    hidden_nf: 64
+  #    n_layers: 5
 
-  # net: 
+  # net:
   #   hidden_layers: 5
 
   partial_prior:
@@ -90,7 +90,7 @@ model:
 
   num_mc_samples: 1000
 
-  num_epochs_per_temp: 
+  num_epochs_per_temp:
     - 100
 
   dem:
