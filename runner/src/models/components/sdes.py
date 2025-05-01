@@ -41,7 +41,7 @@ class SDETerms:
     dUt_dt: Optional[torch.Tensor] = None
     diffusion: Optional[torch.Tensor] = None
 
-    @ staticmethod
+    @staticmethod
     def cpu(data):
         """Moves all tensors in the SDETerms instance to CPU."""
         return SDETerms(
@@ -167,12 +167,7 @@ class VEReverseSDE(torch.nn.Module):
             )
 
             if self.score_net is not None:
-                div_st = compute_divergence_exact(
-                    self.score_net.forward,
-                    h_t,
-                    x,
-                    beta,
-                ).detach()
+                div_st = self.compiled_divergence_fn(h_t, x, beta).detach()
                 div_bt = div_st * self.g(t).pow(2) / 2
             else:
                 laplacian_Ut = compute_laplacian_exact(

@@ -74,7 +74,7 @@ model:
     - 550
   temps_to_anneal_test:
     - [600, 600]
-    - [600, 550]
+    # - [600, 550]
 
   loss_weights:
     energy_score: 1.0
@@ -90,7 +90,7 @@ model:
   num_mc_samples: 1000
 
   num_epochs_per_temp:
-    - 100
+    - 500
 
   dem:
     noise_schedule: elucidating
