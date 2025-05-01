@@ -801,7 +801,9 @@ class energyTempModule(BaseLightningModule):
             inverse_lower_temp = temps[1].item()
             # get the index of the inverse temperature
             temp_index = torch.nonzero(self.inverse_temperatures == inverse_temp)[0].item()
-            temp_index_lower = torch.nonzero(self.inverse_temperatures == inverse_lower_temp)[0].item()
+            temp_index_lower = torch.nonzero(self.inverse_temperatures == inverse_lower_temp)[
+                0
+            ].item()
             logger.info(
                 f"Generating {self.hparams.num_samples_to_save} samples for temperature {inverse_temp:0.3f} annealed to temperature {inverse_lower_temp:0.3f}"
             )
@@ -837,7 +839,9 @@ class energyTempModule(BaseLightningModule):
                 prefix="test",
                 generated_samples=batch_generated_samples,
             )
-            prefix_plot = f"test/inverse_temp= {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}"
+            prefix_plot = (
+                f"test/inverse_temp= {inverse_temp:0.3f} annealed to {inverse_lower_temp:0.3f}"
+            )
             for term in fields(SDETerms):
                 if (
                     term.name == "drift_X"

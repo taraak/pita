@@ -28,7 +28,10 @@ def apply_rotary_emb_torch(x, cos, sin, interleaved=False):
     cos = repeat(cos, "... d -> ... 1 (2 d)" if not interleaved else "... d -> ... 1 (d 2)")
     sin = repeat(sin, "... d -> ... 1 (2 d)" if not interleaved else "... d -> ... 1 (d 2)")
     return torch.cat(
-        [x[..., :ro_dim] * cos + rotate_half(x[..., :ro_dim], interleaved) * sin, x[..., ro_dim:]],
+        [
+            x[..., :ro_dim] * cos + rotate_half(x[..., :ro_dim], interleaved) * sin,
+            x[..., ro_dim:],
+        ],
         dim=-1,
     )
 
@@ -132,6 +135,174 @@ apply_rotary_emb_func = apply_rotary_emb
 class ApplyRotaryEmbQKV_(torch.autograd.Function):
     @staticmethod
     def forward(
+        qkv,
+        cos,
+        sin,
+        cos_k=None,
+        sin_k=None,
+        interleaved=False,
+        seqlen_offsets=0,
+        num_heads_q=None,
+    ):
+        if cos_k is None and sin_k is None and qkv.is_contiguous():
+            if qkv.dim() == 5:
+                batch, seqlen, three, nheads, headdim = qkv.shape
+                assert three == 3
+                qk = qkv[:, :, :2].reshape(batch, seqlen, -1, headdim)
+            else:
+                assert qkv.dim() == 4
+                assert num_heads_q is not None
+                num_heads_k = (qkv.shape[2] - num_heads_q) // 2
+                assert qkv.shape[2] == num_heads_q + 2 * num_heads_k
+                qk = qkv[:, :, : num_heads_q + num_heads_k]
+            apply_rotary(
+                qk,
+                cos,
+                sin,
+                seqlen_offsets=seqlen_offsets,
+                interleaved=interleaved,
+                inplace=True,
+            )
+        else:
+            cos_k = cos if cos_k is None else cos_k
+            sin_k = sin if sin_k is None else sin_k
+            if qkv.dim() == 5:
+                q, k = qkv[:, :, 0], qkv[:, :, 1]
+            else:
+                assert qkv.dim() == 4
+                assert num_heads_q is not None
+                num_heads_k = (qkv.shape[2] - num_heads_q) // 2
+                assert qkv.shape[2] == num_heads_q + 2 * num_heads_k
+                q, k = (
+                    qkv[:, :, :num_heads_q],
+                    qkv[:, :, num_heads_q : num_heads_q + num_heads_k],
+                )
+            apply_rotary(q, cos, sin, seqlen_offsets, interleaved=interleaved, inplace=True)
+            apply_rotary(k, cos_k, sin_k, seqlen_offsets, interleaved=interleaved, inplace=True)
+        return qkv
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        qkv, cos, sin, cos_k, sin_k, interleaved, seqlen_offsets, num_heads_q = inputs
+        tensors_to_save = [cos, sin, cos_k, sin_k]
+        if not isinstance(seqlen_offsets, int):
+            tensors_to_save.append(seqlen_offsets)
+        ctx.save_for_backward(*tensors_to_save)
+        ctx.interleaved = interleaved
+        ctx.num_heads_q = num_heads_q
+        ctx.seqlen_offsets_is_int = isinstance(seqlen_offsets, int)
+
+    @staticmethod
+    def backward(ctx, dqkv):
+        saved = ctx.saved_tensors
+        if ctx.seqlen_offsets_is_int:
+            cos, sin, cos_k, sin_k = saved
+            seqlen_offsets = 0
+        else:
+            cos, sin, cos_k, sin_k, seqlen_offsets = saved
+
+        if cos_k is None and sin_k is None and dqkv.is_contiguous():
+            if dqkv.dim() == 5:
+                dqk = rearrange(dqkv[:, :, :2], "b s t h d -> b s (t h) d")
+            else:
+                assert dqkv.dim() == 4
+                num_heads_k = (dqkv.shape[2] - ctx.num_heads_q) // 2
+                dqk = dqkv[:, :, : ctx.num_heads_q + num_heads_k]
+            apply_rotary(
+                dqk,
+                cos,
+                sin,
+                seqlen_offsets=seqlen_offsets,
+                interleaved=ctx.interleaved,
+                inplace=True,
+                conjugate=True,
+            )
+        else:
+            cos_k = cos if cos_k is None else cos_k
+            sin_k = sin if sin_k is None else sin_k
+            if dqkv.dim() == 5:
+                dq, dk = dqkv[:, :, 0], dqkv[:, :, 1]
+            else:
+                num_heads_k = (dqkv.shape[2] - ctx.num_heads_q) // 2
+                dq = dqkv[:, :, : ctx.num_heads_q]
+                dk = dqkv[:, :, ctx.num_heads_q : ctx.num_heads_q + num_heads_k]
+            apply_rotary(
+                dq,
+                cos,
+                sin,
+                seqlen_offsets,
+                interleaved=ctx.interleaved,
+                inplace=True,
+                conjugate=True,
+            )
+            apply_rotary(
+                dk,
+                cos_k,
+                sin_k,
+                seqlen_offsets,
+                interleaved=ctx.interleaved,
+                inplace=True,
+                conjugate=True,
+            )
+
+        return dqkv, None, None, None, None, None, None, None
+
+    @staticmethod
+    def old_vmap(info, in_dims: Tuple[Optional[int]], *args) -> Tuple[torch.nn.Module, List[str]]:
+        class VMapApplyRotaryEmbQKV(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, qkv_b: Tensor, cos_b: Tensor, sin_b: Tensor) -> Tensor:
+                # Process each batch independently
+                b = qkv_b.shape[0]
+                output = []
+                for i in range(b):
+                    out = ApplyRotaryEmbQKV_.apply(qkv_b[i], cos_b[i], sin_b[i], *args)
+                    output.append(out)
+                return torch.stack(output)
+
+        return VMapApplyRotaryEmbQKV(), 0
+
+    @staticmethod
+    def vmap(info, in_dims: Tuple[Optional[int], ...], *args: Any) -> Tuple[Any, Tuple[int, ...]]:
+        """
+        Implements vectorized batching for ApplyRotaryEmbQKV_.
+        Assumes first three args (qkv, cos, sin) are batched on dim 0.
+        """
+        qkv, cos, sin, *static_args = args
+
+        # Check batch dimension consistency
+        B = qkv.shape[0]
+        outputs = []
+        for i in range(B):
+            out = ApplyRotaryEmbQKV_.apply(qkv[i], cos, sin, *static_args)
+            outputs.append(out)
+
+        # Stack outputs and return output + output batch dims
+        return torch.stack(outputs), 0
+
+    @staticmethod
+    def adjoint(
+        args: List[Any], tangents: List[Tensor], _vmap_id: int = 0
+    ) -> Tuple[Optional[Tensor], ...]:
+        qkv, cos, sin = args[:3]
+        dqkv, _, _, _, _, _, _, _, _ = tangents
+        if dqkv is None:
+            return (None,) * len(args)
+
+        # Process each batch independently in the adjoint mode
+        b = dqkv.shape[0]
+        grad_qkv = []
+        for i in range(b):
+            g = ApplyRotaryEmbQKV_.backward(None, dqkv[i], cos[i], sin[i], *args)[0]
+            grad_qkv.append(g)
+        return (torch.stack(grad_qkv),) + (None,) * (len(args) - 1)
+
+
+class OldApplyRotaryEmbQKV_(torch.autograd.Function):
+    @staticmethod
+    def forward(
         ctx,
         qkv,
         cos,
@@ -158,7 +329,12 @@ class ApplyRotaryEmbQKV_(torch.autograd.Function):
                 assert qkv.shape[2] == num_heads_q + 2 * num_heads_k
                 qk = qkv[:, :, : num_heads_q + num_heads_k]
             apply_rotary(
-                qk, cos, sin, seqlen_offsets=seqlen_offsets, interleaved=interleaved, inplace=True
+                qk,
+                cos,
+                sin,
+                seqlen_offsets=seqlen_offsets,
+                interleaved=interleaved,
+                inplace=True,
             )
         else:
             cos_k = cos if cos_k is None else cos_k
@@ -170,7 +346,10 @@ class ApplyRotaryEmbQKV_(torch.autograd.Function):
                 assert num_heads_q is not None
                 num_heads_k = (qkv.shape[2] - num_heads_q) // 2
                 assert qkv.shape[2] == num_heads_q + 2 * num_heads_k
-                q, k = qkv[:, :, :num_heads_q], qkv[:, :, num_heads_q : num_heads_q + num_heads_k]
+                q, k = (
+                    qkv[:, :, :num_heads_q],
+                    qkv[:, :, num_heads_q : num_heads_q + num_heads_k],
+                )
             apply_rotary(q, cos, sin, seqlen_offsets, interleaved=interleaved, inplace=True)
             apply_rotary(k, cos_k, sin_k, seqlen_offsets, interleaved=interleaved, inplace=True)
             ctx.save_for_backward(cos, sin, cos_k, sin_k)
@@ -322,13 +501,23 @@ def apply_rotary_emb_qkv_(
 class ApplyRotaryEmbKV_(torch.autograd.Function):
     @staticmethod
     def forward(
-        ctx, kv, cos, sin, interleaved=False, seqlen_offsets: Union[int, torch.Tensor] = 0
+        ctx,
+        kv,
+        cos,
+        sin,
+        interleaved=False,
+        seqlen_offsets: Union[int, torch.Tensor] = 0,
     ):
         batch, seqlen, two, nheads, headdim = kv.shape
         assert two == 2
         k = kv[:, :, 0]
         apply_rotary(
-            k, cos, sin, seqlen_offsets=seqlen_offsets, interleaved=interleaved, inplace=True
+            k,
+            cos,
+            sin,
+            seqlen_offsets=seqlen_offsets,
+            interleaved=interleaved,
+            inplace=True,
         )
         if isinstance(seqlen_offsets, int):
             ctx.save_for_backward(cos, sin)  # Can't save int with save_for_backward
