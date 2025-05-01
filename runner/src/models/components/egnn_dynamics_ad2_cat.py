@@ -67,7 +67,7 @@ class EGNN_dynamics_AD2_cat(nn.Module):
     def get_h_initial(self):
         if self._n_particles == 22:
             atom_types = np.arange(22)
-            atom_types[[1, 2, 3]] = 2
+            atom_types[[0, 2, 3]] = 2
             atom_types[[19, 20, 21]] = 20
             atom_types[[11, 12, 13]] = 12
             return torch.nn.functional.one_hot(torch.tensor(atom_types))
