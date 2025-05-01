@@ -17,16 +17,15 @@ logger:
 
 defaults:
   - override /energy: aldp
-  - override /model/net: egnn_dynamics_ad2_cat
+  - override /model/net: torchmdnet_temp #mlp_temp #torchmdnet_temp
   - override /model/noise_schedule: elucidating
 
 model:
-  #  net:
-  #    hidden_nf: 64
-  #    n_layers: 5
-
   # net:
   #   hidden_layers: 5
+  # net:
+  #   hidden_nf: 64
+  #   n_layers: 5
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -61,7 +60,7 @@ model:
   num_init_samples: 10000
   test_batch_size: 5000
   num_eval_samples: 2048
-  num_samples_to_generate_per_epoch: 5000
+  num_temp_annealed_samples_to_generate: 5000
   resampling_interval: 1
   start_resampling_step: 0
   end_resampling_step: 900

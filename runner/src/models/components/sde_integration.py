@@ -322,7 +322,7 @@ class WeightedSDEIntegrator:
 
         num_unique_idxs = len(np.unique(choice))
 
-        return x_next, a_next, num_unique_idxs, sde_terms
+        return x_next, a_next, num_unique_idxs, SDETerms.cpu(sde_terms)
 
     def euler_maruyama_step(
         self,
