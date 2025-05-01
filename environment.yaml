@@ -27,6 +27,7 @@ dependencies:
   - torchvision
   - lightning=2.*
   - torchmetrics=0.*
+  - cuda-version=12
   - hydra-core=1.*
   - rich=13.*
   - pre-commit=3.*
@@ -66,3 +67,8 @@ dependencies:
       #AttributeError: 'FigureCanvasInterAgg' object has no attribute 'tostring_rgb'. Did you mean: 'tostring_argb'?
       - -e fab
       - -e runner/
+      # dit requires
+      # --no-build-isolation flash-attn
+      # huggingface_hub
+      # torchtune
+      # torchao

@@ -3,11 +3,12 @@ _partial_: true
 vocab_size: ${energy.spatial_dim}
 n_particles: ${energy.n_particles}
 #hidden_size: 512
-hidden_size: 768
-cond_dim: 128
+hidden_size: 192
+#hidden_size: 768
+cond_dim: 64
 #n_blocks: 4
 #n_heads: 8
 scale_by_sigma: True
 dropout: 0.1
-n_blocks: 12
-n_heads: 12
+n_blocks: 6
+n_heads: 6
