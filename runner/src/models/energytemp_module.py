@@ -2,6 +2,7 @@ import copy
 import logging
 from dataclasses import fields
 from typing import List, Optional
+import time
 
 import hydra
 import matplotlib.pyplot as plt
@@ -75,9 +76,24 @@ class energyTempModule(BaseLightningModule):
         if self.hparams.get("debug_fm", False):
             self.score_net = FlowNet(model=h_theta)
 
+        self.score_net_forward = self.score_net.forward
+        self.energy_net_forward_energy = self.energy_net.forward_energy
+        self.energy_net_forward = self.energy_net.forward
+        self.energy_net_denoiser_and_energy = self.energy_net.denoiser_and_energy
         if self.hparams.compile:
-            self.score_net = torch.compile(self.score_net)
-            self.energy_net = torch.compile(self.energy_net)
+            # self.score_net = torch.compile(self.score_net)
+            # self.energy_net = torch.compile(self.energy_net)
+            start = time.time()
+            self.score_net_forward = torch.compile(self.score_net.forward)
+            self.energy_net_forward_energy = torch.compile(self.energy_net.forward_energy)
+            self.energy_net_forward = torch.compile(self.energy_net.forward)
+            # Cannot compile denoiser and energy as we can't do a backward pass through it
+            # https://github.com/pytorch/pytorch/issues/91469
+            # self.energy_net_denoiser_and_energy = torch.compile(
+            #     self.energy_net.denoiser_and_energy
+            # )
+            end = time.time()
+            logger.info(f"Compilation time: {end - start:.2f} seconds")
 
         self.reverse_sde = VEReverseSDE(
             energy_net=self.energy_net,
@@ -319,9 +335,9 @@ class energyTempModule(BaseLightningModule):
         if self.hparams.loss_weights["energy_score"] == 0:
             predicted_Ut = torch.zeros(xt.shape[0], device=xt.device)
             if not (self.hparams.loss_weights["dem_energy"] == 0):
-                predicted_Ut = self.energy_net.forward_energy(ht, xt, inverse_temp)
+                predicted_Ut = self.energy_net_forward_energy(ht, xt, inverse_temp)
             return torch.zeros(xt.shape[0], device=xt.device), predicted_Ut
-        predicted_x0_energynet, predicted_Ut = self.energy_net.denoiser_and_energy(
+        predicted_x0_energynet, predicted_Ut = self.energy_net_denoiser_and_energy(
             ht, xt, inverse_temp
         )
         energy_score_loss = torch.sum(
@@ -430,7 +446,7 @@ class energyTempModule(BaseLightningModule):
 
         U0_true = -x0_energies
         mask = U0_true > energy_threshold
-        U0_pred = self.energy_net.forward_energy(h0, x0, inverse_temp)
+        U0_pred = self.energy_net_forward_energy(h0, x0, inverse_temp)
 
         energy_matching_loss = (U0_true - U0_pred) ** 2
         energy_matching_loss = ~mask * energy_matching_loss
