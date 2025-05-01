@@ -39,7 +39,7 @@ num_integration_steps: 1000
 lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
 
 # compile model for faster training with pytorch 2.0
-compile: false
+compile: true
 
 # initialize the buffer with samples from the prior
 init_from_prior: false

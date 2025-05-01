@@ -17,6 +17,7 @@ model.num_samples_to_save=4096 \
 model.num_negative_time_steps=1 \
 model/net=dit \
 model.end_resampling_step=800 \
+++model.compile=True \
 #model.num_samples_to_save=5000 \
 #debug=short \
 #model/net=egnn_dynamics_ad2_cat \
