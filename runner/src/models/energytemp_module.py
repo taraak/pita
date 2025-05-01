@@ -337,7 +337,7 @@ class energyTempModule(BaseLightningModule):
         energy_function: BaseEnergyFunction,
         predicted_x0: torch.Tensor,
         true_nabla_U0: Optional[torch.Tensor] = None,
-        time_threshold: float = 0.1,
+        time_threshold: float = 0.2,
         weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.hparams.loss_weights["target_score"] == 0:
