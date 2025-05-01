@@ -27,6 +27,7 @@ dependencies:
   - torchvision
   - lightning=2.*
   - torchmetrics=0.*
+  - cuda-version=12
   - hydra-core=1.*
   - rich=13.*
   - pre-commit=3.*

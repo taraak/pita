@@ -27,6 +27,19 @@ def rademacher(shape, dtype=torch.float32, device="cuda"):
     return rand.to(dtype).to(device)
 
 
+def compiled_divergence_fn(f):
+    def g(t, xt, beta):
+        def func_wrap(t, xt):
+            return f(t.unsqueeze(0), xt.unsqueeze(0), beta).squeeze()
+
+        # Calculate the full jacobian
+        jacobian_matrix = vmap(jacrev(func_wrap, argnums=1))(t, xt)
+        divergence = jacobian_matrix.diagonal(offset=0, dim1=-2, dim2=-1).sum(dim=-1)
+        return divergence.detach()
+    return g
+
+
+
 def compute_divergence_exact(f, t, xt, beta):
     # compute full divergence of the model
     def func_wrap(t, xt):

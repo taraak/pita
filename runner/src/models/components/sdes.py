@@ -2,12 +2,15 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Optional
 
+import time
 import torch
 from src.models.components.temperature_schedules import ConstantInvTempSchedule
 from src.models.components.utils import (
     compute_divergence_exact,
     compute_laplacian_exact,
+    compiled_divergence_fn,
 )
+
 
 
 class SDE(torch.nn.Module):
@@ -92,6 +95,7 @@ class VEReverseSDE(torch.nn.Module):
         self.noise_schedule = noise_schedule
         self.pin_energy = pin_energy
         self.debias_inference = debias_inference
+        self.compiled_divergence_fn = compiled_divergence_fn(self.score_net.forward)
 
     def f_not_debiased(self, t, x, beta):
         assert self.score_net is not None
