@@ -83,6 +83,10 @@ model:
     target_score: 0.0
     dem_energy: 0.0
 
+  loss_time_threshold:
+    score: 0.0
+    target_score: 0.2
+
   do_energy_matching_loss_every_n_steps: 1
 
   init_from_prior: false
