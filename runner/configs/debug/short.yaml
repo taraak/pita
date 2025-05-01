@@ -8,6 +8,7 @@ model:
   dem:
     training_batch_size: 3
     num_samples_to_generate_per_epoch: 3
+  compile: false
 
 data:
   n_train_batches_per_epoch: 3
