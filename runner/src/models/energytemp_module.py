@@ -446,7 +446,11 @@ class energyTempModule(BaseLightningModule):
 
         U0_true = -x0_energies
         mask = U0_true > energy_threshold
-        U0_pred = self.energy_net_forward_energy(h0, x0, inverse_temp)
+
+        z = torch.randn_like(x0)
+        z = self.maybe_remove_mean(z)
+        x0 = x0 + z * h0[:, None] ** 0.5 # TODO: is this better?
+        U0_pred = self.energy_net.forward_energy(h0, x0, inverse_temp)
 
         energy_matching_loss = (U0_true - U0_pred) ** 2
         energy_matching_loss = ~mask * energy_matching_loss
