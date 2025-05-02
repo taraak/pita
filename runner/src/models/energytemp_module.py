@@ -282,7 +282,7 @@ class energyTempModule(BaseLightningModule):
         predicted_x0_scorenet = self.score_net.denoiser(ht, xt, inverse_temp, return_score=False)
         score_loss = self.get_score_loss(
             ht=ht,
-            xt=xt,
+            x0=x0,
             predicted_x0_scorenet=predicted_x0_scorenet,
             weights=lambda_t,
         )
@@ -329,21 +329,21 @@ class energyTempModule(BaseLightningModule):
     def get_score_loss(
         self,
         ht: torch.Tensor,
-        xt: torch.Tensor,
+        x0: torch.Tensor,
         predicted_x0_scorenet: torch.Tensor,
         weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.hparams.loss_time_threshold["score"] > 0:
             assert self.hparams.loss_weights["target_score"] > 0, "target_score loss weight must be > 0 if score loss time threshold is > 0"
         if self.hparams.loss_weights["score"] == 0:
-            return torch.zeros(xt.shape[0], device=xt.device)
+            return torch.zeros(x0.shape[0], device=x0.device)
         
         h_threshold = self.hparams.noise_schedule.h(self.hparams.loss_time_threshold["score"])
         time_mask = ht >= h_threshold
         if not time_mask.any():
             return torch.zeros_like(predicted_x0_scorenet)
 
-        score_loss = torch.sum((predicted_x0_scorenet - xt) ** 2, dim=(-1))
+        score_loss = torch.sum((predicted_x0_scorenet - x0) ** 2, dim=(-1))
         score_loss[~time_mask] = 0.0
         if weights is not None:
             score_loss = weights * score_loss
