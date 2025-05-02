@@ -123,13 +123,14 @@ class ALPEnergy(BaseMoleculeEnergy):
 
     def __call__(self, samples: torch.Tensor, return_force=False) -> torch.Tensor:
         with conditional_grad(return_force):
+            samples_requires_grad = samples.requires_grad
             samples.requires_grad = True
             logprob = -self.openmm_energy.energy(self.maybe_unnormalize(samples)).squeeze(-1)
             if return_force:
                 force = torch.autograd.grad(logprob.sum(), samples, create_graph=False)[0]
-                samples.requires_grad = False
+                samples.requires_grad = samples_requires_grad
                 return logprob, force
-            samples.requires_grad = False
+            samples.requires_grad = samples_requires_grad
             return logprob
 
     def setup_test_set(self):

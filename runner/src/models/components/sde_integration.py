@@ -28,9 +28,7 @@ def grad_E(x, energy_function):
     with torch.enable_grad():
         x_temp = x.detach().clone()
         x_temp.requires_grad_(True)
-        grad = torch.autograd.grad(torch.sum(energy_function(x_temp)), x_temp, create_graph=True)[
-            0
-        ]
+        grad = torch.autograd.grad(torch.sum(energy_function(x_temp)), x_temp)[0]
         x_temp.requires_grad_(False)
         return grad.detach()
 

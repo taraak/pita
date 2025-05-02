@@ -19,7 +19,10 @@ model.inference_batch_size=256 \
 model.num_negative_time_steps=100 \
 model.end_resampling_step=800 \
 model.num_integration_steps=10 \
-ckpt_path="/network/scratch/t/tara.akhoundsadegh/energy_temp/logs/train/runs/2025-05-02_15-01-35/checkpoints/epoch_079.ckpt"
+ckpt_path="/network/scratch/a/alexander.tong/energy_temp/logs/train/runs/2025-05-01_17-49-56/checkpoints/epoch_499.ckpt" \
+# likely forest ^
+#ckpt_path="/network/scratch/a/alexander.tong/energy_temp/logs/train/runs/2025-05-01_00-33-00/checkpoints/epoch_499.ckpt"
+#ckpt_path="/network/scratch/t/tara.akhoundsadegh/energy_temp/logs/train/runs/2025-05-02_15-01-35/checkpoints/epoch_079.ckpt"
 #ckpt_path="/network/scratch/a/alexander.tong/energy_temp/logs/train/runs/2025-05-01_00-33-00/checkpoints/epoch_499.ckpt"
 #ckpt_path=/network/scratch/a/alexander.tong/energy_temp/logs/train/runs/2025-04-24_21-50-16/checkpoints/last.ckpt \
 #debug=short \
