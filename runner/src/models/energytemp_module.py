@@ -280,19 +280,30 @@ class energyTempModule(BaseLightningModule):
         lambda_t = (ht + 1) / ht
 
         predicted_x0_scorenet = self.score_net.denoiser(ht, xt, inverse_temp, return_score=False)
-        if self.hparams.loss_weights["score"] == 0:
-            score_loss = torch.zeros(x0.shape[0], device=x0.device)
-        else:
-            score_loss = torch.sum((predicted_x0_scorenet - x0) ** 2, dim=(-1))
-        score_loss = lambda_t * score_loss
+        score_loss = self.get_score_loss(
+            ht=ht,
+            xt=xt,
+            predicted_x0_scorenet=predicted_x0_scorenet,
+            weights=lambda_t,
+        )
         if self.hparams.get("only_train_score", False):
             zeros = torch.zeros_like(score_loss)
             return zeros, score_loss, zeros, zeros, zeros
+        target_score_loss = self.get_target_score_loss(
+            ht=ht,
+            x0=x0,
+            xt=xt,
+            energy_function=energy_function,
+            predicted_x0=predicted_x0_scorenet,
+            true_force=x0_forces,
+            weights=None, #TODO: should we use lambda_t here?
+        )
         energy_score_loss, predicted_Ut = self.get_energy_score_loss(
             ht=ht,
             xt=xt,
             inverse_temp=inverse_temp,
             predicted_x0_scorenet=predicted_x0_scorenet,
+            weights=lambda_t,
         )
         energy_matching_loss = self.get_energy_matching_loss(
             h0=h0,
@@ -301,22 +312,12 @@ class energyTempModule(BaseLightningModule):
             inverse_temp=inverse_temp,
             energy_function=energy_function,
         )
-        target_score_loss = self.get_target_score_loss(
-            ht=ht,
-            x0=x0,
-            xt=xt,
-            energy_function=energy_function,
-            predicted_x0=predicted_x0_scorenet,
-            true_nabla_U0=x0_forces,
-            weights=lambda_t,
-        )
         dem_energy_loss = self.get_dem_energy_loss(
             ht=ht,
             xt=xt,
             energy_function=energy_function,
             predicted_Ut=predicted_Ut,
         )
-        energy_score_loss = lambda_t * energy_score_loss
         return (
             energy_score_loss,
             score_loss,
@@ -324,6 +325,29 @@ class energyTempModule(BaseLightningModule):
             dem_energy_loss,
             energy_matching_loss,
         )
+    
+    def get_score_loss(
+        self,
+        ht: torch.Tensor,
+        xt: torch.Tensor,
+        predicted_x0_scorenet: torch.Tensor,
+        weights: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        if self.hparams.loss_time_threshold["score"] > 0:
+            assert self.hparams.loss_weights["target_score"] > 0, "target_score loss weight must be > 0 if score loss time threshold is > 0"
+        if self.hparams.loss_weights["score"] == 0:
+            return torch.zeros(xt.shape[0], device=xt.device)
+        
+        h_threshold = self.hparams.noise_schedule.h(self.hparams.loss_time_threshold["score"])
+        time_mask = ht >= h_threshold
+        if not time_mask.any():
+            return torch.zeros_like(predicted_x0_scorenet)
+
+        score_loss = torch.sum((predicted_x0_scorenet - xt) ** 2, dim=(-1))
+        score_loss[~time_mask] = 0.0
+        if weights is not None:
+            score_loss = weights * score_loss
+        return score_loss
 
     def get_energy_score_loss(
         self,
@@ -331,6 +355,7 @@ class energyTempModule(BaseLightningModule):
         xt: torch.Tensor,
         inverse_temp: float,
         predicted_x0_scorenet: torch.Tensor,
+        weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.hparams.loss_weights["energy_score"] == 0:
             predicted_Ut = torch.zeros(xt.shape[0], device=xt.device)
@@ -343,6 +368,8 @@ class energyTempModule(BaseLightningModule):
         energy_score_loss = torch.sum(
             (predicted_x0_energynet - predicted_x0_scorenet.detach()) ** 2, dim=(-1)
         )
+        if weights is not None:
+            energy_score_loss = weights * energy_score_loss
         return energy_score_loss, predicted_Ut
 
     def get_target_score_loss(
@@ -352,14 +379,13 @@ class energyTempModule(BaseLightningModule):
         xt: torch.Tensor,
         energy_function: BaseEnergyFunction,
         predicted_x0: torch.Tensor,
-        true_nabla_U0: Optional[torch.Tensor] = None,
-        time_threshold: float = 0.1,
+        true_force: Optional[torch.Tensor] = None,
         weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.hparams.loss_weights["target_score"] == 0:
             return torch.zeros(predicted_x0.shape[0], device=x0.device)
 
-        h_threshold = self.hparams.noise_schedule.h(torch.tensor(time_threshold))
+        h_threshold = self.hparams.noise_schedule.h(self.hparams.loss_time_threshold["target_score"])
         time_mask = ht < h_threshold
         if not time_mask.any():
             return torch.zeros(predicted_x0.shape[0], device=x0.device)
@@ -368,13 +394,13 @@ class energyTempModule(BaseLightningModule):
         xt = xt[time_mask]
         predicted_x0 = predicted_x0[time_mask]
 
-        if true_nabla_U0 is None:
+        if true_force is None:
             energy = -energy_function(x0).sum()
-            score = torch.autograd.grad(energy, x0, create_graph=True)[0]
+            nabla_U0 = torch.autograd.grad(energy, x0, create_graph=True)[0] # -score
         else:
-            score = true_nabla_U0[time_mask]
-        score = self.hparams.clipper.clip_scores(score)
-        x0 = xt - score * ht[:, None]
+            nabla_U0 = - true_force[time_mask]
+        nabla_U0 = self.hparams.clipper.clip_scores(nabla_U0)
+        x0 = xt - nabla_U0 * ht[:, None]
         target_score_loss = torch.sum((x0 - predicted_x0) ** 2, dim=(-1))
 
         if weights is not None:
@@ -446,7 +472,11 @@ class energyTempModule(BaseLightningModule):
 
         U0_true = -x0_energies
         mask = U0_true > energy_threshold
-        U0_pred = self.energy_net_forward_energy(h0, x0, inverse_temp)
+
+        z = torch.randn_like(x0)
+        z = self.maybe_remove_mean(z)
+        x0 = x0 + z * h0[:, None] ** 0.5 # TODO: is this better?
+        U0_pred = self.energy_net.forward_energy(h0, x0, inverse_temp)
 
         energy_matching_loss = (U0_true - U0_pred) ** 2
         energy_matching_loss = ~mask * energy_matching_loss
@@ -602,7 +632,6 @@ class energyTempModule(BaseLightningModule):
             elif prefix == "val":
                 true_x0_samples = energy_function.sample_val_set(num_samples)
             true_x0_energies, true_x0_forces = energy_function(true_x0_samples, return_force=True)
-
             loss = self.model_step(
                 true_x0_samples,
                 true_x0_energies,
@@ -1054,7 +1083,6 @@ class energyTempModule(BaseLightningModule):
             init_energies, init_forces = self.energy_functions[temp_index](
                 init_states, return_force=True
             )
-
             if temp_index == 0:
                 self.buffers[temp_index].add(init_states, init_energies, init_forces)
 

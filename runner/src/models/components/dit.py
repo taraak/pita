@@ -2,7 +2,7 @@ import math
 import typing
 import warnings
 
-import flash_attn
+#import flash_attn
 
 # from flash_attn.layers import rotary
 import huggingface_hub
@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchtune
 from einops import rearrange
-from src.models.components import rotary
+#from src.models.components import rotary
 
 # Flags required to enable jit fusion kernels
 torch._C._jit_set_profiling_mode(False)

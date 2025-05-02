@@ -1,5 +1,4 @@
 #!/bin/bash
-#SBATCH --account=aip-siamakx
 #SBATCH --mem-per-cpu=24G
 #SBATCH -c 8
 #SBATCH --gres=gpu:4
@@ -14,11 +13,12 @@ module purge
 module load python/3.11 cuda/12.2
 module load openmm/8.2.0
 module load arrow
+module load httpproxy/1.0
 virtualenv --no-download $SLURM_TMPDIR/env
 source $SLURM_TMPDIR/env/bin/activate
 pip install --no-index --upgrade pip
 
-pip install --no-index -r cc_requirements_tara_v2.txt
+pip install --no-index -r cc_requirements_alex_v2.txt
 cd runner/
 pip install -e .
 
@@ -42,4 +42,7 @@ model.loss_weights.target_score=0.01 \
 model.inference_batch_size=128 \
 model.num_negative_time_steps=1 \
 model.end_resampling_step=1000 \
-logger.wandb.offline=true \
+logger.wandb.offline=false \
+#+model.only_train_score=True \
+#+energy.debug_train_on_test=True \
+#debug=short \

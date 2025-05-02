@@ -17,7 +17,7 @@ logger:
 
 defaults:
   - override /energy: aldp
-  - override /model/net: torchmdnet_temp #mlp_temp #torchmdnet_temp
+  - override /model/net: dit #mlp_temp #torchmdnet_temp
   - override /model/noise_schedule: elucidating
 
 model:
@@ -82,6 +82,10 @@ model:
     energy_matching: 1.0
     target_score: 0.0
     dem_energy: 0.0
+
+  loss_time_threshold:
+    score: 0.0
+    target_score: 0.2
 
   do_energy_matching_loss_every_n_steps: 1
 
