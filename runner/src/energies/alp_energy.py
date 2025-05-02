@@ -7,7 +7,7 @@ import mdtraj as md
 import numpy as np
 import openmm
 import torch
-import torchvision
+from contextlib import contextmanager
 from bgflow import OpenMMBridge, OpenMMEnergy
 from lightning.pytorch.loggers import WandbLogger
 from matplotlib.colors import LogNorm
@@ -27,6 +27,15 @@ from src.models.components.optimal_transport import torus_wasserstein
 from src.utils.data_utils import remove_mean
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def conditional_grad(condition):
+    if condition:
+        with torch.enable_grad():
+            yield
+    else:
+        yield
 
 
 class ALPEnergy(BaseMoleculeEnergy):
@@ -107,14 +116,21 @@ class ALPEnergy(BaseMoleculeEnergy):
             ),
         )
 
-    def __call__(self, samples: torch.Tensor, return_force=False) -> torch.Tensor:
+    def maybe_normalize(self, x: torch.Tensor) -> torch.Tensor:
         if self.should_normalize:
-            samples = self.unnormalize(samples)
-        logprob = -self.openmm_energy.energy(samples).squeeze(-1)
-        if return_force:
-            force = self.openmm_energy.force(samples)
-            return logprob, force
-        return logprob
+            return self.normalize(x)
+        return x
+
+    def __call__(self, samples: torch.Tensor, return_force=False) -> torch.Tensor:
+        with conditional_grad(return_force):
+            samples.requires_grad = True
+            logprob = -self.openmm_energy.energy(self.maybe_normalize(samples)).squeeze(-1)
+            if return_force:
+                force = torch.autograd.grad(logprob.sum(), samples, create_graph=False)[0]
+                samples.requires_grad = False
+                return logprob, force
+            samples.requires_grad = False
+            return logprob
 
     def setup_test_set(self):
         data = np.load(self.data_path_test, allow_pickle=True)

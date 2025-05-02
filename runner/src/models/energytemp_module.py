@@ -309,7 +309,7 @@ class energyTempModule(BaseLightningModule):
             xt=xt,
             energy_function=energy_function,
             predicted_x0=predicted_x0_scorenet,
-            true_nabla_U0=x0_forces,
+            true_force=x0_forces,
             weights=None, #TODO: should we use lambda_t here?
         )
         dem_energy_loss = self.get_dem_energy_loss(
@@ -342,9 +342,6 @@ class energyTempModule(BaseLightningModule):
         time_mask = ht >= h_threshold
         if not time_mask.any():
             return torch.zeros_like(predicted_x0_scorenet)
-        # xt = xt[time_mask]
-        # ht = ht[time_mask]
-        # predicted_x0_scorenet = predicted_x0_scorenet[time_mask]
 
         score_loss = torch.sum((predicted_x0_scorenet - xt) ** 2, dim=(-1))
         score_loss[~time_mask] = 0.0
@@ -382,7 +379,7 @@ class energyTempModule(BaseLightningModule):
         xt: torch.Tensor,
         energy_function: BaseEnergyFunction,
         predicted_x0: torch.Tensor,
-        true_nabla_U0: Optional[torch.Tensor] = None,
+        true_force: Optional[torch.Tensor] = None,
         weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.hparams.loss_weights["target_score"] == 0:
@@ -397,13 +394,13 @@ class energyTempModule(BaseLightningModule):
         xt = xt[time_mask]
         predicted_x0 = predicted_x0[time_mask]
 
-        if true_nabla_U0 is None:
+        if true_force is None:
             energy = -energy_function(x0).sum()
-            score = torch.autograd.grad(energy, x0, create_graph=True)[0]
+            nabla_U0 = torch.autograd.grad(energy, x0, create_graph=True)[0] # -score
         else:
-            score = true_nabla_U0[time_mask]
-        score = self.hparams.clipper.clip_scores(score)
-        x0 = xt - score * ht[:, None]
+            nabla_U0 = - true_force[time_mask]
+        nabla_U0 = self.hparams.clipper.clip_scores(nabla_U0)
+        x0 = xt - nabla_U0 * ht[:, None]
         target_score_loss = torch.sum((x0 - predicted_x0) ** 2, dim=(-1))
 
         if weights is not None:
@@ -635,7 +632,6 @@ class energyTempModule(BaseLightningModule):
             elif prefix == "val":
                 true_x0_samples = energy_function.sample_val_set(num_samples)
             true_x0_energies, true_x0_forces = energy_function(true_x0_samples, return_force=True)
-
             loss = self.model_step(
                 true_x0_samples,
                 true_x0_energies,
@@ -1087,7 +1083,6 @@ class energyTempModule(BaseLightningModule):
             init_energies, init_forces = self.energy_functions[temp_index](
                 init_states, return_force=True
             )
-
             if temp_index == 0:
                 self.buffers[temp_index].add(init_states, init_energies, init_forces)
 
