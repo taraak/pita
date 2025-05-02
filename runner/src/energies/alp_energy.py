@@ -116,15 +116,15 @@ class ALPEnergy(BaseMoleculeEnergy):
             ),
         )
 
-    def maybe_normalize(self, x: torch.Tensor) -> torch.Tensor:
+    def maybe_unnormalize(self, x: torch.Tensor) -> torch.Tensor:
         if self.should_normalize:
-            return self.normalize(x)
+            return self.unnormalize(x)
         return x
 
     def __call__(self, samples: torch.Tensor, return_force=False) -> torch.Tensor:
         with conditional_grad(return_force):
             samples.requires_grad = True
-            logprob = -self.openmm_energy.energy(self.maybe_normalize(samples)).squeeze(-1)
+            logprob = -self.openmm_energy.energy(self.maybe_unnormalize(samples)).squeeze(-1)
             if return_force:
                 force = torch.autograd.grad(logprob.sum(), samples, create_graph=False)[0]
                 samples.requires_grad = False

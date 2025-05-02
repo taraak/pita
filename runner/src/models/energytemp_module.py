@@ -289,6 +289,15 @@ class energyTempModule(BaseLightningModule):
         if self.hparams.get("only_train_score", False):
             zeros = torch.zeros_like(score_loss)
             return zeros, score_loss, zeros, zeros, zeros
+        target_score_loss = self.get_target_score_loss(
+            ht=ht,
+            x0=x0,
+            xt=xt,
+            energy_function=energy_function,
+            predicted_x0=predicted_x0_scorenet,
+            true_force=x0_forces,
+            weights=None, #TODO: should we use lambda_t here?
+        )
         energy_score_loss, predicted_Ut = self.get_energy_score_loss(
             ht=ht,
             xt=xt,
@@ -302,15 +311,6 @@ class energyTempModule(BaseLightningModule):
             x0_energies=x0_energies,
             inverse_temp=inverse_temp,
             energy_function=energy_function,
-        )
-        target_score_loss = self.get_target_score_loss(
-            ht=ht,
-            x0=x0,
-            xt=xt,
-            energy_function=energy_function,
-            predicted_x0=predicted_x0_scorenet,
-            true_force=x0_forces,
-            weights=None, #TODO: should we use lambda_t here?
         )
         dem_energy_loss = self.get_dem_energy_loss(
             ht=ht,
