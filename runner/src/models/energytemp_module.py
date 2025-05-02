@@ -342,13 +342,13 @@ class energyTempModule(BaseLightningModule):
         time_mask = ht >= h_threshold
         if not time_mask.any():
             return torch.zeros_like(predicted_x0_scorenet)
-        xt = xt[time_mask]
-        ht = ht[time_mask]
-        predicted_x0_scorenet = predicted_x0_scorenet[time_mask]
+        # xt = xt[time_mask]
+        # ht = ht[time_mask]
+        # predicted_x0_scorenet = predicted_x0_scorenet[time_mask]
 
         score_loss = torch.sum((predicted_x0_scorenet - xt) ** 2, dim=(-1))
+        score_loss[~time_mask] = 0.0
         if weights is not None:
-            weights = weights[time_mask]
             score_loss = weights * score_loss
         return score_loss
 
