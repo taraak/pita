@@ -310,7 +310,7 @@ class energyTempModule(BaseLightningModule):
             energy_function=energy_function,
             predicted_x0=predicted_x0_scorenet,
             true_nabla_U0=x0_forces,
-            weights=lambda_t,
+            weights=None, #TODO: should we use lambda_t here?
         )
         dem_energy_loss = self.get_dem_energy_loss(
             ht=ht,
