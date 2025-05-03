@@ -16,7 +16,7 @@ attrs==25.3.0+computecanada
 autopage==0.5.1+computecanada
 babel==2.17.0+computecanada
 beautifulsoup4==4.13.3+computecanada
-bgflow @ file:///home/a/atong01/diffusion-annealed-sampling/wheels/bgflow-0%2Buntagged.337.gb3055ff.zip#sha256=175f0f960f323690fe1646173ada36d9eee00985d84f3ef126da4f3b349badbe
+bgflow @ file:///home/a/atong01/diffusion-annealed-sampling/wheels/bgflow-0+untagged.338.g3eebcb1.zip
 bleach==6.2.0+computecanada
 certifi==2025.1.31+computecanada
 cffi==1.17.1+computecanada
