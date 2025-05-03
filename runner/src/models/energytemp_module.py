@@ -625,7 +625,9 @@ class energyTempModule(BaseLightningModule):
         try: 
             val_loss = 0.0
             num_samples = min(self.hparams.num_eval_samples, self.hparams.training_batch_size)
-            for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
+            active_inverse_temperatures = self.inverse_temperatures[: self.active_inverse_temperature_index + 1]
+            
+            for temp_index, inverse_temp in enumerate(active_inverse_temperatures):
                 energy_function = self.energy_functions[temp_index]
 
                 if prefix == "test":
