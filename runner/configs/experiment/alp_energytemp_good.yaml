@@ -22,6 +22,9 @@ defaults:
 
 model:
 
+  noise_schedule:
+    _sigma_min: 0.01
+
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
     _partial_: true
