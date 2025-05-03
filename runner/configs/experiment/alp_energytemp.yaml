@@ -68,6 +68,7 @@ model:
   resample_at_end: False
   debias_inference: True #if self to False it just does regular VE reverse sde for debugging
   energy_masking_threshold: 1000
+  data_augmentation_every_n_epochs: 10
 
   temperatures:
     - 600

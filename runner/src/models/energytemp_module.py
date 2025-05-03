@@ -21,6 +21,7 @@ from src.models.components.sdes import SDETerms, VEReverseSDE
 from src.models.components.utils import get_wandb_logger, sample_from_tensor
 from src.utils.data_utils import remove_mean
 from torchmetrics import MeanMetric
+from src.energies.components.rotation import Random3DRotationTransform
 
 from .components.clipper import Clipper
 from .components.distribution_distances import energy_distances
@@ -601,6 +602,13 @@ class energyTempModule(BaseLightningModule):
             self.hparams.training_batch_size
         )
 
+
+        should_do_data_augmentation = ((self.trainer.current_epoch % self.hparams.data_augmentation_every_n_epochs) == 0 
+                                       and self.trainer.current_epoch > 0)
+        
+        if should_do_data_augmentation and self.is_molecule:
+            x0_samples, x0_forces = self.data_augmentation(x0_samples, x0_forces)
+
         loss = self.model_step(x0_samples, x0_energies, x0_forces, temp_index, prefix="train")
         return loss
 
@@ -626,7 +634,7 @@ class energyTempModule(BaseLightningModule):
             val_loss = 0.0
             num_samples = min(self.hparams.num_eval_samples, self.hparams.training_batch_size)
             active_inverse_temperatures = self.inverse_temperatures[: self.active_inverse_temperature_index + 1]
-            
+
             for temp_index, inverse_temp in enumerate(active_inverse_temperatures):
                 energy_function = self.energy_functions[temp_index]
 
