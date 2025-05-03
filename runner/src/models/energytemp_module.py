@@ -621,27 +621,33 @@ class energyTempModule(BaseLightningModule):
         :param batch_idx: The index of the current batch.
         """
         logger.debug(f"Eval step {prefix}")
-        val_loss = 0.0
-        num_samples = min(self.hparams.num_eval_samples, self.hparams.training_batch_size)
-        for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
-            energy_function = self.energy_functions[temp_index]
 
-            if prefix == "test":
-                true_x0_samples = energy_function.sample_test_set(num_samples)
-            elif prefix == "val":
-                true_x0_samples = energy_function.sample_val_set(num_samples)
-                
-            true_x0_energies, true_x0_forces = energy_function(true_x0_samples, return_force=True)
-            loss = self.model_step(
-                true_x0_samples,
-                true_x0_energies,
-                true_x0_forces,
-                temp_index,
-                prefix=f"{prefix}/temp={self.temperatures[temp_index]:0.3f}",
-            )
-            val_loss += loss
+        try: 
+            val_loss = 0.0
+            num_samples = min(self.hparams.num_eval_samples, self.hparams.training_batch_size)
+            for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
+                energy_function = self.energy_functions[temp_index]
 
-        self.log(f"{prefix}/loss", val_loss)
+                if prefix == "test":
+                    true_x0_samples = energy_function.sample_test_set(num_samples)
+                elif prefix == "val":
+                    true_x0_samples = energy_function.sample_val_set(num_samples)
+                    
+                true_x0_energies, true_x0_forces = energy_function(true_x0_samples, return_force=True)
+                loss = self.model_step(
+                    true_x0_samples,
+                    true_x0_energies,
+                    true_x0_forces,
+                    temp_index,
+                    prefix=f"{prefix}/temp={self.temperatures[temp_index]:0.3f}",
+                )
+                val_loss += loss
+
+            self.log(f"{prefix}/loss", val_loss)
+
+        except Exception as e:
+            logger.error(f"Error in eval step {prefix}: {e}")
+            raise e
 
     def eval_epoch_end_dem(self, prefix: str):
         logger.debug(f"Started DEM eval epoch end {prefix}")
