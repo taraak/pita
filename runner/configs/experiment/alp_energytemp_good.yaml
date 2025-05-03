@@ -17,15 +17,10 @@ logger:
 
 defaults:
   - override /energy: aldp
-  - override /model/net: dit #mlp_temp #torchmdnet_temp
+  - override /model/net: dit
   - override /model/noise_schedule: elucidating
 
 model:
-  # net:
-  #   hidden_layers: 5
-  # net:
-  #   hidden_nf: 64
-  #   n_layers: 5
 
   partial_prior:
     _target_: src.energies.base_prior.MeanFreePrior
@@ -46,12 +41,12 @@ model:
   diffusion_scale: 1.0
 
   num_negative_time_steps: 0
-  post_mcmc_steps: 0
+  post_mcmc_steps: 5
   dt_negative_time: 1e-9
   do_langevin: False
 
   training_batch_size: 1024
-  inference_batch_size: 128
+  inference_batch_size: 512
 
   num_samples_to_save: 10000
   num_integration_steps: 1000
@@ -63,7 +58,7 @@ model:
   num_temp_annealed_samples_to_generate: 5000
   resampling_interval: 1
   start_resampling_step: 0
-  end_resampling_step: 900
+  end_resampling_step: 800
   scale_diffusion: False
   resample_at_end: False
   debias_inference: True #if self to False it just does regular VE reverse sde for debugging
@@ -72,18 +67,21 @@ model:
   temperatures:
     - 600
     - 550
-  
+    - 500
+
   num_epochs_per_temp:
+    - 500
     - 500
 
   temps_to_anneal_test:
     - [600, 600]
+    # - [600, 550]
 
   loss_weights:
     energy_score: 1.0
     score: 1.0
     energy_matching: 1.0
-    target_score: 0.0
+    target_score: 0.01
     dem_energy: 0.0
 
   loss_time_threshold:
@@ -94,14 +92,13 @@ model:
 
   init_from_prior: false
 
-
   dem:
     noise_schedule: elucidating
     num_training_epochs: 0
     training_batch_size: 512
     num_samples_to_generate_per_epoch: 512
-    check_val_every_n_epochs: 10
     num_mc_samples: 1000
+    check_val_every_n_epochs: 10
     clipper:
       _target_: src.models.components.clipper.Clipper
       should_clip_scores: True
