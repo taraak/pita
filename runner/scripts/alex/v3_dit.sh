@@ -1,10 +1,12 @@
-HYDRA_FULL_ERROR=1 python src/train.py +trainer.num_sanity_val_steps=0 \
+RUN_NAME="bigdit"
+HYDRA_FULL_ERROR=1 python src/train.py -m +trainer.num_sanity_val_steps=0 \
 model=energytemp \
 experiment=alp_energytemp \
 trainer=ddp model.resampling_interval=1 \
-tags=["test","ALDP"] \
-model.noise_schedule.sigma_min=0.002 \
+tags=["test","ALDP","big"] \
+model.noise_schedule.sigma_min=0.005 \
 trainer.check_val_every_n_epoch=10 \
+trainer.max_epochs=50 \
 model.dem.num_training_epochs=0 \
 model.debias_inference=False \
 model.loss_weights.energy_matching=0.0 \
@@ -19,9 +21,12 @@ model/net=dit \
 model.end_resampling_step=800 \
 ++model.compile=True \
 model.net.hidden_size=768 \
-model.net.cond_dim=128 \
-model.net.n_blocks=12 \
-model.net.n_heads=12 \
+model.net.cond_dim=64 \
+model.net.n_blocks=6 \
+model.net.n_heads=6 \
+hydra.run.dir='${paths.log_dir}/${task_name}/runs/'${RUN_NAME} \
+ckpt_path='${paths.log_dir}/${task_name}/runs/'${RUN_NAME}/checkpoints/last.ckpt \
+logger.wandb.id=${RUN_NAME}
 #model.num_samples_to_save=5000 \
 #debug=short \
 #model/net=egnn_dynamics_ad2_cat \
