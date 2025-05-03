@@ -55,7 +55,6 @@ class energyTempModule(BaseLightningModule):
         start_resampling_step: int,
         end_resampling_step: int,
         resampling_interval: int,
-        num_mc_samples: int,
         num_epochs_per_temp: List[int],
         num_negative_time_steps: int,
         resample_at_end: bool,
@@ -429,7 +428,7 @@ class energyTempModule(BaseLightningModule):
             ht=ht,
             x=xt,
             energy_function=energy_function,
-            num_mc_samples=self.hparams.num_mc_samples,
+            num_mc_samples=self.hparams.dem.num_mc_samples,
         )
         mask = Ut_estimate > energy_threshold
         loss = (Ut_estimate - predicted_Ut) ** 2
@@ -447,7 +446,7 @@ class energyTempModule(BaseLightningModule):
             ht=ht,
             x=xt,
             energy_function=energy_function,
-            num_mc_samples=self.hparams.num_mc_samples,
+            num_mc_samples=self.hparams.dem.num_mc_samples,
         )
         nabla_Ut_estimate = self.hparams.dem.clipper.clip_scores(nabla_Ut_estimate)
         return torch.sum((nabla_Ut_estimate - predicted_nabla_Ut) ** 2, dim=(-1))
@@ -473,9 +472,9 @@ class energyTempModule(BaseLightningModule):
         U0_true = -x0_energies
         mask = U0_true > energy_threshold
 
-        z = torch.randn_like(x0)
-        z = self.maybe_remove_mean(z)
-        x0 = x0 + z * h0[:, None] ** 0.5 # TODO: is this better?
+        # z = torch.randn_like(x0)
+        # z = self.maybe_remove_mean(z)
+        # x0 = x0 + z * h0[:, None] ** 0.5 # TODO: is this better?
         U0_pred = self.energy_net.forward_energy(h0, x0, inverse_temp)
 
         energy_matching_loss = (U0_true - U0_pred) ** 2
@@ -631,6 +630,7 @@ class energyTempModule(BaseLightningModule):
                 true_x0_samples = energy_function.sample_test_set(num_samples)
             elif prefix == "val":
                 true_x0_samples = energy_function.sample_val_set(num_samples)
+                
             true_x0_energies, true_x0_forces = energy_function(true_x0_samples, return_force=True)
             loss = self.model_step(
                 true_x0_samples,
