@@ -1,0 +1,116 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["AL3"]
+
+seed: 12345
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "al3"
+
+defaults:
+  - override /energy: al3
+  - override /model/net: dit
+  - override /model/noise_schedule: elucidating
+
+model:
+  noise_schedule:
+    sigma_min: 0.005
+
+  partial_prior:
+    _target_: src.energies.base_prior.MeanFreePrior
+    _partial_: true
+    n_particles: ${energy.n_particles}
+    spatial_dim: ${energy.spatial_dim}
+
+  clipper:
+    _target_: src.models.components.clipper.Clipper
+    should_clip_scores: True
+    should_clip_log_rewards: False
+    max_score_norm: 1000
+    min_log_reward: null
+    n_particles: ${energy.n_particles}
+    dimensionality: ${energy.dimensionality}
+    spatial_dim: ${energy.spatial_dim}
+
+  diffusion_scale: 1.0
+
+  num_negative_time_steps: 0
+  post_mcmc_steps: 5
+  dt_negative_time: 1e-9
+  do_langevin: False
+
+  training_batch_size: 1024
+  inference_batch_size: 512
+
+  num_samples_to_save: 10000
+  num_integration_steps: 1000
+
+  # energytemp parameters
+  num_init_samples: 10000
+  test_batch_size: 5000
+  num_eval_samples: 2048
+  num_temp_annealed_samples_to_generate: 5000
+  resampling_interval: 1
+  start_resampling_step: 0
+  end_resampling_step: 800
+  scale_diffusion: False
+  resample_at_end: False
+  debias_inference: True #if self to False it just does regular VE reverse sde for debugging
+  energy_masking_threshold: 1000
+  data_augmentation_every_n_epochs: 10
+
+  temperatures:
+    - 1200
+    - 1028.69
+    - 755.95
+    - 555.52
+    - 408.24
+  num_epochs_per_temp:
+    - 200
+    - 200
+    - 200
+    - 200
+
+  temps_to_anneal_test:
+    - [600, 600]
+    # - [600, 550]
+
+  loss_weights:
+    energy_score: 1.0
+    score: 1.0
+    energy_matching: 1.0
+    target_score: 0.01
+    dem_energy: 0.0
+
+  loss_time_threshold:
+    score: 0.0
+    target_score: 0.2
+
+  do_energy_matching_loss_every_n_steps: 1
+
+  init_from_prior: false
+
+  dem:
+    noise_schedule: elucidating
+    num_training_epochs: 0
+    training_batch_size: 512
+    num_samples_to_generate_per_epoch: 512
+    num_mc_samples: 1000
+    check_val_every_n_epochs: 10
+    clipper:
+      _target_: src.models.components.clipper.Clipper
+      should_clip_scores: True
+      should_clip_log_rewards: False
+      max_score_norm: 100
+      min_log_reward: null
+      n_particles: ${energy.n_particles}
+      dimensionality: ${energy.dimensionality}
+      spatial_dim: ${energy.spatial_dim}
