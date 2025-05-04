@@ -47,15 +47,15 @@ class BaseMoleculeEnergy(BaseEnergyFunction):
 
         self.data_path_train = (
             data_path
-            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/train_split_{data_name}{self.n_particles}-10000.npy"
+            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.2f}/train_split_{data_name}{self.n_particles}-10000.npy"
         )
         self.data_path_val = (
             data_path
-            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/val_split_{data_name}{self.n_particles}-10000.npy"
+            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.2f}/val_split_{data_name}{self.n_particles}-10000.npy"
         )
         self.data_path_test = (
             data_path
-            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.1f}/test_split_{data_name}{self.n_particles}-10000.npy"
+            + f"{data_name}{self.n_particles}_temp_{self.temperature:0.2f}/test_split_{data_name}{self.n_particles}-10000.npy"
         )
 
         super().__init__(dimensionality=dimensionality, is_molecule=is_molecule)

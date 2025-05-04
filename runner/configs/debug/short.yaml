@@ -14,5 +14,5 @@ data:
   n_train_batches_per_epoch: 3
 
 trainer:
-  max_epochs: 2
+  max_epochs: 10
   check_val_every_n_epoch: 1
