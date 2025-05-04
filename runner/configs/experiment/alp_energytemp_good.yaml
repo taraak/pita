@@ -21,7 +21,6 @@ defaults:
   - override /model/noise_schedule: elucidating
 
 model:
-
   noise_schedule:
     sigma_min: 0.005
 

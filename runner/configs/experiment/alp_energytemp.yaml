@@ -73,7 +73,7 @@ model:
   temperatures:
     - 600
     - 550
-  
+
   num_epochs_per_temp:
     - 500
 
@@ -94,7 +94,6 @@ model:
   do_energy_matching_loss_every_n_steps: 1
 
   init_from_prior: false
-
 
   dem:
     noise_schedule: elucidating
