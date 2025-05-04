@@ -591,6 +591,7 @@ class DIT3D(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         self.vocab_size = vocab_size
         self.vocab_embed = torch.nn.Linear(vocab_size, config.model.hidden_size)
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
+        self.sigma_map_temp = TimestepEmbedder(config.model.cond_dim)
         # self.rotary_emb = Rotary(config.model.hidden_size // config.model.n_heads)
         self.rotary_emb = torchtune.modules.RotaryPositionalEmbeddings(
             dim=config.model.hidden_size // config.model.n_heads, base=10000, max_seq_len=1024
@@ -619,14 +620,16 @@ class DIT3D(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         else:
             return bias_dropout_add_scale_fused_inference
 
-    def forward(self, t, x, *args, **kwargs):
+    def forward(self, t, x, inverse_temp):
         # eating args lie d_base
         t = t.squeeze()
         if t.ndim == 0:
             t = t.unsqueeze(0).repeat(x.shape[0])
+        if inverse_temp.ndim == 0:
+            inverse_temp = inverse_temp.unsqueeze(0).repeat(x.shape[0])
         x = x.reshape(-1, self.n_particles, self.vocab_size)
         x = self.vocab_embed(x)
-        c = F.silu(self.sigma_map(t))
+        c= F.silu(self.sigma_map(t) + self.sigma_map_temp(inverse_temp))
         rotary_cos_sin = self.rotary_emb
         with torch.amp.autocast("cuda", dtype=torch.bfloat16):
             for i in range(len(self.blocks)):
