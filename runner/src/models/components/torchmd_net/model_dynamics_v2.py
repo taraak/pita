@@ -120,7 +120,7 @@ class EquivariantMultiHeadAttention(MessagePassing):
 
     def forward(self, x, vec, edge_index, r_ij, f_ij, d_ij, node_attr):
         # Mix x with node_attr(t, beta)
-        x = self.mixing_mlp(torch.cat([x, node_attr], dim=1)) # h_z | h_t, h_beta 
+        x = self.mixing_mlp(torch.cat([x, node_attr], dim=1))  # h_z | h_t, h_beta
 
         # Input features: (BSxnum_atoms, hidden_channels)
         x = self.layernorm(x)
@@ -430,18 +430,20 @@ class TorchMD_ET_dynamics(nn.Module):
             edge_attr = self.distance_expansion(edge_attr)  # (num_edges, num_rbf)
 
         # embed atomic numbers using an embedding layer
-        if z is not None:  
+        if z is not None:
             if z.dim() > 1:
-                z = z.squeeze()     # (num_atoms,)
+                z = z.squeeze()  # (num_atoms,)
             x = self.embedding(z)  # (BSxnum_atoms, self.hidden_channels)
         else:
-            x = torch.zeros(pos.size(0), self.hidden_channels).to(pos.device)  # (BSxnum_atoms, hidden_dim)
+            x = torch.zeros(pos.size(0), self.hidden_channels).to(
+                pos.device
+            )  # (BSxnum_atoms, hidden_dim)
         if self.neighbor_embedding is not None:
             if isinstance(edge_index, list):  # If it's a list
                 edge_index = torch.stack(edge_index, dim=0)  # Convert to [2, num_edges] tensor
             x = self.neighbor_embedding(z, x, edge_index, edge_weight, edge_attr)
-       # vec here is invariant values, we are not modifying the vectors.
-       # (BS x num_atoms, 3, hidden_channels)
+        # vec here is invariant values, we are not modifying the vectors.
+        # (BS x num_atoms, 3, hidden_channels)
         vec = torch.zeros(
             pos.size(0), 3, self.hidden_channels, device=pos.device
         )  # (BS*n_particles, n_dimension, hidden_dim) i.e. vector feat
@@ -541,7 +543,7 @@ class TorchMDDynamicsV2(nn.Module):
         neighbor_embedding: int = False,
         cutoff_lower: float = 0.0,
         cutoff_upper: float = 10.0,
-        max_z: int = 22,                       # change accordingly to system size
+        max_z: int = 22,  # change accordingly to system size
         attn_activation: str = "silu",
         n_heads: int = 1,
         distance_influence: str = "both",
@@ -660,11 +662,11 @@ class TorchMDDynamicsV2(nn.Module):
             h_initial = torch.tensor(atom_types)
             return h_initial
         if self._n_particles == 55 or self._n_particles == 13:
-            return torch.zeros(self._n_particles, 1)                    # LJ
+            return torch.zeros(self._n_particles, 1)  # LJ
         if self._n_particles >= 53:
             return self.get_hidden()
 
-    def get_hidden(self):       # TODO change to not use onehot (pass as z)
+    def get_hidden(self):  # TODO change to not use onehot (pass as z)
         # n_encodings = 78
         amino_dict = {
             "ALA": 0,

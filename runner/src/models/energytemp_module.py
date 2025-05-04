@@ -1,8 +1,8 @@
 import copy
 import logging
+import time
 from dataclasses import fields
 from typing import List, Optional
-import time
 
 import hydra
 import matplotlib.pyplot as plt
@@ -12,6 +12,7 @@ import PIL
 import torch
 import wandb
 from src.energies.base_energy_function import BaseEnergyFunction
+from src.energies.components.rotation import Random3DRotationTransform
 from src.models.base import BaseLightningModule
 from src.models.components.energy_net import EnergyNet
 from src.models.components.noise_schedules import BaseNoiseSchedule
@@ -21,7 +22,6 @@ from src.models.components.sdes import SDETerms, VEReverseSDE
 from src.models.components.utils import get_wandb_logger, sample_from_tensor
 from src.utils.data_utils import remove_mean
 from torchmetrics import MeanMetric
-from src.energies.components.rotation import Random3DRotationTransform
 
 from .components.clipper import Clipper
 from .components.distribution_distances import energy_distances
@@ -296,7 +296,7 @@ class energyTempModule(BaseLightningModule):
             energy_function=energy_function,
             predicted_x0=predicted_x0_scorenet,
             true_force=x0_forces,
-            weights=None, #TODO: should we use lambda_t here?
+            weights=None,  # TODO: should we use lambda_t here?
         )
         energy_score_loss, predicted_Ut = self.get_energy_score_loss(
             ht=ht,
@@ -325,7 +325,7 @@ class energyTempModule(BaseLightningModule):
             dem_energy_loss,
             energy_matching_loss,
         )
-    
+
     def get_score_loss(
         self,
         ht: torch.Tensor,
@@ -334,10 +334,12 @@ class energyTempModule(BaseLightningModule):
         weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.hparams.loss_time_threshold["score"] > 0:
-            assert self.hparams.loss_weights["target_score"] > 0, "target_score loss weight must be > 0 if score loss time threshold is > 0"
+            assert (
+                self.hparams.loss_weights["target_score"] > 0
+            ), "target_score loss weight must be > 0 if score loss time threshold is > 0"
         if self.hparams.loss_weights["score"] == 0:
             return torch.zeros(x0.shape[0], device=x0.device)
-        
+
         h_threshold = self.hparams.noise_schedule.h(self.hparams.loss_time_threshold["score"])
         time_mask = ht >= h_threshold
         if not time_mask.any():
@@ -385,7 +387,9 @@ class energyTempModule(BaseLightningModule):
         if self.hparams.loss_weights["target_score"] == 0:
             return torch.zeros(predicted_x0.shape[0], device=x0.device)
 
-        h_threshold = self.hparams.noise_schedule.h(self.hparams.loss_time_threshold["target_score"])
+        h_threshold = self.hparams.noise_schedule.h(
+            self.hparams.loss_time_threshold["target_score"]
+        )
         time_mask = ht < h_threshold
         if not time_mask.any():
             return torch.zeros(predicted_x0.shape[0], device=x0.device)
@@ -396,9 +400,9 @@ class energyTempModule(BaseLightningModule):
 
         if true_force is None:
             energy = -energy_function(x0).sum()
-            nabla_U0 = torch.autograd.grad(energy, x0, create_graph=True)[0] # -score
+            nabla_U0 = torch.autograd.grad(energy, x0, create_graph=True)[0]  # -score
         else:
-            nabla_U0 = - true_force[time_mask]
+            nabla_U0 = -true_force[time_mask]
         nabla_U0 = self.hparams.clipper.clip_scores(nabla_U0)
         x0 = xt - nabla_U0 * ht[:, None]
         target_score_loss = torch.sum((x0 - predicted_x0) ** 2, dim=(-1))
@@ -602,13 +606,12 @@ class energyTempModule(BaseLightningModule):
             self.hparams.training_batch_size
         )
 
+        should_do_data_augmentation = (
+            self.trainer.current_epoch % self.hparams.data_augmentation_every_n_epochs
+        ) == 0 and self.trainer.current_epoch > 0
 
-        should_do_data_augmentation = ((self.trainer.current_epoch % self.hparams.data_augmentation_every_n_epochs) == 0
-                                       and self.trainer.current_epoch > 0)
-        
         if should_do_data_augmentation and self.is_molecule:
-            x0_samples, x0_forces = torch.vmap(
-                self.data_augmentation)(x0_samples, x0_forces)
+            x0_samples, x0_forces = torch.vmap(self.data_augmentation)(x0_samples, x0_forces)
 
         loss = self.model_step(x0_samples, x0_energies, x0_forces, temp_index, prefix="train")
         return loss
@@ -631,10 +634,12 @@ class energyTempModule(BaseLightningModule):
         """
         logger.debug(f"Eval step {prefix}")
 
-        try: 
+        try:
             val_loss = 0.0
             num_samples = min(self.hparams.num_eval_samples, self.hparams.training_batch_size)
-            active_inverse_temperatures = self.inverse_temperatures[: self.active_inverse_temperature_index + 1]
+            active_inverse_temperatures = self.inverse_temperatures[
+                : self.active_inverse_temperature_index + 1
+            ]
 
             for temp_index, inverse_temp in enumerate(active_inverse_temperatures):
                 energy_function = self.energy_functions[temp_index]
@@ -643,8 +648,10 @@ class energyTempModule(BaseLightningModule):
                     true_x0_samples = energy_function.sample_test_set(num_samples)
                 elif prefix == "val":
                     true_x0_samples = energy_function.sample_val_set(num_samples)
-                    
-                true_x0_energies, true_x0_forces = energy_function(true_x0_samples, return_force=True)
+
+                true_x0_energies, true_x0_forces = energy_function(
+                    true_x0_samples, return_force=True
+                )
                 loss = self.model_step(
                     true_x0_samples,
                     true_x0_energies,
@@ -874,8 +881,6 @@ class energyTempModule(BaseLightningModule):
             logger.info(f"temp_index is {temp_index} and temp_index_lower is {temp_index_lower}")
             logger.info(f"Resampling interval is {self.hparams.resampling_interval}")
             final_samples, _, sde_terms = self.generate_samples(
-
-
                 prior=self.priors[temp_index + 1],
                 energy_function=self.energy_functions[temp_index + 1],
                 num_samples=self.hparams.num_samples_to_save,
@@ -1108,6 +1113,4 @@ class energyTempModule(BaseLightningModule):
             self.n_particles = self.energy_functions[0].n_particles
             self.n_spatial_dim = self.energy_functions[0].n_spatial_dim
 
-        self.data_augmentation = Random3DRotationTransform(self.n_particles,
-                                                           self.n_spatial_dim)
-
+        self.data_augmentation = Random3DRotationTransform(self.n_particles, self.n_spatial_dim)

@@ -2,8 +2,6 @@ import math
 import typing
 import warnings
 
-#import flash_attn
-
 # from flash_attn.layers import rotary
 import huggingface_hub
 import omegaconf
@@ -12,7 +10,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchtune
 from einops import rearrange
-#from src.models.components import rotary
+
+# import flash_attn
+
+
+# from src.models.components import rotary
 
 # Flags required to enable jit fusion kernels
 torch._C._jit_set_profiling_mode(False)
@@ -629,7 +631,7 @@ class DIT3D(nn.Module, huggingface_hub.PyTorchModelHubMixin):
             inverse_temp = inverse_temp.unsqueeze(0).repeat(x.shape[0])
         x = x.reshape(-1, self.n_particles, self.vocab_size)
         x = self.vocab_embed(x)
-        c= F.silu(self.sigma_map(t) + self.sigma_map_temp(inverse_temp))
+        c = F.silu(self.sigma_map(t) + self.sigma_map_temp(inverse_temp))
         rotary_cos_sin = self.rotary_emb
         with torch.amp.autocast("cuda", dtype=torch.bfloat16):
             for i in range(len(self.blocks)):

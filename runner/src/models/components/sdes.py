@@ -47,7 +47,9 @@ class SDETerms:
         return SDETerms(
             drift_X=data.drift_X.cpu(),
             drift_A=data.drift_A.cpu(),
-            divergence_score=data.divergence_score.cpu() if data.divergence_score is not None else None,
+            divergence_score=data.divergence_score.cpu()
+            if data.divergence_score is not None
+            else None,
             cross_term=data.cross_term.cpu() if data.cross_term is not None else None,
             dUt_dt=data.dUt_dt.cpu() if data.dUt_dt is not None else None,
             diffusion=data.diffusion.cpu() if data.diffusion is not None else None,
