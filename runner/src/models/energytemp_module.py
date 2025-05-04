@@ -603,11 +603,12 @@ class energyTempModule(BaseLightningModule):
         )
 
 
-        should_do_data_augmentation = ((self.trainer.current_epoch % self.hparams.data_augmentation_every_n_epochs) == 0 
+        should_do_data_augmentation = ((self.trainer.current_epoch % self.hparams.data_augmentation_every_n_epochs) == 0
                                        and self.trainer.current_epoch > 0)
         
         if should_do_data_augmentation and self.is_molecule:
-            x0_samples, x0_forces = self.data_augmentation(x0_samples, x0_forces)
+            x0_samples, x0_forces = torch.vmap(
+                self.data_augmentation)(x0_samples, x0_forces)
 
         loss = self.model_step(x0_samples, x0_energies, x0_forces, temp_index, prefix="train")
         return loss
@@ -1106,3 +1107,7 @@ class energyTempModule(BaseLightningModule):
         if self.is_molecule:
             self.n_particles = self.energy_functions[0].n_particles
             self.n_spatial_dim = self.energy_functions[0].n_spatial_dim
+
+        self.data_augmentation = Random3DRotationTransform(self.n_particles,
+                                                           self.n_spatial_dim)
+
