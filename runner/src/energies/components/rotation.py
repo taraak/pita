@@ -36,12 +36,17 @@ class Random3DRotationTransform(torch.nn.Module):
         self.num_particles = num_particles
         self.dim = dim
 
-    def forward(self, data):
+    def forward(self, data, force=None):
         data = data.reshape(-1, self.num_particles, self.dim)  # batch dimension needed for einsum
-        # rot = create_random_rotation_matrix(len(data))
         rot = torch.tensor(R.random(len(data)).as_matrix()).to(data)
         data = torch.einsum("bij,bki->bkj", rot, data)
         data = data.reshape(self.num_particles * self.dim)  # don't want to return with batch dim
+
+        if force is not None:
+            force = force.reshape(-1, self.num_particles, self.dim)
+            force = torch.einsum("bij,bki->bkj", rot, force)
+            force = force.reshape(self.num_particles * self.dim)
+            return data, force
         return data
 
 

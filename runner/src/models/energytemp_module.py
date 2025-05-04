@@ -21,6 +21,7 @@ from src.models.components.sdes import SDETerms, VEReverseSDE
 from src.models.components.utils import get_wandb_logger, sample_from_tensor
 from src.utils.data_utils import remove_mean
 from torchmetrics import MeanMetric
+from src.energies.components.rotation import Random3DRotationTransform
 
 from .components.clipper import Clipper
 from .components.distribution_distances import energy_distances
@@ -55,7 +56,6 @@ class energyTempModule(BaseLightningModule):
         start_resampling_step: int,
         end_resampling_step: int,
         resampling_interval: int,
-        num_mc_samples: int,
         num_epochs_per_temp: List[int],
         num_negative_time_steps: int,
         resample_at_end: bool,
@@ -429,7 +429,7 @@ class energyTempModule(BaseLightningModule):
             ht=ht,
             x=xt,
             energy_function=energy_function,
-            num_mc_samples=self.hparams.num_mc_samples,
+            num_mc_samples=self.hparams.dem.num_mc_samples,
         )
         mask = Ut_estimate > energy_threshold
         loss = (Ut_estimate - predicted_Ut) ** 2
@@ -447,7 +447,7 @@ class energyTempModule(BaseLightningModule):
             ht=ht,
             x=xt,
             energy_function=energy_function,
-            num_mc_samples=self.hparams.num_mc_samples,
+            num_mc_samples=self.hparams.dem.num_mc_samples,
         )
         nabla_Ut_estimate = self.hparams.dem.clipper.clip_scores(nabla_Ut_estimate)
         return torch.sum((nabla_Ut_estimate - predicted_nabla_Ut) ** 2, dim=(-1))
@@ -473,9 +473,9 @@ class energyTempModule(BaseLightningModule):
         U0_true = -x0_energies
         mask = U0_true > energy_threshold
 
-        z = torch.randn_like(x0)
-        z = self.maybe_remove_mean(z)
-        x0 = x0 + z * h0[:, None] ** 0.5 # TODO: is this better?
+        # z = torch.randn_like(x0)
+        # z = self.maybe_remove_mean(z)
+        # x0 = x0 + z * h0[:, None] ** 0.5 # TODO: is this better?
         U0_pred = self.energy_net.forward_energy(h0, x0, inverse_temp)
 
         energy_matching_loss = (U0_true - U0_pred) ** 2
@@ -602,6 +602,14 @@ class energyTempModule(BaseLightningModule):
             self.hparams.training_batch_size
         )
 
+
+        should_do_data_augmentation = ((self.trainer.current_epoch % self.hparams.data_augmentation_every_n_epochs) == 0
+                                       and self.trainer.current_epoch > 0)
+        
+        if should_do_data_augmentation and self.is_molecule:
+            x0_samples, x0_forces = torch.vmap(
+                self.data_augmentation)(x0_samples, x0_forces)
+
         loss = self.model_step(x0_samples, x0_energies, x0_forces, temp_index, prefix="train")
         return loss
 
@@ -622,26 +630,35 @@ class energyTempModule(BaseLightningModule):
         :param batch_idx: The index of the current batch.
         """
         logger.debug(f"Eval step {prefix}")
-        val_loss = 0.0
-        num_samples = min(self.hparams.num_eval_samples, self.hparams.training_batch_size)
-        for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
-            energy_function = self.energy_functions[temp_index]
 
-            if prefix == "test":
-                true_x0_samples = energy_function.sample_test_set(num_samples)
-            elif prefix == "val":
-                true_x0_samples = energy_function.sample_val_set(num_samples)
-            true_x0_energies, true_x0_forces = energy_function(true_x0_samples, return_force=True)
-            loss = self.model_step(
-                true_x0_samples,
-                true_x0_energies,
-                true_x0_forces,
-                temp_index,
-                prefix=f"{prefix}/temp={self.temperatures[temp_index]:0.3f}",
-            )
-            val_loss += loss
+        try: 
+            val_loss = 0.0
+            num_samples = min(self.hparams.num_eval_samples, self.hparams.training_batch_size)
+            active_inverse_temperatures = self.inverse_temperatures[: self.active_inverse_temperature_index + 1]
 
-        self.log(f"{prefix}/loss", val_loss)
+            for temp_index, inverse_temp in enumerate(active_inverse_temperatures):
+                energy_function = self.energy_functions[temp_index]
+
+                if prefix == "test":
+                    true_x0_samples = energy_function.sample_test_set(num_samples)
+                elif prefix == "val":
+                    true_x0_samples = energy_function.sample_val_set(num_samples)
+                    
+                true_x0_energies, true_x0_forces = energy_function(true_x0_samples, return_force=True)
+                loss = self.model_step(
+                    true_x0_samples,
+                    true_x0_energies,
+                    true_x0_forces,
+                    temp_index,
+                    prefix=f"{prefix}/temp={self.temperatures[temp_index]:0.3f}",
+                )
+                val_loss += loss
+
+            self.log(f"{prefix}/loss", val_loss)
+
+        except Exception as e:
+            logger.error(f"Error in eval step {prefix}: {e}")
+            raise e
 
     def eval_epoch_end_dem(self, prefix: str):
         logger.debug(f"Started DEM eval epoch end {prefix}")
@@ -1090,3 +1107,7 @@ class energyTempModule(BaseLightningModule):
         if self.is_molecule:
             self.n_particles = self.energy_functions[0].n_particles
             self.n_spatial_dim = self.energy_functions[0].n_spatial_dim
+
+        self.data_augmentation = Random3DRotationTransform(self.n_particles,
+                                                           self.n_spatial_dim)
+
