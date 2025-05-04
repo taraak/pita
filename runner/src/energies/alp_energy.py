@@ -1,5 +1,6 @@
 import logging
 import os
+from contextlib import contextmanager
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -7,7 +8,6 @@ import mdtraj as md
 import numpy as np
 import openmm
 import torch
-from contextlib import contextmanager
 from bgflow import OpenMMBridge, OpenMMEnergy
 from lightning.pytorch.loggers import WandbLogger
 from matplotlib.colors import LogNorm

@@ -3,7 +3,7 @@ train=False \
 model=energytemp \
 experiment=alp_energytemp \
 trainer=ddp model.resampling_interval=1 \
-tags=["test","ALDP"] \
+tags=["test","ALDP","langevin_sweep","v2"] \
 model.noise_schedule.sigma_min=0.01 \
 trainer.check_val_every_n_epoch=50 \
 model.dem.num_training_epochs=0 \
@@ -16,10 +16,14 @@ model.loss_weights.target_score=0.01 \
 model.num_samples_to_save=2048 \
 model/net=dit \
 model.inference_batch_size=256 \
-model.num_negative_time_steps=100 \
+model.num_negative_time_steps=500,3000,4000 \
+model.do_langevin=true \
 model.end_resampling_step=800 \
-model.num_integration_steps=10 \
+model.num_integration_steps=1000 \
 ckpt_path="/network/scratch/a/alexander.tong/energy_temp/logs/train/runs/2025-05-01_17-49-56/checkpoints/epoch_499.ckpt" \
+#model.num_negative_time_steps=0 \
+#model.post_mcmc_steps=1000,10000 \
+#model.post_mcmc_steps=1,10,100,1000,10000 \
 # likely forest ^
 #ckpt_path="/network/scratch/a/alexander.tong/energy_temp/logs/train/runs/2025-05-01_00-33-00/checkpoints/epoch_499.ckpt"
 #ckpt_path="/network/scratch/t/tara.akhoundsadegh/energy_temp/logs/train/runs/2025-05-02_15-01-35/checkpoints/epoch_079.ckpt"
