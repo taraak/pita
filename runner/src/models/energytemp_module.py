@@ -320,6 +320,8 @@ class energyTempModule(BaseLightningModule):
         )
         # L2 regularization on dU/dt
         dU_dt_regularization_loss = torch.sum(predicted_dUt_dt ** 2, dim=(-1))
+        if self.hparams.loss_weights["dU_dt_regularization"] == 0:
+            dU_dt_regularization_loss = torch.zeros_like(dU_dt_regularization_loss)
         return (
             energy_score_loss,
             score_loss,
