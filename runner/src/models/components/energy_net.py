@@ -6,10 +6,11 @@ from torch import nn
 
 
 class EnergyNet(nn.Module):
-    def __init__(self, score_net: nn.Module):
+    def __init__(self, score_net: nn.Module, precondition_beta: Optional[bool] = False):
         super().__init__()
         self.net = score_net
         self.c = nn.Parameter(torch.tensor(0.0))
+        self.precondition_beta = precondition_beta
 
     def forward_energy(
         self,
@@ -37,7 +38,8 @@ class EnergyNet(nn.Module):
             c_in * h_t
         ) * U_theta
 
-        # E_theta = U_theta
+        if self.precondition_beta:
+            E_theta = E_theta * beta
 
         if pin:
             assert t is not None

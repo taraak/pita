@@ -54,3 +54,6 @@ num_eval_samples: 1024
 scale_diffusion: false
 test_batch_size: 5000
 start_resampling_step: 50
+
+precondition_beta: false
+train_on_all_temps: true
