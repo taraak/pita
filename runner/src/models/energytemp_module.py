@@ -595,12 +595,12 @@ class energyTempModule(BaseLightningModule):
 
 
         # TODO: CHAGED THIS TEMPORARILY
-        # active_inverse_temperatures = self.inverse_temperatures[
-        #     : self.active_inverse_temperature_index + 1
-        # ]
-        active_inverse_temperatures = self.inverse_temperatures[self.active_inverse_temperature_index]
+        active_inverse_temperatures = self.inverse_temperatures[
+            : self.active_inverse_temperature_index + 1
+        ]
         # TODO: random inverse temperatures for each element in the batch
-        temp_index = np.random.randint(0, len(active_inverse_temperatures))
+        temp_index = self.active_inverse_temperature_index
+        # temp_index = np.random.randint(0, len(active_inverse_temperatures))
         x0_samples, x0_energies, x0_forces, _ = self.buffers[temp_index].sample(
             self.hparams.training_batch_size
         )
