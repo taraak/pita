@@ -516,10 +516,6 @@ class energyTempModule(BaseLightningModule):
         return dem_score_loss
 
     def model_step(self, x0_samples, x0_energies, x0_forces, temp_index, prefix):
-        # ln_sigmat = (
-        #     torch.randn(len(x0_samples)).to(x0_samples.device) * self.hparams.P_std
-        #     + self.hparams.P_mean
-        # )
         ln_sigmat = self.hparams.noise_schedule.sample_ln_sigma(
             len(x0_samples), device=x0_samples.device
         )
@@ -597,9 +593,12 @@ class energyTempModule(BaseLightningModule):
             x0_samples, _, _ = self.buffers[0].sample(self.hparams.dem.training_batch_size)
             return self.pre_training_step(x0_samples, prefix="train")
 
-        active_inverse_temperatures = self.inverse_temperatures[
-            : self.active_inverse_temperature_index + 1
-        ]
+
+        # TODO: CHAGED THIS TEMPORARILY
+        # active_inverse_temperatures = self.inverse_temperatures[
+        #     : self.active_inverse_temperature_index + 1
+        # ]
+        active_inverse_temperatures = self.inverse_temperatures[self.active_inverse_temperature_index]
         # TODO: random inverse temperatures for each element in the batch
         temp_index = np.random.randint(0, len(active_inverse_temperatures))
         x0_samples, x0_energies, x0_forces, _ = self.buffers[temp_index].sample(
