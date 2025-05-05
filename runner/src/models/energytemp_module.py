@@ -71,8 +71,8 @@ class energyTempModule(BaseLightningModule):
         self.save_hyperparameters(logger=False)
 
         h_theta = self.hparams.net()
-        self.energy_net = EnergyNet(score_net=copy.deepcopy(h_theta))
-        self.score_net = ScoreNet(model=h_theta)
+        self.energy_net = EnergyNet(score_net=copy.deepcopy(h_theta), precondition_beta=self.hparams.precondition_beta)
+        self.score_net = ScoreNet(model=h_theta, precondition_beta=self.hparams.precondition_beta)
         if self.hparams.get("debug_fm", False):
             self.score_net = FlowNet(model=h_theta)
 
@@ -298,7 +298,7 @@ class energyTempModule(BaseLightningModule):
             true_force=x0_forces,
             weights=None,  # TODO: should we use lambda_t here?
         )
-        energy_score_loss, predicted_Ut = self.get_energy_score_loss(
+        energy_score_loss, predicted_dUt_dt, predicted_Ut = self.get_energy_score_loss(
             ht=ht,
             xt=xt,
             inverse_temp=inverse_temp,
@@ -318,12 +318,15 @@ class energyTempModule(BaseLightningModule):
             energy_function=energy_function,
             predicted_Ut=predicted_Ut,
         )
+        # L2 regularization on dU/dt
+        dU_dt_regularization_loss = torch.sum(predicted_dUt_dt ** 2, dim=(-1))
         return (
             energy_score_loss,
             score_loss,
             target_score_loss,
             dem_energy_loss,
             energy_matching_loss,
+            dU_dt_regularization_loss
         )
 
     def get_score_loss(
@@ -359,20 +362,29 @@ class energyTempModule(BaseLightningModule):
         predicted_x0_scorenet: torch.Tensor,
         weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        ht.requires_grad = True
+        t = self.hparams.noise_schedule.t(ht)
+        
         if self.hparams.loss_weights["energy_score"] == 0:
             predicted_Ut = torch.zeros(xt.shape[0], device=xt.device)
             if not (self.hparams.loss_weights["dem_energy"] == 0):
                 predicted_Ut = self.energy_net_forward_energy(ht, xt, inverse_temp)
             return torch.zeros(xt.shape[0], device=xt.device), predicted_Ut
-        predicted_x0_energynet, predicted_Ut = self.energy_net_denoiser_and_energy(
-            ht, xt, inverse_temp
+        
+        predicted_x0_energynet, predicted_dUt_dht, predicted_Ut = self.energy_net_denoiser_and_energy(
+            ht=ht,
+            xt=xt,
+            beta=inverse_temp,
         )
+        # chain rule
+        predicted_dUt_dt = predicted_dUt_dht * self.hparams.noise_schedule.dh_dt(t)
         energy_score_loss = torch.sum(
             (predicted_x0_energynet - predicted_x0_scorenet.detach()) ** 2, dim=(-1)
         )
         if weights is not None:
             energy_score_loss = weights * energy_score_loss
-        return energy_score_loss, predicted_Ut
+
+        return energy_score_loss, predicted_dUt_dt, predicted_Ut
 
     def get_target_score_loss(
         self,
@@ -530,6 +542,7 @@ class energyTempModule(BaseLightningModule):
                 target_score_loss,
                 dem_energy_loss,
                 energy_matching_loss,
+                dU_dt_regularization_loss,
             ) = self.get_loss(
                 ht,
                 x0_samples,
@@ -565,6 +578,7 @@ class energyTempModule(BaseLightningModule):
         target_score_loss = target_score_loss.mean()
         dem_energy_loss = dem_energy_loss.mean()
         energy_matching_loss = energy_matching_loss.mean()
+        dU_dt_regularization_loss = dU_dt_regularization_loss.mean()
 
         loss_weights = self.hparams.loss_weights
         loss = (
@@ -573,6 +587,7 @@ class energyTempModule(BaseLightningModule):
             + loss_weights["target_score"] * target_score_loss
             + loss_weights["dem_energy"] * dem_energy_loss
             + loss_weights["energy_matching"] * energy_matching_loss
+            + loss_weights["dU_dt_regularization"] * dU_dt_regularization_loss
         )
 
         # update and log metrics
@@ -582,7 +597,9 @@ class energyTempModule(BaseLightningModule):
             f"{prefix}/score_loss": score_loss,
             f"{prefix}/target_score_loss": target_score_loss,
             f"{prefix}/dem_energy_loss": dem_energy_loss,
+            f"{prefix}/dU_dt_regularization_loss": dU_dt_regularization_loss,
         }
+
         if self.trainer.global_step % self.hparams.do_energy_matching_loss_every_n_steps == 0:
             loss_dict[f"{prefix}/energy_matching_loss"] = energy_matching_loss
         self.log_dict(loss_dict, sync_dist=True, prog_bar=prefix == "train")
@@ -594,13 +611,14 @@ class energyTempModule(BaseLightningModule):
             return self.pre_training_step(x0_samples, prefix="train")
 
 
-        # TODO: CHAGED THIS TEMPORARILY
-        active_inverse_temperatures = self.inverse_temperatures[
-            : self.active_inverse_temperature_index + 1
-        ]
-        # TODO: random inverse temperatures for each element in the batch
-        temp_index = self.active_inverse_temperature_index
-        # temp_index = np.random.randint(0, len(active_inverse_temperatures))
+        if self.hparams.train_on_all_temps:
+            active_inverse_temperatures = self.inverse_temperatures[
+                : self.active_inverse_temperature_index + 1
+            ]
+            temp_index = np.random.randint(0, len(active_inverse_temperatures))
+        else:
+            # TODO: random inverse temperatures for each element in the batch
+            temp_index = self.active_inverse_temperature_index
         x0_samples, x0_energies, x0_forces, _ = self.buffers[temp_index].sample(
             self.hparams.training_batch_size
         )
