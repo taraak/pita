@@ -97,9 +97,9 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         ckpt_path = cfg.get("ckpt_path")
         if ckpt_path is not None and not os.path.exists(ckpt_path):
             ckpt_path = None
-            print("No checkpoint was found. Training from scratch.")
+            log.info(f"No checkpoint was found at {ckpt_path}. Training from scratch.")
         else:
-            log.info(f"Resuming training from checkpoint: {cfg.get('ckpt_path')}")
+            log.info(f"Resuming training from checkpoint: {ckpt_path}")
         trainer.fit(model=model, datamodule=datamodule, ckpt_path=ckpt_path)
 
     train_metrics = trainer.callback_metrics
