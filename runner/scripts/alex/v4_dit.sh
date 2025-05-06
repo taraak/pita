@@ -14,33 +14,27 @@
 #SBATCH --open-mode=append                   # Append to logs instead of overwriting
 #SBATCH --requeue                            # Requeue upon pre-emption
 
-RUN_NAME="dit_good_v2"
+RUN_NAME="dit_good_v6_l40"
 HYDRA_FULL_ERROR=1 python src/train.py +trainer.num_sanity_val_steps=0 \
 model=energytemp \
 experiment=alp_energytemp_good \
-trainer=gpu model.resampling_interval=1 \
-tags=["test","ALDP","v3"] \
-model.noise_schedule.sigma_min=0.005 \
+trainer=ddp \
+tags=["test","ALDP","v4"] \
 trainer.check_val_every_n_epoch=100 \
+data.n_train_batches_per_epoch=125 \
 trainer.max_epochs=1000 \
-model.dem.num_training_epochs=0 \
 model.debias_inference=True \
-model.loss_weights.energy_matching=1.0 \
-model.do_energy_matching_loss_every_n_steps=1 \
-model.loss_weights.energy_score=1.0 \
-model.loss_weights.score=1.0 \
-model.loss_weights.target_score=0.01 \
-model.inference_batch_size=512 \
+model.training_batch_size=2048 \
+model.inference_batch_size=1024 \
 model.num_samples_to_save=4096 \
 model.num_negative_time_steps=0 \
-model/net=dit \
-model.end_resampling_step=800 \
 ++model.compile=True \
-++model.train_on_all_temps=False \
+++model.train_on_all_temps=False
 hydra.run.dir='${paths.log_dir}/${task_name}/runs/'${RUN_NAME} \
 ckpt_path='${paths.log_dir}/${task_name}/runs/'${RUN_NAME}/checkpoints/last.ckpt \
-#debug=short
 #ckpt_path=/network/scratch/t/tara.akhoundsadegh/energy_temp/logs/train/runs/2025-05-05_04-40-47/checkpoints/epoch_299.ckpt \
+
+#
 #model.net.hidden_size=768 \
 #model.net.cond_dim=64 \
 #model.net.n_blocks=6 \

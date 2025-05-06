@@ -29,25 +29,47 @@ def create_random_rotation_matrix(batch_size):
 
     return R
 
+import torch
+
+def random_rotation_matrices(batch_size, device='cpu', dtype=torch.float32):
+    # Step 1: Sample from normal distribution
+    A = torch.randn((batch_size, 3, 3), device=device, dtype=dtype)
+
+    # Step 2: QR decomposition
+    Q, R = torch.linalg.qr(A)
+
+    # Step 3: Ensure right-handed system (det = +1)
+    d = torch.det(Q)
+    d = d.sign().unsqueeze(-1).unsqueeze(-1)
+    Q = Q * d  # flip sign if det = -1
+
+    return Q
+
 
 class Random3DRotationTransform(torch.nn.Module):
     def __init__(self, num_particles, dim):
         super().__init__()
         self.num_particles = num_particles
         self.dim = dim
+        self.batch_size = 1024 * 1024
+        self.curr_idx = 0
+        self.rotation_matrices = random_rotation_matrices(self.batch_size, dtype=torch.float32)
 
     def forward(self, data, force=None):
         data = data.reshape(-1, self.num_particles, self.dim)  # batch dimension needed for einsum
-        rot = torch.tensor(R.random(len(data)).as_matrix()).to(data)
+        rot = self.get_rot_like(data)
         data = torch.einsum("bij,bki->bkj", rot, data)
-        data = data.reshape(self.num_particles * self.dim)  # don't want to return with batch dim
+        data = data.reshape(-1, self.num_particles * self.dim)  # don't want to return with batch dim
 
         if force is not None:
             force = force.reshape(-1, self.num_particles, self.dim)
             force = torch.einsum("bij,bki->bkj", rot, force)
-            force = force.reshape(self.num_particles * self.dim)
+            force = force.reshape(-1, self.num_particles * self.dim)
             return data, force
         return data
+
+    def get_rot_like(self, data):
+        return torch.tensor(R.random(len(data)).as_matrix()).to(data)
 
 
 class Random2DRotationTransform(torch.nn.Module):

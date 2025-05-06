@@ -61,7 +61,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     energy_function = hydra.utils.instantiate(cfg.energy)
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
-    model: LightningModule = hydra.utils.instantiate(cfg.model, energy_function=energy_function)
+    model: LightningModule = hydra.utils.instantiate(cfg.model, energy_function=energy_function, seed=cfg.get("seed", None))
 
     model.trainer_called = True
 
