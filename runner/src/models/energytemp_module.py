@@ -357,6 +357,8 @@ class energyTempModule(BaseLightningModule):
         )
         # L2 regularization on dU/dt
         dU_dt_regularization_loss = torch.sum(predicted_dUt_dt**2, dim=(-1))
+        if self.hparams.loss_weights["dU_dt_regularization"] == 0:
+            dU_dt_regularization_loss = torch.zeros_like(dU_dt_regularization_loss)
         return (
             energy_score_loss,
             score_loss,
@@ -406,13 +408,9 @@ class energyTempModule(BaseLightningModule):
             predicted_Ut = torch.zeros(xt.shape[0], device=xt.device)
             if not (self.hparams.loss_weights["dem_energy"] == 0):
                 predicted_Ut = self.energy_net_forward_energy(ht, xt, inverse_temp)
-            return torch.zeros(xt.shape[0], device=xt.device), predicted_Ut
-
-        (
-            predicted_x0_energynet,
-            predicted_dUt_dht,
-            predicted_Ut,
-        ) = self.energy_net_denoiser_and_energy(
+            return torch.zeros(xt.shape[0], device=xt.device), torch.zeros_like(predicted_Ut), predicted_Ut
+        
+        predicted_x0_energynet, predicted_dUt_dht, predicted_Ut = self.energy_net_denoiser_and_energy(
             ht=ht,
             xt=xt,
             beta=inverse_temp,
