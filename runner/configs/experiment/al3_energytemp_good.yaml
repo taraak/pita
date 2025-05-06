@@ -24,12 +24,6 @@ model:
   noise_schedule:
     sigma_min: 0.005
 
-  partial_prior:
-    _target_: src.energies.base_prior.MeanFreePrior
-    _partial_: true
-    n_particles: ${energy.n_particles}
-    spatial_dim: ${energy.spatial_dim}
-
   clipper:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True

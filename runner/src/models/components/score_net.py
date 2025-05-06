@@ -1,6 +1,7 @@
+from typing import Optional
+
 import torch
 from torch import nn
-from typing import Optional
 
 
 class ScoreNet(nn.Module):
@@ -34,7 +35,7 @@ class ScoreNet(nn.Module):
 
         if self.precondition_beta:
             D_theta = D_theta * beta[:, None] + (1 - beta[:, None]) * x_t
-            score = score * beta[:, None] 
+            score = score * beta[:, None]
 
         if return_score:
             return D_theta, score
