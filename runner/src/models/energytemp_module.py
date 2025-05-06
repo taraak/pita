@@ -1094,6 +1094,7 @@ class energyTempModule(BaseLightningModule):
         return x
 
     def setup(self, stage: str) -> None:
+        import ipdb; ipdb.set_trace()
         self.energy_functions = {}
         if self.hparams.num_epochs_per_temp is not None:
             assert len(self.hparams.num_epochs_per_temp) == len(self.inverse_temperatures) - 1
