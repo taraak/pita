@@ -1096,7 +1096,28 @@ class energyTempModule(BaseLightningModule):
             x = remove_mean(x, self.n_particles, self.n_spatial_dim)
         return x
 
+    def populate_initial_buffer(self):
+        logger.debug(f"Buffer 0 size: {len(self.sample_buffers[0])}")
+        if len(self.sample_buffers[0]) > 0:
+            logger.debug("Buffer 0 is already populated skipping populate")
+            return
+        # Initialize buffer 0 with train data
+        if self.hparams.init_from_prior or self.hparams.dem.num_training_epochs > 0:
+            init_states = self.priors[0].sample(self.hparams.num_init_samples)
+        else:
+            init_states = self.energy_functions[0].sample_train_set(
+                self.hparams.num_init_samples
+            )
+        for i_states in torch.chunk(init_states, 5):
+            init_energies, init_forces = self.energy_functions[0](
+                i_states, return_force=True
+            )
+            self.sample_buffers[0].add(i_states, init_energies, init_forces)
+        logger.debug(f"Populated buffer 0 with {len(self.sample_buffers[0])} samples")
+
     def setup(self, stage: str) -> None:
+        logger.debug(f"Setting up {stage}")
+        self.energy_functions = {}
         if self.hparams.num_epochs_per_temp is not None:
             assert len(self.hparams.num_epochs_per_temp) == len(self.inverse_temperatures) - 1
             self.update_temp_epoch = (
@@ -1114,8 +1135,6 @@ class energyTempModule(BaseLightningModule):
             assert (
                 len(self.inverse_temperatures) == 1
             ), "Need to specify num_epochs_per_temp in the config file"
-    
-        self.energy_functions = {}
 
         for temp_index, _ in enumerate(self.inverse_temperatures):
             self.energy_functions[temp_index] = self.hparams.energy_function(
@@ -1123,20 +1142,9 @@ class energyTempModule(BaseLightningModule):
                 temperature=self.temperatures[temp_index],
                 device_index=str(self.trainer.local_rank),
             )
-            if self.hparams.init_from_prior or self.hparams.dem.num_training_epochs > 0:
-                init_states = self.priors[temp_index].sample(self.hparams.num_init_samples)
-            else:
-                init_states = self.energy_functions[0].sample_train_set(
-                    self.hparams.num_init_samples
-                )
-            init_energies, init_forces = self.energy_functions[temp_index](
-                init_states, return_force=True
-            )
-            if temp_index == 0:
-                # modules are moved after setup
-                # manually move
-                self.sample_buffers.to(self.device)
-                self.sample_buffers[temp_index].add(init_states, init_energies, init_forces)
+
+        self.sample_buffers.to(self.device)
+        self.populate_initial_buffer()
 
         self.is_molecule = self.energy_functions[0].is_molecule
         if self.is_molecule:
@@ -1145,3 +1153,4 @@ class energyTempModule(BaseLightningModule):
             self.data_augmentation = Random3DRotationTransform(
                 self.n_particles, self.n_spatial_dim
             )
+        logger.debug(f"Setup {stage} done")

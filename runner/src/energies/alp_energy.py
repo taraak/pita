@@ -1,5 +1,4 @@
 import logging
-import os
 from contextlib import contextmanager
 from typing import Optional
 
@@ -12,7 +11,6 @@ from bgflow import OpenMMBridge, OpenMMEnergy
 from lightning.pytorch.loggers import WandbLogger
 from matplotlib.colors import LogNorm
 from openmm import app
-from src.energies.base_energy_function import BaseEnergyFunction
 from src.energies.base_molecule_energy_function import BaseMoleculeEnergy
 from src.energies.components.tica import plot_tic01, run_tica, tica_features
 from src.models.components.distribution_distances import (
