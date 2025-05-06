@@ -1094,7 +1094,7 @@ class energyTempModule(BaseLightningModule):
         return x
 
     def populate_initial_buffer(self):
-        if self.sample_buffers[0].size() > 0:
+        if len(self.sample_buffers[0]) > 0:
             logger.debug("Buffer 0 is already populated skipping populate")
             return
         # Initialize buffer 0 with train data
@@ -1109,6 +1109,7 @@ class energyTempModule(BaseLightningModule):
                 i_states, return_force=True
             )
             self.sample_buffers[0].add(i_states, init_energies, init_forces)
+        logger.debug(f"Populated buffer 0 with {len(self.sample_buffers[0])} samples")
 
     def setup(self, stage: str) -> None:
         self.energy_functions = {}
