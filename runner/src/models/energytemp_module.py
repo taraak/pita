@@ -164,14 +164,11 @@ class energyTempModule(BaseLightningModule):
             batch_size=self.hparams.inference_batch_size,
             lightning_module=self,
         )
-        self.val_energy_w2 = MeanMetric()
-        self.val_energy_w1 = MeanMetric()
-        self.val_dist_w2 = MeanMetric()
-        self.val_num_unique_idxs = MeanMetric()
+
         self.register_buffer("temperatures", torch.tensor(self.hparams.temperatures))
         self.register_buffer("inverse_temperatures", torch.round(self.temperatures[0] / self.temperatures, decimals=2))
         n_temps = len(self.inverse_temperatures)
-        self.active_inverse_temperature_index = 0
+        
         logger.debug(f"Temperatures: {self.temperatures}")
         logger.debug(f"Inverse Temperatures: {self.inverse_temperatures}")
         self.sample_buffers = MyModuleDict(
@@ -189,6 +186,12 @@ class energyTempModule(BaseLightningModule):
             for i, inverse_temp in enumerate(self.inverse_temperatures)
         }
 
+    @ property
+    def active_inverse_temperature_index(self):
+        return int(
+            np.searchsorted(self.update_temp_epoch, self.trainer.current_epoch, side="right")
+        )
+    
     def generate_samples(
         self,
         prior,
@@ -1133,7 +1136,7 @@ class energyTempModule(BaseLightningModule):
                 len(self.inverse_temperatures) == 1
             ), "Need to specify num_epochs_per_temp in the config file"
 
-        for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
+        for temp_index, _ in enumerate(self.inverse_temperatures):
             self.energy_functions[temp_index] = self.hparams.energy_function(
                 device=self.device,
                 temperature=self.temperatures[temp_index],
