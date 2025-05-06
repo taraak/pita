@@ -34,7 +34,23 @@ logger = logging.getLogger(__name__)
 torch.set_float32_matmul_precision("high")
 
 
+class MyModuleDict(torch.nn.ModuleDict):
+    def __setitem__(self, key, value):
+        key = str(key)
+        super().__setitem__(key, value)
+
+    def __getitem__(self, key):
+        key = str(key)
+        return super().__getitem__(key)
+
+    def __contains__(self, key):
+        key = str(key)
+        return super().__contains__(key)
+
+
 class energyTempModule(BaseLightningModule):
+    strict_loading = False
+
     def __init__(
         self,
         net: torch.nn.Module,
@@ -71,7 +87,9 @@ class energyTempModule(BaseLightningModule):
         self.save_hyperparameters(logger=False)
 
         h_theta = self.hparams.net()
-        self.energy_net = EnergyNet(score_net=copy.deepcopy(h_theta), precondition_beta=self.hparams.precondition_beta)
+        self.energy_net = EnergyNet(
+            score_net=copy.deepcopy(h_theta), precondition_beta=self.hparams.precondition_beta
+        )
         self.score_net = ScoreNet(model=h_theta, precondition_beta=self.hparams.precondition_beta)
         if self.hparams.get("debug_fm", False):
             self.score_net = FlowNet(model=h_theta)
@@ -146,11 +164,30 @@ class energyTempModule(BaseLightningModule):
             batch_size=self.hparams.inference_batch_size,
             lightning_module=self,
         )
-
         self.val_energy_w2 = MeanMetric()
         self.val_energy_w1 = MeanMetric()
         self.val_dist_w2 = MeanMetric()
         self.val_num_unique_idxs = MeanMetric()
+        self.register_buffer("temperatures", torch.tensor(self.hparams.temperatures))
+        self.register_buffer("inverse_temperatures", torch.round(self.temperatures[0] / self.temperatures, decimals=2))
+        n_temps = len(self.inverse_temperatures)
+        self.active_inverse_temperature_index = 0
+        logger.debug(f"Temperatures: {self.temperatures}")
+        logger.debug(f"Inverse Temperatures: {self.inverse_temperatures}")
+        self.sample_buffers = MyModuleDict(
+            {
+                str(temp_index): self.hparams.partial_buffer()
+                for temp_index in range(n_temps)
+            }
+        )
+        times = torch.linspace(1, 0, self.hparams.num_integration_steps + 1)
+        t_start = times[self.hparams.start_resampling_step]
+        self.priors = {
+            i: self.hparams.partial_prior(
+                scale=(self.hparams.noise_schedule.h(t_start) / inverse_temp) ** 0.5,
+            )
+            for i, inverse_temp in enumerate(self.inverse_temperatures)
+        }
 
     def generate_samples(
         self,
@@ -163,7 +200,7 @@ class energyTempModule(BaseLightningModule):
         return_logweights: Optional[bool] = False,
         weighted_sde_integrator: Optional[WeightedSDEIntegrator] = None,
     ) -> torch.Tensor:
-        prior_samples = prior.sample(num_samples)
+        prior_samples = prior.sample(num_samples, self.device)
         if self.hparams.get("debug_fm", False):
             from src.models.components.wrappers import torch_wrapper
             from torchdyn.core import NeuralODE
@@ -319,14 +356,14 @@ class energyTempModule(BaseLightningModule):
             predicted_Ut=predicted_Ut,
         )
         # L2 regularization on dU/dt
-        dU_dt_regularization_loss = torch.sum(predicted_dUt_dt ** 2, dim=(-1))
+        dU_dt_regularization_loss = torch.sum(predicted_dUt_dt**2, dim=(-1))
         return (
             energy_score_loss,
             score_loss,
             target_score_loss,
             dem_energy_loss,
             energy_matching_loss,
-            dU_dt_regularization_loss
+            dU_dt_regularization_loss,
         )
 
     def get_score_loss(
@@ -364,14 +401,18 @@ class energyTempModule(BaseLightningModule):
     ) -> torch.Tensor:
         ht.requires_grad = True
         t = self.hparams.noise_schedule.t(ht)
-        
+
         if self.hparams.loss_weights["energy_score"] == 0:
             predicted_Ut = torch.zeros(xt.shape[0], device=xt.device)
             if not (self.hparams.loss_weights["dem_energy"] == 0):
                 predicted_Ut = self.energy_net_forward_energy(ht, xt, inverse_temp)
             return torch.zeros(xt.shape[0], device=xt.device), predicted_Ut
-        
-        predicted_x0_energynet, predicted_dUt_dht, predicted_Ut = self.energy_net_denoiser_and_energy(
+
+        (
+            predicted_x0_energynet,
+            predicted_dUt_dht,
+            predicted_Ut,
+        ) = self.energy_net_denoiser_and_energy(
             ht=ht,
             xt=xt,
             beta=inverse_temp,
@@ -607,9 +648,8 @@ class energyTempModule(BaseLightningModule):
 
     def training_step(self, batch, batch_idx):
         if self.trainer.current_epoch < self.hparams.dem.num_training_epochs:
-            x0_samples, _, _ = self.buffers[0].sample(self.hparams.dem.training_batch_size)
+            x0_samples, _, _ = self.sample_buffers[0].sample(self.hparams.dem.training_batch_size)
             return self.pre_training_step(x0_samples, prefix="train")
-
 
         if self.hparams.train_on_all_temps:
             active_inverse_temperatures = self.inverse_temperatures[
@@ -619,7 +659,7 @@ class energyTempModule(BaseLightningModule):
         else:
             # TODO: random inverse temperatures for each element in the batch
             temp_index = self.active_inverse_temperature_index
-        x0_samples, x0_energies, x0_forces, _ = self.buffers[temp_index].sample(
+        x0_samples, x0_energies, x0_forces, _ = self.sample_buffers[temp_index].sample(
             self.hparams.training_batch_size
         )
 
@@ -629,7 +669,6 @@ class energyTempModule(BaseLightningModule):
 
         if should_do_data_augmentation and self.is_molecule:
             x0_samples, x0_forces = torch.vmap(self.data_augmentation)(x0_samples, x0_forces)
-
         loss = self.model_step(x0_samples, x0_energies, x0_forces, temp_index, prefix="train")
         return loss
 
@@ -696,7 +735,7 @@ class energyTempModule(BaseLightningModule):
         )
         samples_energy = energy_function(samples)
 
-        self.buffers[0].add(
+        self.sample_buffers[0].add(
             samples,
             samples_energy,
         )
@@ -780,7 +819,6 @@ class energyTempModule(BaseLightningModule):
             inverse_temp=inverse_temp,
             annealing_factor=inverse_lower_temp / inverse_temp,
         )
-        # import ipdb; ipdb.set_trace()
         samples_energy, samples_forces = energy_function(samples, return_force=True)
         samples_not_resampled_energy = energy_function(samples_not_resampled)
         if temp_index_lower != temp_index:
@@ -789,7 +827,7 @@ class energyTempModule(BaseLightningModule):
                 samples_energy < -self.hparams.energy_masking_threshold
             )
             # fill the buffers
-            self.buffers[temp_index_lower].add(
+            self.sample_buffers[temp_index_lower].add(
                 samples[~mask],
                 samples_energy[~mask],
                 samples_forces[~mask],
@@ -801,10 +839,10 @@ class energyTempModule(BaseLightningModule):
             torch.save(samples_energy, path.replace("buffer_samples", "buffer_energies"))
             logger.info(f"Saving samples to {path}")
         logger.debug(
-            f"Buffer size for temperature {temp:0.3f} is {len(self.buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
+            f"Buffer size for temperature {temp:0.3f} is {len(self.sample_buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
         )
         print(
-            f"Buffer size for temp {temp:0.3f} is {len(self.buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
+            f"Buffer size for temp {temp:0.3f} is {len(self.sample_buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
         )
         # select a subset of the generated samples to log
         if self.is_molecule:
@@ -1059,28 +1097,6 @@ class energyTempModule(BaseLightningModule):
 
     def setup(self, stage: str) -> None:
         self.energy_functions = {}
-        self.priors = {}
-        self.buffers = {}
-        self.last_samples = {}
-        self.last_energies = {}
-
-        temperatures = torch.tensor(self.hparams.temperatures)
-
-        logger.debug(f"Temperatures: {temperatures}")
-
-        self.inverse_temperatures = torch.round(temperatures[0] / temperatures, decimals=2).to(
-            self.device
-        )
-        self.temperatures = temperatures
-
-        self.active_inverse_temperature_index = 0
-
-        logger.debug(f"Inverse Temperatures: {self.inverse_temperatures}")
-
-        times = torch.linspace(1, 0, self.hparams.num_integration_steps + 1)
-        t_start = times[self.hparams.start_resampling_step]
-
-        # import ipdb; ipdb.set_trace()
         if self.hparams.num_epochs_per_temp is not None:
             assert len(self.hparams.num_epochs_per_temp) == len(self.inverse_temperatures) - 1
             self.update_temp_epoch = (
@@ -1102,17 +1118,9 @@ class energyTempModule(BaseLightningModule):
         for temp_index, inverse_temp in enumerate(self.inverse_temperatures):
             self.energy_functions[temp_index] = self.hparams.energy_function(
                 device=self.device,
-                temperature=temperatures[temp_index],
+                temperature=self.temperatures[temp_index],
                 device_index=str(self.trainer.local_rank),
             )
-            self.priors[temp_index] = self.hparams.partial_prior(
-                device=self.device,
-                scale=(self.hparams.noise_schedule.h(t_start) / inverse_temp) ** 0.5,
-            )
-            self.buffers[temp_index] = self.hparams.partial_buffer(device=self.device)
-            self.last_samples[temp_index] = None
-            self.last_energies[temp_index] = None
-
             if self.hparams.init_from_prior or self.hparams.dem.num_training_epochs > 0:
                 init_states = self.priors[temp_index].sample(self.hparams.num_init_samples)
             else:
@@ -1123,11 +1131,15 @@ class energyTempModule(BaseLightningModule):
                 init_states, return_force=True
             )
             if temp_index == 0:
-                self.buffers[temp_index].add(init_states, init_energies, init_forces)
+                # modules are moved after setup
+                # manually move
+                self.sample_buffers.to(self.device)
+                self.sample_buffers[temp_index].add(init_states, init_energies, init_forces)
 
         self.is_molecule = self.energy_functions[0].is_molecule
         if self.is_molecule:
             self.n_particles = self.energy_functions[0].n_particles
             self.n_spatial_dim = self.energy_functions[0].n_spatial_dim
-
-        self.data_augmentation = Random3DRotationTransform(self.n_particles, self.n_spatial_dim)
+            self.data_augmentation = Random3DRotationTransform(
+                self.n_particles, self.n_spatial_dim
+            )

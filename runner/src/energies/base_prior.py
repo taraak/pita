@@ -24,13 +24,12 @@ class Prior:
 class MeanFreePrior(torch.distributions.Distribution):
     arg_constraints: Dict[str, constraints.Constraint] = {}
 
-    def __init__(self, n_particles, spatial_dim, scale, device="cpu"):
+    def __init__(self, n_particles, spatial_dim, scale):
         super().__init__()
         self.n_particles = n_particles
         self.spatial_dim = spatial_dim
         self.dim = n_particles * spatial_dim
         self.scale = scale
-        self.device = device
 
     def log_prob(self, x):
         x = x.reshape(-1, self.n_particles, self.spatial_dim)
@@ -49,8 +48,8 @@ class MeanFreePrior(torch.distributions.Distribution):
         log_px = -0.5 * r2 + log_normalizing_constant
         return log_px
 
-    def sample(self, n_samples):
-        samples = torch.randn(n_samples, self.dim, device=self.device) * self.scale
+    def sample(self, n_samples, device):
+        samples = torch.randn(n_samples, self.dim, device=device) * self.scale
         samples = samples.reshape(-1, self.n_particles, self.spatial_dim)
         samples = samples - samples.mean(-2, keepdims=True)
         return samples.reshape(-1, self.n_particles * self.spatial_dim)

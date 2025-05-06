@@ -113,14 +113,16 @@ class ElucidatingNoiseSchedule(BaseNoiseSchedule):
 
     def h(self, t):
         return (self.term1 + (1 - t) * self.term2) ** (2 * self.rho)
-    
+
     def t(self, ht):
         # Inverse of h(t)
         return 1 - ((ht ** (1 / (2 * self.rho)) - self.term1) / self.term2)
-    
+
     def dh_dt(self, t):
         # Derivative of h(t) with respect to t
-        return -2 * self.rho * self.term2 * (self.term1 + (1 - t) * self.term2) ** (2 * self.rho - 1) 
+        return (
+            -2 * self.rho * self.term2 * (self.term1 + (1 - t) * self.term2) ** (2 * self.rho - 1)
+        )
 
     def sample_ln_sigma(self, num_samples, device):
         # Sample from a normal distribution N(P_mean, P_std)

@@ -58,7 +58,7 @@ class EnergyNet(nn.Module):
         t: Optional[torch.Tensor] = None,
         energy_function: Optional[BaseEnergyFunction] = None,
     ) -> torch.Tensor:
-        U = self.forward_energy(ht, xt, beta, pin=pin, t=t, energy_function=energy_function)       
+        U = self.forward_energy(ht, xt, beta, pin=pin, t=t, energy_function=energy_function)
         nabla_U = torch.autograd.grad(U.sum(), xt, create_graph=True)[0]
         return nabla_U
 
@@ -67,11 +67,11 @@ class EnergyNet(nn.Module):
         return x_t - h_t[:, None] * nabla_U
 
     def denoiser_and_energy(
-            self,
-            ht: torch.Tensor,
-            xt: torch.Tensor,
-            beta: torch.Tensor,
-            # t: torch.Tensor,
+        self,
+        ht: torch.Tensor,
+        xt: torch.Tensor,
+        beta: torch.Tensor,
+        # t: torch.Tensor,
     ) -> torch.Tensor:
         U = self.forward_energy(ht, xt, beta)
         U_grads = torch.autograd.grad(U.sum(), (xt, ht), create_graph=True)
