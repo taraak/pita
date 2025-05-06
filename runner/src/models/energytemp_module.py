@@ -1094,6 +1094,7 @@ class energyTempModule(BaseLightningModule):
         return x
 
     def populate_initial_buffer(self):
+        logger.debug(f"Buffer 0 size: {len(self.sample_buffers[0])}")
         if len(self.sample_buffers[0]) > 0:
             logger.debug("Buffer 0 is already populated skipping populate")
             return
@@ -1112,6 +1113,7 @@ class energyTempModule(BaseLightningModule):
         logger.debug(f"Populated buffer 0 with {len(self.sample_buffers[0])} samples")
 
     def setup(self, stage: str) -> None:
+        logger.debug(f"Setting up {stage}")
         self.energy_functions = {}
         if self.hparams.num_epochs_per_temp is not None:
             assert len(self.hparams.num_epochs_per_temp) == len(self.inverse_temperatures) - 1
@@ -1148,3 +1150,4 @@ class energyTempModule(BaseLightningModule):
             self.data_augmentation = Random3DRotationTransform(
                 self.n_particles, self.n_spatial_dim
             )
+        logger.debug(f"Setup {stage} done")
