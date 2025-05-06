@@ -23,7 +23,7 @@ class ReplayDataModule(torch.nn.Module):
         super().__init__()
         self.register_buffer("x", x)
         self.register_buffer("energy", energy)
-        self.register_buffer("force", torch.zeros_like(x))
+        self.register_buffer("force", force)
 
 
 def sample_without_replacement(logits: torch.Tensor, n: int) -> torch.Tensor:
@@ -214,14 +214,13 @@ class PrioritisedReplayBuffer:
         self.can_sample = old_buffer["can_sample"]
 
 
-class SimpleBuffer:
+class SimpleBuffer(torch.nn.Module):
     def __init__(
         self,
         dim: int,
         max_length: int,
         min_sample_length: int,
         initial_sampler: Callable[[], Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
-        device: str = "cpu",
         sample_with_replacement: bool = False,
         fill_buffer_during_init: bool = True,
         prioritize=False,
@@ -235,7 +234,6 @@ class SimpleBuffer:
             initial_sampler: sampler producing x, log_w and log q, used to fill the buffer up to
                 the min sample length. The initialised flow + AIS may be used here,
                 or we may desire to use AIS with more distributions to give the flow a "good start".
-            device: replay buffer device
             sample_with_replacement: Whether to sample from the buffer with replacement.
             fill_buffer_during_init: Whether to use `initial_sampler` to fill the buffer initially.
                 If a checkpoint is going to be loaded then this should be set to False.
@@ -245,23 +243,17 @@ class SimpleBuffer:
         sampling batch size, then we may overfit to the first batch of data, as we would update
         on it many times during the start of training.
         """
+        super().__init__()
         assert min_sample_length < max_length
         self.dim = dim
         self.max_length = max_length
         self.min_sample_length = min_sample_length
-        # self.buffer = SimpleReplayData(
-        #     x=torch.zeros(self.max_length, dim).to(device),
-        #     energy=torch.zeros(self.max_length,).to(device),
-        # )
         self.buffer = ReplayDataModule(
-            x=torch.zeros(self.max_length, dim).to(device),
-            energy=torch.zeros(
-                self.max_length,
-            ).to(device),
-            force=torch.zeros(self.max_length, dim).to(device),
+            x=torch.zeros(self.max_length, dim),
+            energy=torch.zeros(self.max_length),
+            force=torch.zeros(self.max_length, dim),
         )
-        self.possible_indices = torch.arange(self.max_length).to(device)
-        self.device = device
+        self.register_buffer("possible_indices", torch.arange(self.max_length))
         self.current_index = 0
         self.is_full = False  # whether the buffer is full
         self.can_sample = False  # whether the buffer is full enough to begin sampling
@@ -291,14 +283,13 @@ class SimpleBuffer:
     ) -> None:
         """Add a new batch of generated data to the replay buffer."""
         batch_size = x.shape[0]
-        x = x.to(self.device)
-        energy = energy.to(self.device)
-        indices = (torch.arange(batch_size) + self.current_index).to(self.device) % self.max_length
+        indices = (
+            torch.arange(batch_size, device=x.device) + self.current_index
+        ) % self.max_length
         self.buffer.x[indices] = x
         self.buffer.energy[indices] = energy
 
         if force is not None:
-            force = force.to(self.device)
             self.buffer.force[indices] = force
 
         new_index = self.current_index + batch_size
@@ -319,6 +310,7 @@ class SimpleBuffer:
             idxs.append(torch.arange(self.max_length + start_idx, self.max_length))
 
         idx = torch.cat(idxs)
+        idx = idx.to(self.buffer.x.device)
 
         return self.buffer.x[idx], self.buffer.energy[idx], self.buffer.force[idx]
 
@@ -341,19 +333,17 @@ class SimpleBuffer:
                     logits=self.buffer.energy[:max_index]
                 ).sample((batch_size,))
             else:
-                indices = torch.randint(max_index, (batch_size,)).to(self.device)
+                indices = torch.randint(max_index, (batch_size,))
         else:
             if prioritize:
-                indices = sample_without_replacement(
-                    self.buffer.energy[:max_index], batch_size
-                ).to(self.device)
+                indices = sample_without_replacement(self.buffer.energy[:max_index], batch_size)
             else:
-                indices = torch.randperm(max_index)[:batch_size].to(self.device)
-        x, energy, force, indices = (
+                indices = torch.randperm(max_index)[:batch_size]
+        indices = indices.to(self.buffer.x.device)
+        x, energy, force = (
             self.buffer.x[indices],
             self.buffer.energy[indices],
             self.buffer.force[indices],
-            indices,
         )
         return x, energy, force, indices
 

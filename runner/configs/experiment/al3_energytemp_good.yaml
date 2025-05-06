@@ -24,12 +24,6 @@ model:
   noise_schedule:
     sigma_min: 0.005
 
-  partial_prior:
-    _target_: src.energies.base_prior.MeanFreePrior
-    _partial_: true
-    n_particles: ${energy.n_particles}
-    spatial_dim: ${energy.spatial_dim}
-
   clipper:
     _target_: src.models.components.clipper.Clipper
     should_clip_scores: True
@@ -74,10 +68,10 @@ model:
     - 555.52
     - 408.24
   num_epochs_per_temp:
-    - 200
-    - 200
-    - 200
-    - 200
+    - 300
+    - 300
+    - 300
+    - 300
 
   temps_to_anneal_test:
     - [600, 600]
@@ -89,6 +83,7 @@ model:
     energy_matching: 1.0
     target_score: 0.01
     dem_energy: 0.0
+    dU_dt_regularization: 0.0
 
   loss_time_threshold:
     score: 0.0

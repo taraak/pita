@@ -1,12 +1,14 @@
+from typing import Optional
+
 import torch
 from torch import nn
 
 
 class ScoreNet(nn.Module):
-    def __init__(self, model: nn.Module):
+    def __init__(self, model: nn.Module, precondition_beta: Optional[bool] = False):
         super().__init__()
-
         self.model = model
+        self.precondition_beta = precondition_beta
 
     def forward(
         self,
@@ -29,9 +31,13 @@ class ScoreNet(nn.Module):
         D_theta = c_s[:, None] * x_t + c_out[:, None] * self.model.forward(
             c_noise, c_in[:, None] * x_t, beta
         )
+        score = (D_theta - x_t) / h_t[:, None]
+
+        if self.precondition_beta:
+            D_theta = D_theta * beta[:, None] + (1 - beta[:, None]) * x_t
+            score = score * beta[:, None]
 
         if return_score:
-            score = (D_theta - x_t) / h_t[:, None]
             return D_theta, score
 
         return D_theta

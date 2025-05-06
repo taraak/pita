@@ -30,6 +30,12 @@ partial_buffer:
   fill_buffer_during_init: False
   prioritize: False
 
+partial_prior:
+  _target_: src.energies.base_prior.MeanFreePrior
+  _partial_: true
+  n_particles: ${energy.n_particles}
+  spatial_dim: ${energy.spatial_dim}
+
 num_init_samples: 1024
 num_samples_to_generate_per_epoch: 1024
 num_samples_to_sample_from_buffer: 512
@@ -54,3 +60,7 @@ num_eval_samples: 1024
 scale_diffusion: false
 test_batch_size: 5000
 start_resampling_step: 50
+
+precondition_beta: false
+train_on_all_temps: true
+debug_generation: false 

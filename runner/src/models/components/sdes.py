@@ -112,8 +112,8 @@ class VEReverseSDE(torch.nn.Module):
 
     def f_not_debiased(self, t, x, beta):
         assert self.score_net is not None
-        h_t = self.noise_schedule.h(t)
-        drift_X = self.score_net(h_t, x, beta) * self.g(t).pow(2).unsqueeze(-1)
+        ht = self.noise_schedule.h(t)
+        drift_X = self.score_net(ht, x, beta) * self.g(t).pow(2).unsqueeze(-1)
         drift_A = torch.zeros(x.shape[0]).to(x.device)
         sde_terms = SDETerms(
             drift_X=drift_X,
@@ -134,14 +134,14 @@ class VEReverseSDE(torch.nn.Module):
             x.requires_grad_(True)
             t.requires_grad_(True)
 
-            h_t = self.noise_schedule.h(t)
+            ht = self.noise_schedule.h(t)
             nabla_Ut = self.energy_net(
-                h_t, x, beta, pin=self.pin_energy, t=t, energy_function=energy_function
+                ht, x, beta, pin=self.pin_energy, t=t, energy_function=energy_function
             )
 
             if self.score_net is not None:
                 s_t = self.score_net(
-                    h_t,
+                    ht,
                     x,
                     beta,
                 )
@@ -160,8 +160,8 @@ class VEReverseSDE(torch.nn.Module):
                 )
 
             Ut = self.energy_net.forward_energy(
-                h_t=h_t,
-                x_t=x,
+                ht=ht,
+                xt=x,
                 beta=beta,
                 pin=self.pin_energy,
                 energy_function=energy_function,
@@ -169,7 +169,7 @@ class VEReverseSDE(torch.nn.Module):
             )
 
             if self.score_net is not None:
-                div_st = self.compiled_divergence_fn(h_t, x, beta).detach()
+                div_st = self.compiled_divergence_fn(ht, x, beta).detach()
                 div_bt = div_st * self.g(t).pow(2) / 2
             else:
                 laplacian_Ut = compute_laplacian_exact(
@@ -179,7 +179,7 @@ class VEReverseSDE(torch.nn.Module):
                         energy_function=energy_function,
                         t=t,
                     ),
-                    h_t,
+                    ht,
                     x,
                     beta,
                 ).detach()
@@ -188,10 +188,6 @@ class VEReverseSDE(torch.nn.Module):
             dUt_dt = torch.autograd.grad(Ut.sum(), t, create_graph=True)[0].detach()
 
             inner_prod = (-nabla_Ut * bt).sum(-1).detach()
-
-            # print("dUt_dt", dUt_dt[:2])
-            # print("div_st", div_bt[:2])
-            # print("inner_prod", inner_prod[:2])
 
             drift_A = gamma**2 * inner_prod + gamma * div_bt + gamma * dUt_dt
 
