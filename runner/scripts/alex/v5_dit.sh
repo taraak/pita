@@ -14,14 +14,14 @@
 #SBATCH --open-mode=append                   # Append to logs instead of overwriting
 #SBATCH --requeue                            # Requeue upon pre-emption
 
-RUN_NAME="dit_good_v8_l40"
+RUN_NAME="dit_good_v9_l40"
 HYDRA_FULL_ERROR=1 python src/train.py +trainer.num_sanity_val_steps=0 \
 model=energytemp \
 experiment=alp_energytemp_good \
 trainer=ddp \
 tags=["test","ALDP","v4"] \
 trainer.check_val_every_n_epoch=100 \
-data.n_train_batches_per_epoch=125 \
+data.n_train_batches_per_epoch=100 \
 trainer.max_epochs=1000 \
 model.debias_inference=True \
 model.training_batch_size=1024 \

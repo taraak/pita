@@ -331,8 +331,6 @@ class energyTempModule(BaseLightningModule):
         z = torch.randn_like(x0)
         z = self.maybe_remove_mean(z)
         x0 = self.maybe_remove_mean(x0)
-        logger.info(f"{self.trainer.global_rank} x0, {x0[0,:3]}")
-        logger.info(f"{self.trainer.global_rank} z, {z[0,:3]}")
         if self.hparams.get("debug_fm", False):
             t = torch.rand(x0.shape[0], device=x0.device)
             xt = (t[:, None] * x0 + (1 - t[:, None]) * z).requires_grad_()
