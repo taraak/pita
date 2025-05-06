@@ -63,3 +63,4 @@ start_resampling_step: 50
 
 precondition_beta: false
 train_on_all_temps: true
+debug_generation: false 

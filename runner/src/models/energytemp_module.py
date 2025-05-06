@@ -192,6 +192,30 @@ class energyTempModule(BaseLightningModule):
             np.searchsorted(self.update_temp_epoch, self.trainer.current_epoch, side="right")
         )
     
+    def debug_generate_samples(
+        self,
+        prior,
+        energy_function: BaseEnergyFunction,
+        num_samples: int,
+        inverse_temp: Optional[float] = 1.0,
+        annealing_factor: Optional[float] = 1.0,
+        return_full_trajectory: Optional[bool] = False,
+        weighted_sde_integrator: Optional[WeightedSDEIntegrator] = None,
+    ) -> torch.Tensor:
+        prior_samples = prior.sample(num_samples, self.device)
+        if weighted_sde_integrator is None:
+            weighted_sde_integrator = self.weighted_sde_integrator
+        samples, _, _, _ = weighted_sde_integrator.integrate_sde(
+            x1=prior_samples.clone(),
+            energy_function=energy_function,
+            inverse_temperature=inverse_temp,
+            annealing_factor=annealing_factor,
+            resampling_interval=-1
+        )
+        if not return_full_trajectory:
+            samples = samples[-1]
+        return samples
+    
     def generate_samples(
         self,
         prior,
@@ -821,6 +845,15 @@ class energyTempModule(BaseLightningModule):
             annealing_factor=inverse_lower_temp / inverse_temp,
         )
         samples_energy, samples_forces = energy_function(samples, return_force=True)
+
+        if self.hparams.debug_generation:
+            samples_not_resampled = self.debug_generate_samples(
+                prior=self.priors[temp_index_lower],
+                energy_function=energy_function,
+                num_samples=num_samples,
+                inverse_temp=inverse_temp,
+                annealing_factor=inverse_lower_temp / inverse_temp,
+            )
         samples_not_resampled_energy = energy_function(samples_not_resampled)
         if temp_index_lower != temp_index:
             # mask out samples with high energy
@@ -838,6 +871,7 @@ class energyTempModule(BaseLightningModule):
             path = f"{output_dir}/buffer_samples_temperature_{temp:0.3f}.pt"
             torch.save(samples, path)
             torch.save(samples_energy, path.replace("buffer_samples", "buffer_energies"))
+            torch.save(samples_not_resampled, path.replace("buffer_samples", "samples_not_resampled"))
             logger.info(f"Saving samples to {path}")
         logger.debug(
             f"Buffer size for temperature {temp:0.3f} is {len(self.sample_buffers[temp_index_lower])} at epoch {self.trainer.current_epoch}"
