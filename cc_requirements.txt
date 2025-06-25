@@ -91,7 +91,7 @@ MarkupSafe==2.1.5+computecanada
 matplotlib==3.9.2+computecanada
 matplotlib_inline==0.1.7+computecanada
 mccabe==0.7.0+computecanada
-mdtraj==1.10.0+computecanada
+mdtraj==1.10.3
 mdurl==0.1.2+computecanada
 mistune==3.1.1+computecanada
 mpmath==1.3.0+computecanada
