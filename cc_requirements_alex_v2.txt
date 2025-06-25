@@ -169,7 +169,7 @@ soupsieve==2.6+computecanada
 SQLAlchemy==2.0.35+computecanada
 stack_data==0.6.3+computecanada
 stevedore==5.4.1+computecanada
-submitit==1.5.2+computecanada
+submitit==1.5.3
 sympy==1.13.1+computecanada
 tensorboard==2.19.0+computecanada
 tensorboard_data_server==0.7.2+computecanada
