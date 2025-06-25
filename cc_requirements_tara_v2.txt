@@ -138,7 +138,7 @@ pycodestyle==2.11.1+computecanada
 pycparser==2.22+computecanada
 #pydantic==2.11.3+computecanada
 #pydantic_core==2.27.2+computecanada
-pyflakes==3.2.0+computecanada
+pyflakes==3.4.0
 pygments==2.19.1+computecanada
 pyparsing==3.2.1+computecanada
 pyperclip==1.7.0+computecanada
