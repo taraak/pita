@@ -13,7 +13,7 @@ asttokens==3.0.0+computecanada
 astunparse==1.6.3+computecanada
 async_lru==2.0.4+computecanada
 attrs==25.3.0+computecanada
-autopage==0.5.1+computecanada
+autopage==0.5.2
 babel==2.17.0+computecanada
 beautifulsoup4==4.13.3+computecanada
 bgflow @ file:///home/a/atong01/diffusion-annealed-sampling/wheels/bgflow-0+untagged.338.g3eebcb1.zip
