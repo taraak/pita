@@ -81,7 +81,7 @@ jupyter_server_terminals==0.5.3+computecanada
 jupyterlab==4.3.5+computecanada
 jupyterlab_pygments==0.3.0+computecanada
 jupyterlab_server==2.27.3+computecanada
-jupyterlab_widgets==3.0.13+computecanada
+jupyterlab_widgets==3.0.15
 kiwisolver==1.4.8+computecanada
 lightning==2.5.0+computecanada
 lightning_utilities==0.14.2+computecanada
