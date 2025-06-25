@@ -1,0 +1,7 @@
+_target_: src.models.components.egnn_dynamics_ad2_cat.EGNN_dynamics_AD2_cat
+_partial_: true
+n_particles: ${energy.n_particles}
+n_dimensions: ${energy.spatial_dim}
+hidden_nf: 64
+n_layers: 5
+condition_beta: true

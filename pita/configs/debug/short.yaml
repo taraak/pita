@@ -1,0 +1,25 @@
+# @package _global_
+
+defaults:
+  - override /logger: csv
+task_name: "debug_short"
+
+model:
+  num_integration_steps: 2
+  num_negative_time_steps: 2
+  num_mc_samples: 10
+  dem:
+    training_batch_size: 3
+    num_samples_to_generate_per_epoch: 3
+  compile: false
+  training_batch_size: 32
+  num_temp_annealed_samples_to_generate: 32
+  num_init_samples: 32
+  num_samples_to_save: 32
+  num_eval_samples: 32
+data:
+  n_train_batches_per_epoch: 3
+
+trainer:
+  max_epochs: 10
+  check_val_every_n_epoch: 1

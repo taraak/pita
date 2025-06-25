@@ -1,0 +1,55 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["ALDP", "diffusion_baseline"]
+
+seed: 12345
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "aldp"
+
+defaults:
+  - override /energy: aldp
+  - override /model/annealing_factor_schedule: constant
+
+energy:
+  data_path: "../data/diffusion_baseline/alanine/"
+
+model:
+  noise_schedule:
+    sigma_min: 0.005 #0.01
+
+  training_batch_size: 2048
+  inference_batch_size: 2048
+
+  end_resampling_step: 1000
+  resampling_interval: -1
+
+  should_mean_free: False
+  debias_inference: False
+  post_mcmc_steps: 0
+
+  loss_weights:
+    energy_score: 0.0
+    score: 1.0
+    energy_matching: 0.0
+    target_score: 0.0
+    dem_energy: 0.0
+    dU_dt_regularization: 0.0
+
+  temperatures:
+    - 300
+    - 300
+
+  num_epochs_per_temp:
+    - 400
+
+  temps_to_anneal_test:
+    - [300, 300]

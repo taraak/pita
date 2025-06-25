@@ -1,0 +1,14 @@
+_target_: src.models.components.egnn_temp_conditioned.EGNN_dynamics
+_partial_: true
+n_particles: ${energy.n_particles}
+n_dimension: ${energy.spatial_dim}
+hidden_nf: 32
+n_layers: 3
+act_fn:
+  _target_: torch.nn.SiLU
+recurrent: True
+tanh: True
+attention: True
+condition_time: True
+condition_temperature: True
+agg: "sum"

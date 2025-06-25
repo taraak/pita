@@ -1,0 +1,2 @@
+_target_: src.models.components.annealing_factor_schedules.ConstantAnnealingFactorSchedule
+_partial_: true

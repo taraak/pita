@@ -1,0 +1,22 @@
+defaults:
+  - model_checkpoint
+  #  - early_stopping
+  - model_summary
+  - lr_monitor
+  - rich_progress_bar
+  - time_checkpoint
+  - _self_
+
+model_checkpoint:
+  dirpath: ${paths.output_dir}/checkpoints
+  filename: "epoch_{epoch:03d}"
+  # monitor: "val/energy_w2"
+  # mode: "min"
+  # every_n_epochs: 50 # number of epochs between checkpoints
+  save_last: True
+  save_top_k: -1
+  auto_insert_metric_name: False
+  verbose: true
+
+model_summary:
+  max_depth: 1

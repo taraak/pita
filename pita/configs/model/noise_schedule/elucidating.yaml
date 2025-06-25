@@ -1,0 +1,4 @@
+_target_: src.models.components.noise_schedules.ElucidatingNoiseSchedule
+sigma_min: 0.002
+sigma_max: 80
+rho: 7

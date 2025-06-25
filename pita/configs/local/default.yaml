@@ -1,0 +1,4 @@
+# @package _global_
+paths:
+  data_dir: ${oc.env:SCRATCH}/energy_temp/data/
+  log_dir: ${oc.env:SCRATCH}/energy_temp/logs/

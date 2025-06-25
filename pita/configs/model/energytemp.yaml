@@ -1,0 +1,134 @@
+_target_: src.models.energytemp_module.energyTempModule
+
+ema_decay: 0.999
+eval_ema: True
+eval_non_ema: False
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 1e-3
+  weight_decay: 0.0
+
+scheduler: null
+lr_scheduler_update_frequency: ${trainer.check_val_every_n_epoch}
+
+defaults:
+  - net:
+      - dit
+  - noise_schedule:
+      - elucidating
+  - annealing_factor_schedule:
+      - constant
+
+noise_schedule:
+  sigma_min: 0.01
+
+net:
+  condition_on_temperature: ${model.train_on_all_temps}
+
+partial_buffer:
+  _target_: src.models.components.prioritised_replay_buffer.SimpleBuffer
+  _partial_: true
+  dim: ${energy.dimensionality}
+  max_length: 60000
+  min_sample_length: 1
+  initial_sampler: null
+  sample_with_replacement: True
+  fill_buffer_during_init: False
+  prioritize: False
+
+partial_prior:
+  _target_: src.energies.base_prior.Prior
+  _partial_: true
+  n_particles: ${energy.n_particles}
+  spatial_dim: ${energy.spatial_dim}
+  should_mean_free: ${model.should_mean_free}
+
+clipper:
+  _target_: src.models.components.clipper.Clipper
+  should_clip_scores: True
+  should_clip_log_rewards: False
+  max_score_norm: 1000
+  min_log_reward: null
+  n_particles: ${energy.n_particles}
+  dimensionality: ${energy.dimensionality}
+  spatial_dim: ${energy.spatial_dim}
+
+# compile model for faster training with pytorch 2.0
+compile: true
+
+# initialize the buffer with samples from the prior
+init_from_prior: false
+
+# batch size for training and inference
+num_temp_annealed_samples_to_generate: 10000
+num_samples_to_save: 100000
+num_init_samples: 50000
+test_batch_size: 5000
+num_eval_samples: 5000
+
+# sampling specific parameters
+resampling_interval: 1
+start_resampling_step: 0
+end_resampling_step: 1000
+resample_at_end: False
+
+# integration specific parameters
+debias_inference: True #if self to False it just does regular VE reverse sde for debugging
+num_integration_steps: 1000
+num_negative_time_steps: 0
+diffusion_scale: 1.0
+post_mcmc_steps: 5
+adaptive_mcmc: True
+dt_negative_time: 1e-13
+do_langevin: False
+
+precondition_beta: false
+train_on_all_temps: false
+
+# debugging parameters
+debug_init_buffer_path: null # if path is provided, buffer is initialized from this instead of train data
+debug_generation: false
+
+# general parameters
+should_mean_free: true
+is_molecule: ${energy.is_molecule}
+
+# loss specific parameters
+loss_weights:
+  energy_score: 1.0
+  score: 1.0
+  energy_matching: 1.0
+  target_score: 0.01
+  dem_energy: 0.0
+  dU_dt_regularization: 0.0
+
+loss_time_threshold:
+  score: 0.0
+  target_score: 0.2
+
+energy_masking_threshold: 1000
+
+# pretraining parameters
+dem:
+  noise_schedule:
+    _target_: src.models.components.noise_schedules.ElucidatingNoiseSchedule
+    sigma_min: 0.02
+    sigma_max: 2
+    rho: 7
+  num_training_epochs: 0
+  training_batch_size: 512
+  num_samples_to_generate_per_epoch: 2000
+  num_mc_samples: 1000
+  num_integration_steps: 1000
+  check_val_every_n_epochs: 10
+  clipper:
+    _target_: src.models.components.clipper.Clipper
+    should_clip_scores: True
+    should_clip_log_rewards: False
+    max_score_norm: 100
+    min_log_reward: null
+    n_particles: ${energy.n_particles}
+    dimensionality: ${energy.dimensionality}
+    spatial_dim: ${energy.spatial_dim}

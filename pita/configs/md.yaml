@@ -1,0 +1,24 @@
+# @package _global_
+
+# specify here default configuration
+# order of defaults determines the order in which configs override each other
+defaults:
+  - _self_
+  - launcher: null
+  - paths: default
+  - optional local: default
+task_name: md
+pdb_dir: ../data/pdbs/
+pdb_filename: A_capped
+temperature: 300
+platform_name: "CUDA"
+warmup_steps: 5000
+step_size: 10000
+num_steps: 100000
+log_freq: 100
+ckpt_freq: 1000
+output_dir: ${paths.data_dir}/md/${pdb_filename}
+hydra:
+  run:
+    dir: ${output_dir}
+output_filename: ${pdb_filename}_${temperature}_${num_steps}
