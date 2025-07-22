@@ -32,14 +32,8 @@ dependencies:
   - rich=13.*
   - pre-commit=3.*
   - pytest=7.*
-  # --------- loggers --------- #
   - wandb
   - ambertools # Required for MD generation
-  #- openmm
-  # - neptune-client
-  # - mlflow
-  # - comet-ml
-  # - aim>=3.16.2 # no lower than 3.16.2, see https://github.com/aimhubio/aim/issues/2550
 
   - pip>=23
   - pip:
@@ -53,7 +47,7 @@ dependencies:
       - ipdb
       - torchsde
       - torchdiffeq
-      - git+https://github.com/atong01/conditional-flow-matching.git
+      - torchcfm
       - black
       - flake8
       - isort
@@ -73,3 +67,4 @@ dependencies:
       - huggingface_hub
       - torchtune
       - torchao
+      - openmm[cuda12]
