@@ -36,6 +36,9 @@ Note that the hydra configs interpolate using some environment variables set in 
 an example `.env.example` file for convenience. Note that to use wandb we require that you set WANDB_ENTITY in your
 `.env` file.
 
+## Datasets
+You can download the datasets for all the experiments from [here](https://data.mendeley.com/datasets/jnrdksfsyp/1) and store them in `data` folder in the main directory. 
+
 ## Citations
 
 If this codebase is useful towards other research efforts please consider citing us.
