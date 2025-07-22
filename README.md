@@ -60,6 +60,6 @@ If this codebase is useful towards other research efforts please consider citing
 We welcome issues and pull requests (especially bug fixes), and contributions.
 We will try our best to improve readability and answer questions!
 
-## Licences
+## Licenses
 
 This repo is licensed under the [MIT License](https://opensource.org/license/mit/).
