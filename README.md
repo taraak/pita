@@ -9,7 +9,7 @@
 
 ## Description
 
-This is the repository for the[Progressive Inference-Time Annealing of Diffusion Models for Sampling from Boltzmann Densities](https://www.arxiv.org/abs/2506.16471).
+This is the repository for the [Progressive Inference-Time Annealing of Diffusion Models for Sampling from Boltzmann Densities](https://www.arxiv.org/abs/2506.16471).
 It is partially built on the repository of [Iterated Denoising Energy Matching for Sampling from Boltzmann Densities](https://github.com/jarridrb/DEM/tree/main)
 
 In this paper, we propose to train a series of energy-based models using diffusion, to iteratively sample from a series of temperature annealed Boltzmann distributions. We first train at an easy-to-sample high-temperature target first, using data collected from Molecular Dynamics (MD). Then we progressively simulate at lower temperatures until reaching the desired target temperature (using ideas from [Feynman-Kac Correctors in Diffusion: Annealing, Guidance, and Product of Experts](https://arxiv.org/abs/2503.02819).
