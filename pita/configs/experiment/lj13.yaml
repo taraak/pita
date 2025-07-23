@@ -17,30 +17,29 @@ logger:
 
 defaults:
   - override /energy: lj13
-  - override /model/net: dit #egnn_temp
+  - override /model/net: egnn_temp
   - override /model/noise_schedule: elucidating
   - override /model/annealing_factor_schedule: constant
 
 model:
-  net:
-    n_blocks: 2
-    n_heads: 2
-    cond_dim: 64
-    hidden_size: 128
+  compile: false
+  training_batch_size: 512
+  inference_batch_size: 512
 
-  training_batch_size: 2048
-  inference_batch_size: 4096
-
+  num_temp_annealed_samples_to_generate: 5000
+  num_samples_to_save: 10000
+  num_init_samples: 10000
+  num_eval_samples: 2048
+  
   noise_schedule:
-    sigma_min: 0.01
+    sigma_min: 0.05
 
-  should_mean_free: false
-
-  num_negative_time_steps: 1
+  num_negative_time_steps: 0
   post_mcmc_step: 0
 
   end_resampling_step: 900
   resample_at_end: True
+  train_on_all_temps: True
 
   temperatures:
     - 4.0
@@ -51,11 +50,11 @@ model:
     - 1.0
 
   num_epochs_per_temp:
+    - 150
     - 200
+    - 150
     - 200
-    - 200
-    - 200
-    - 200
+    - 300
 
   loss_weights:
     energy_score: 1.0
