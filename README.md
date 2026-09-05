@@ -44,14 +44,13 @@ You can download the datasets for all the experiments from [here](https://data.m
 If this codebase is useful towards other research efforts please consider citing us.
 
 ```
-@misc{akhoundsadegh2025progressiveinferencetimeannealingdiffusion,
-      title={Progressive Inference-Time Annealing of Diffusion Models for Sampling from Boltzmann Densities},
-      author={Tara Akhound-Sadegh and Jungyoon Lee and Avishek Joey Bose and Valentin De Bortoli and Arnaud Doucet and Michael M. Bronstein and Dominique Beaini and Siamak Ravanbakhsh and Kirill Neklyudov and Alexander Tong},
-      year={2025},
-      eprint={2506.16471},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2506.16471},
+@inproceedings{
+akhound-sadegh2025progressive,
+title={Progressive Inference-Time Annealing of Diffusion Models for Sampling from Boltzmann Densities},
+author={Tara Akhound-Sadegh and Jungyoon Lee and Joey Bose and Valentin De Bortoli and Arnaud Doucet and Michael M. Bronstein and Dominique Beaini and Siamak Ravanbakhsh and Kirill Neklyudov and Alexander Tong},
+booktitle={The Thirty-ninth Annual Conference on Neural Information Processing Systems},
+year={2025},
+url={https://openreview.net/forum?id=vf2GHcxzMV}
 }
 ```
 
